@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EOLO — Performance Preview</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #0f1117;
+    color: #e2e8f0;
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 1.1rem; color: #94a3b8; font-weight: 500; margin-bottom: 20px; letter-spacing: 0.05em; }
+  h2 { font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 14px; }
+
+  /* KPI CARDS */
+  .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
+  .kpi-card {
+    background: #1e2330;
+    border: 1px solid #2d3748;
+    border-radius: 12px;
+    padding: 18px 20px;
+  }
+  .kpi-card .label { font-size: 0.7rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .kpi-card .value { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+  .kpi-card .sub   { font-size: 0.7rem; color: #64748b; margin-top: 5px; }
+  .green { color: #34d399; }
+  .red   { color: #f87171; }
+  .blue  { color: #60a5fa; }
+  .yellow{ color: #fbbf24; }
+
+  /* MAIN GRID */
+  .main-grid { display: grid; grid-template-columns: 280px 1fr; gap: 16px; margin-bottom: 16px; }
+
+  /* DONUT */
+  .card {
+    background: #1e2330;
+    border: 1px solid #2d3748;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .donut-wrap { position: relative; width: 200px; height: 200px; margin: 0 auto 16px; }
+  .donut-center {
+    position: absolute; top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+  }
+  .donut-center .big   { font-size: 1.4rem; font-weight: 700; color: #34d399; }
+  .donut-center .small { font-size: 0.65rem; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+  .legend { display: flex; flex-direction: column; gap: 7px; }
+  .legend-item { display: flex; align-items: center; gap: 8px; font-size: 0.75rem; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .legend-name { color: #94a3b8; flex: 1; }
+  .legend-val  { font-weight: 600; }
+
+  /* EQUITY CURVE */
+  .equity-wrap { height: 220px; }
+
+  /* STRATEGY TABLE */
+  .strategy-card { margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  thead th {
+    text-align: left; padding: 8px 12px;
+    color: #64748b; font-size: 0.68rem; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.07em;
+    border-bottom: 1px solid #2d3748;
+  }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid #1a1f2e; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: #232a3a; }
+  .strat-name { font-weight: 600; color: #e2e8f0; }
+  .win-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .win-bar { height: 6px; border-radius: 3px; background: #2d3748; width: 70px; overflow: hidden; }
+  .win-bar-fill { height: 100%; border-radius: 3px; }
+  .pnl-positive { color: #34d399; font-weight: 700; }
+  .pnl-negative { color: #f87171; font-weight: 700; }
+
+  /* HEATMAP */
+  .heatmap-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .heat-cell {
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  .heat-pos { background: rgba(52, 211, 153, 0.12); border: 1px solid rgba(52, 211, 153, 0.25); }
+  .heat-neg { background: rgba(248, 113, 113, 0.12); border: 1px solid rgba(248, 113, 113, 0.25); }
+  .heat-neu { background: rgba(251, 191, 36, 0.10); border: 1px solid rgba(251, 191, 36, 0.20); }
+  .heat-ticker { font-weight: 700; font-size: 0.85rem; }
+  .heat-val    { font-size: 0.82rem; font-weight: 600; }
+
+  /* BOTTOM GRID */
+  .bottom-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+</style>
+</head>
+<body>
+
+<h1>⚡ EOLO — Performance del Día &nbsp;<span style="color:#64748b;font-size:0.8rem">Martes 14 Abr 2026</span></h1>
+
+<!-- ① KPI CARDS -->
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="label">P&L Total</div>
+    <div class="value green">+$147.80</div>
+    <div class="sub">vs ayer: <span class="green">+$23.10</span></div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Trades Totales</div>
+    <div class="value blue">18</div>
+    <div class="sub">12 ganados · 6 perdidos</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Win Rate Global</div>
+    <div class="value yellow">66.7%</div>
+    <div class="sub">objetivo: &gt;60%</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Mejor Trade</div>
+    <div class="value green">+$21.40</div>
+    <div class="sub">NVDL · VWAP+RSI</div>
+  </div>
+</div>
+
+<!-- ② DONUT + EQUITY CURVE -->
+<div class="main-grid">
+
+  <!-- Donut -->
+  <div class="card">
+    <h2>P&L por Estrategia</h2>
+    <div class="donut-wrap">
+      <canvas id="donutChart"></canvas>
+      <div class="donut-center">
+        <div class="big">+$147</div>
+        <div class="small">hoy</div>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#34d399"></div>
+        <span class="legend-name">EMA 3/8</span>
+        <span class="legend-val green">+$58.20</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#60a5fa"></div>
+        <span class="legend-name">VWAP + RSI</span>
+        <span class="legend-val green">+$43.90</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#a78bfa"></div>
+        <span class="legend-name">Bollinger</span>
+        <span class="legend-val green">+$31.10</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#fbbf24"></div>
+        <span class="legend-name">ORB</span>
+        <span class="legend-val green">+$22.00</span>
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background:#f87171"></div>
+        <span class="legend-name">Gap Fade</span>
+        <span class="legend-val red">-$7.40</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Equity Curve -->
+  <div class="card">
+    <h2>Equity Curve — P&L acumulado</h2>
+    <div class="equity-wrap">
+      <canvas id="equityChart"></canvas>
+    </div>
+  </div>
+
+</div>
+
+<!-- ③ TABLA POR ESTRATEGIA -->
+<div class="card strategy-card">
+  <h2>Detalle por Estrategia</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Estrategia</th>
+        <th>Trades</th>
+        <th>Win Rate</th>
+        <th>Avg Win</th>
+        <th>Avg Loss</th>
+        <th>P&L Neto</th>
+        <th>Tickers</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="strat-name">EMA 3/8</span></td>
+        <td>7</td>
+        <td>
+          <div class="win-bar-wrap">
+            <div class="win-bar"><div class="win-bar-fill" style="width:71%;background:#34d399"></div></div>
+            <span class="green">71%</span>
+          </div>
+        </td>
+        <td class="green">+$13.20</td>
+        <td class="red">-$6.80</td>
+        <td class="pnl-positive">+$58.20</td>
+        <td style="color:#64748b;font-size:0.7rem">SPY, QQQ, NVDA</td>
+      </tr>
+      <tr>
+        <td><span class="strat-name">VWAP + RSI</span></td>
+        <td>4</td>
+        <td>
+          <div class="win-bar-wrap">
+            <div class="win-bar"><div class="win-bar-fill" style="width:75%;background:#60a5fa"></div></div>
+            <span style="color:#60a5fa">75%</span>
+          </div>
+        </td>
+        <td class="green">+$18.40</td>
+        <td class="red">-$5.30</td>
+        <td class="pnl-positive">+$43.90</td>
+        <td style="color:#64748b;font-size:0.7rem">NVDL, SOXL</td>
+      </tr>
+      <tr>
+        <td><span class="strat-name">Bollinger</span></td>
+        <td>4</td>
+        <td>
+          <div class="win-bar-wrap">
+            <div class="win-bar"><div class="win-bar-fill" style="width:75%;background:#a78bfa"></div></div>
+            <span style="color:#a78bfa">75%</span>
+          </div>
+        </td>
+        <td class="green">+$11.60</td>
+        <td class="red">-$4.70</td>
+        <td class="pnl-positive">+$31.10</td>
+        <td style="color:#64748b;font-size:0.7rem">TQQQ, TSLL</td>
+      </tr>
+      <tr>
+        <td><span class="strat-name">ORB</span></td>
+        <td>2</td>
+        <td>
+          <div class="win-bar-wrap">
+            <div class="win-bar"><div class="win-bar-fill" style="width:50%;background:#fbbf24"></div></div>
+            <span class="yellow">50%</span>
+          </div>
+        </td>
+        <td class="green">+$22.00</td>
+        <td class="red">-$0.00</td>
+        <td class="pnl-positive">+$22.00</td>
+        <td style="color:#64748b;font-size:0.7rem">SOXL, NVDL</td>
+      </tr>
+      <tr>
+        <td><span class="strat-name">Gap Fade</span></td>
+        <td>1</td>
+        <td>
+          <div class="win-bar-wrap">
+            <div class="win-bar"><div class="win-bar-fill" style="width:0%;background:#f87171"></div></div>
+            <span class="red">0%</span>
+          </div>
+        </td>
+        <td class="green">+$0.00</td>
+        <td class="red">-$7.40</td>
+        <td class="pnl-negative">-$7.40</td>
+        <td style="color:#64748b;font-size:0.7rem">SPY</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ④ HEATMAP + mini ranking -->
+<div class="bottom-grid">
+  <div class="card">
+    <h2>Heatmap por Ticker</h2>
+    <div class="heatmap-grid">
+      <div class="heat-cell heat-pos">
+        <span class="heat-ticker">SPY</span>
+        <span class="heat-val green">+$42.10</span>
+      </div>
+      <div class="heat-cell heat-pos">
+        <span class="heat-ticker">QQQ</span>
+        <span class="heat-val green">+$28.30</span>
+      </div>
+      <div class="heat-cell heat-neg">
+        <span class="heat-ticker">AAPL</span>
+        <span class="heat-val red">-$8.20</span>
+      </div>
+      <div class="heat-cell heat-neg">
+        <span class="heat-ticker">TSLA</span>
+        <span class="heat-val red">-$12.40</span>
+      </div>
+      <div class="heat-cell heat-pos">
+        <span class="heat-ticker">NVDA</span>
+        <span class="heat-val green">+$18.90</span>
+      </div>
+      <div class="heat-cell heat-pos">
+        <span class="heat-ticker">NVDL</span>
+        <span class="heat-val green">+$39.80</span>
+      </div>
+      <div class="heat-cell heat-pos">
+        <span class="heat-ticker">SOXL</span>
+        <span class="heat-val green">+$22.00</span>
+      </div>
+      <div class="heat-cell heat-neu">
+        <span class="heat-ticker">TQQQ</span>
+        <span class="heat-val yellow">+$1.70</span>
+      </div>
+      <div class="heat-cell heat-neg">
+        <span class="heat-ticker">TSLL</span>
+        <span class="heat-val red">-$14.40</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Ranking de Trades del Día</h2>
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Ticker</th>
+          <th>Estrategia</th>
+          <th>P&L</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="color:#64748b">1</td><td>NVDL</td><td style="color:#60a5fa">VWAP+RSI</td><td class="pnl-positive">+$21.40</td></tr>
+        <tr><td style="color:#64748b">2</td><td>SOXL</td><td style="color:#fbbf24">ORB</td><td class="pnl-positive">+$22.00</td></tr>
+        <tr><td style="color:#64748b">3</td><td>SPY</td><td style="color:#34d399">EMA 3/8</td><td class="pnl-positive">+$18.20</td></tr>
+        <tr><td style="color:#64748b">4</td><td>QQQ</td><td style="color:#34d399">EMA 3/8</td><td class="pnl-positive">+$14.90</td></tr>
+        <tr><td style="color:#64748b">5</td><td>NVDA</td><td style="color:#34d399">EMA 3/8</td><td class="pnl-positive">+$13.20</td></tr>
+        <tr><td style="color:#64748b">↓</td><td>TSLA</td><td style="color:#34d399">EMA 3/8</td><td class="pnl-negative">-$6.80</td></tr>
+        <tr><td style="color:#64748b">↓</td><td>TSLL</td><td style="color:#a78bfa">Bollinger</td><td class="pnl-negative">-$9.40</td></tr>
+        <tr><td style="color:#64748b">↓</td><td>SPY</td><td style="color:#f87171">Gap Fade</td><td class="pnl-negative">-$7.40</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+// ── DONUT CHART ──────────────────────────────────────────
+const donutCtx = document.getElementById('donutChart').getContext('2d');
+new Chart(donutCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['EMA 3/8', 'VWAP+RSI', 'Bollinger', 'ORB', 'Gap Fade'],
+    datasets: [{
+      data: [58.20, 43.90, 31.10, 22.00, 7.40],
+      backgroundColor: ['#34d399','#60a5fa','#a78bfa','#fbbf24','#f87171'],
+      borderColor: '#1e2330',
+      borderWidth: 3,
+      hoverOffset: 6,
+    }]
+  },
+  options: {
+    cutout: '68%',
+    plugins: { legend: { display: false }, tooltip: {
+      callbacks: {
+        label: (ctx) => ` ${ctx.label}: $${ctx.parsed.toFixed(2)}`
+      }
+    }},
+    animation: { animateRotate: true, duration: 900 }
+  }
+});
+
+// ── EQUITY CURVE ─────────────────────────────────────────
+const equityCtx = document.getElementById('equityChart').getContext('2d');
+const hours = ['9:30','9:45','10:00','10:15','10:30','10:45','11:00','11:30','12:00','12:30','13:00','13:30','14:00','14:30','15:00','15:30','15:55'];
+const pnl   = [0, 12.4, 8.2, 22.1, 18.7, 35.4, 44.8, 39.2, 52.1, 68.4, 81.2, 95.6, 110.3, 118.9, 132.4, 141.7, 147.8];
+
+const gradient = equityCtx.createLinearGradient(0, 0, 0, 200);
+gradient.addColorStop(0, 'rgba(52,211,153,0.3)');
+gradient.addColorStop(1, 'rgba(52,211,153,0.01)');
+
+new Chart(equityCtx, {
+  type: 'line',
+  data: {
+    labels: hours,
+    datasets: [{
+      data: pnl,
+      borderColor: '#34d399',
+      borderWidth: 2,
+      backgroundColor: gradient,
+      fill: true,
+      tension: 0.4,
+      pointRadius: 3,
+      pointBackgroundColor: '#34d399',
+      pointHoverRadius: 5,
+    }]
+  },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: {
+      callbacks: { label: (ctx) => ` P&L: +$${ctx.parsed.y.toFixed(2)}` }
+    }},
+    scales: {
+      x: { grid: { color: '#1a1f2e' }, ticks: { color: '#64748b', font: { size: 10 }, maxRotation: 0 } },
+      y: {
+        grid: { color: '#1a1f2e' },
+        ticks: { color: '#64748b', font: { size: 10 }, callback: (v) => `$${v}` }
+      }
+    },
+    animation: { duration: 1000 }
+  }
+});
+</script>
+</body>
+</html>

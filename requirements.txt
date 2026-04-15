@@ -1,0 +1,13 @@
+# ── Existing (from your project) ──────────────────────────
+Flask==2.3.2
+loguru==0.7.0
+protobuf==5.26.1
+Requests==2.31.0
+google-cloud-secret-manager
+google-cloud-firestore
+functions-framework
+
+# ── New (required by the EMA bot) ─────────────────────────
+schwab-py
+pandas
+pytz

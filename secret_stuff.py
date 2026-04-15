@@ -1,0 +1,5 @@
+project_id = "eolo-schwab-agent"
+gcloud_project = "eolo-schwab-agent"
+collection_id = "schwab-tokens"
+document_id = "schwab-tokens-auth"
+key = "access_token"

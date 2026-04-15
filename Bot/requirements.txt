@@ -1,0 +1,9 @@
+Flask==2.3.2
+gunicorn==21.2.0
+google-cloud-firestore==2.16.0
+google-cloud-secret-manager==2.18.0
+protobuf==4.25.3
+pandas==2.2.2
+requests==2.31.0
+loguru==0.7.0
+pytz==2024.1

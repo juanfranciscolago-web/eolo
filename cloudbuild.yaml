@@ -1,0 +1,18 @@
+steps:
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    args:
+      - gcloud
+      - functions
+      - deploy
+      - refresh_tokens
+      - --entry-point=refresh_tokens
+      - --region=us-east1
+      - --source=.
+      - --trigger-http
+      - --gen2
+      - --runtime=python312
+      - --memory=256MB
+      - --timeout=90
+      - --min-instances=0
+      - --max-instances=1
+      - --ingress-settings=all
