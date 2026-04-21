@@ -13,7 +13,7 @@ from helpers import retrieve_firestore_value, store_firestore_value
 from secret_stuff import collection_id, document_id, project_id
 
 # ── Settings ──────────────────────────────────────────────
-PAPER_TRADING        = True    # ← flip to False for live orders
+PAPER_TRADING        = True    # PAPER — simulación (flip a False cuando quieras ir live)
 TRADE_BUDGET_USD     = 100     # USD por trade — se sobreescribe desde Firestore en cada ciclo
 TRADE_BUDGET_MAX_USD = 5000    # techo absoluto de seguridad
 TRADER_BASE_URL      = "https://api.schwabapi.com/trader/v1"
@@ -175,8 +175,20 @@ def _get_account_hash() -> str:
     return None
 
 
-def _log_trade(action: str, ticker: str, shares: int, price: float, strategy: str = ""):
-    """Guarda el trade en CSV local y en Firestore."""
+def _log_trade(
+    action: str,
+    ticker: str,
+    shares: int,
+    price: float,
+    strategy: str = "",
+    pnl_usd: float | None = None,
+):
+    """Guarda el trade en CSV local y en Firestore.
+
+    `pnl_usd` sólo se persiste en SELLs (en BUYs es None → no se incluye).
+    Esto permite al dashboard agregar stats por estrategia (win rate / net
+    profit 24h / 7d) sin matching BUY↔SELL del lado cliente.
+    """
     mode      = "PAPER" if PAPER_TRADING else "LIVE"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     today     = datetime.now().strftime("%Y-%m-%d")
@@ -187,30 +199,32 @@ def _log_trade(action: str, ticker: str, shares: int, price: float, strategy: st
     with open(LOG_FILE, "a", newline="") as f:
         writer = csv.writer(f)
         if not file_exists:
-            writer.writerow(["timestamp","mode","action","ticker","shares","price","total_usd","strategy"])
-        writer.writerow([timestamp, mode, action, ticker, shares, price, total_usd, strategy])
+            writer.writerow(["timestamp","mode","action","ticker","shares","price","total_usd","strategy","pnl_usd"])
+        writer.writerow([timestamp, mode, action, ticker, shares, price, total_usd, strategy, pnl_usd if pnl_usd is not None else ""])
 
     # ── 2. Firestore ──────────────────────────────────────
     try:
         from google.cloud import firestore
         db  = firestore.Client(project=project_id)
         doc = db.collection("eolo-trades").document(today)
-        doc.set({
-            f"{timestamp}_{ticker}_{action}": {
-                "timestamp": timestamp,
-                "mode":      mode,
-                "action":    action,
-                "ticker":    ticker,
-                "shares":    shares,
-                "price":     price,
-                "total_usd": total_usd,
-                "strategy":  strategy,
-            }
-        }, merge=True)
+        trade_payload = {
+            "timestamp": timestamp,
+            "mode":      mode,
+            "action":    action,
+            "ticker":    ticker,
+            "shares":    shares,
+            "price":     price,
+            "total_usd": total_usd,
+            "strategy":  strategy,
+        }
+        if pnl_usd is not None:
+            trade_payload["pnl_usd"] = float(pnl_usd)
+        doc.set({f"{timestamp}_{ticker}_{action}": trade_payload}, merge=True)
     except Exception as e:
         logger.warning(f"Firestore trade log fallo (CSV ok): {e}")
 
-    logger.info(f"[{mode}] {action} {shares}x {ticker} @ ${price} (${total_usd}) [{strategy}] ✓")
+    pnl_part = f" pnl=${pnl_usd:+.2f}" if pnl_usd is not None else ""
+    logger.info(f"[{mode}] {action} {shares}x {ticker} @ ${price} (${total_usd}){pnl_part} [{strategy}] ✓")
 
 
 def _place_live_order(action: str, ticker: str, shares: int):
@@ -284,7 +298,7 @@ def execute(result: dict):
         pnl   = round((price - entry) * shares, 2) if entry else None
         pnl_str = f"${pnl:+.2f}" if pnl is not None else "—"
 
-        _log_trade("SELL", ticker, shares, price, strategy)
+        _log_trade("SELL", ticker, shares, price, strategy, pnl_usd=pnl)
         if not PAPER_TRADING:
             _place_live_order("SELL", ticker, shares)
         positions[ticker]    = None

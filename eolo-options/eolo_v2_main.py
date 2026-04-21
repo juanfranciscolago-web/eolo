@@ -1,0 +1,2177 @@
+# ============================================================
+#  EOLO v2 — Main Loop (Orquestador)
+#
+#  Coordina todos los módulos de Eolo v2 en un único proceso:
+#
+#    1. SchwabStream     → quotes L1 + velas 1min en tiempo real
+#    2. OptionChainFetcher → cadena de opciones cada 30s
+#    3. IndicatorEngine  → calcula señales de las 13 estrategias
+#    4. IVSurface        → construye la superficie de volatilidad
+#    5. MispricingScanner → detecta anomalías de precio
+#    6. OptionsBrain     → Claude API decide qué hacer
+#    7. OptionsTrader    → ejecuta la orden en Schwab
+#
+#  Flujo de decisión (por ticker, cada ciclo):
+#    WebSocket tick → acumular candles en buffer
+#    Cada 60s O cada chain refresh:
+#      → calcular señales Eolo v1
+#      → construir IV surface
+#      → escanear mispricing
+#      → consultar Claude
+#      → si BUY/SELL → ejecutar orden
+#
+#  Auto-close: todas las posiciones se cierran a las 15:27 ET
+#
+#  Variables de entorno requeridas:
+#    ANTHROPIC_API_KEY   : API key de Anthropic
+#    GOOGLE_CLOUD_PROJECT: proyecto GCP (para Firestore tokens)
+#
+#  Uso:
+#    python eolo_v2_main.py
+# ============================================================
+import asyncio
+import json
+import os
+import sys
+import time
+from collections import defaultdict
+from datetime import datetime, timezone
+from loguru import logger
+
+# ── Ajustar path ──────────────────────────────────────────
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, BASE_DIR)
+sys.path.insert(0, os.path.join(BASE_DIR, ".."))        # raíz eolo/
+sys.path.insert(0, os.path.join(BASE_DIR, "..", "Bot")) # estrategias v1
+
+# ── Imports de módulos Eolo v2 ────────────────────────────
+from stream.options_stream import SchwabStream
+from stream.options_chain  import OptionChainFetcher
+from analysis.greeks       import enrich_contract
+from analysis.mispricing   import MispricingScanner
+from analysis.iv_surface   import IVSurface
+from claude.options_brain  import OptionsBrain
+from claude.claude_bot     import ClaudeBotEngine
+from execution.options_trader import OptionsTrader, _send_telegram
+# ── Multi-TF compartido (paquete común eolo_common) ───────
+# Vive en /eolo_common/ del repo root. Dockerfile lo copia a /app/eolo_common.
+import sys as _sys, os as _os
+_PARENT = _os.path.abspath(_os.path.join(_os.path.dirname(__file__), ".."))
+if _PARENT not in _sys.path:
+    _sys.path.insert(0, _PARENT)
+from eolo_common.multi_tf import (
+    CandleBuffer, BufferMarketData, ConfluenceFilter, load_multi_tf_config,
+)
+from eolo_common.multi_tf.normalize import from_schwab_chart_equity
+from eolo_common.trading_hours import (
+    DEFAULTS_EQUITY,
+    TradingSchedule,
+    load_schedule,
+    is_within_trading_window,
+    is_after_auto_close as _tr_is_after_auto_close,
+    now_et,
+)
+
+# ── Estrategias Eolo v1 (se importan con lazy-import para no romper
+#    si alguna dependencia falta en el entorno de opciones) ──────────
+try:
+    import bot_strategy           as _strat_ema
+    import bot_gap_strategy       as _strat_gap
+    import bot_vwap_rsi_strategy  as _strat_vwap
+    import bot_bollinger_strategy as _strat_bollinger
+    import bot_orb_strategy       as _strat_orb
+    import bot_rsi_sma200_strategy as _strat_rsi_sma200
+    import bot_supertrend_strategy as _strat_supertrend
+    import bot_hh_ll_strategy     as _strat_hh_ll
+    import bot_ha_cloud_strategy  as _strat_ha_cloud
+    import bot_squeeze_strategy   as _strat_squeeze
+    import bot_macd_bb_strategy   as _strat_macd_bb
+    import bot_ema_tsi_strategy   as _strat_ema_tsi
+    import bot_vela_pivot_strategy as _strat_vela_pivot
+    # ── Nivel 1 (trading_strategies_v2.md) ──────────────
+    import bot_rvol_breakout_strategy        as _strat_rvol
+    import bot_stop_run_strategy             as _strat_stop_run
+    import bot_vwap_zscore_strategy          as _strat_vwap_z
+    import bot_volume_reversal_bar_strategy  as _strat_vrb
+    import bot_anchor_vwap_strategy          as _strat_anchor_vwap
+    import bot_obv_strategy                  as _strat_obv
+    import bot_tsv_strategy                  as _strat_tsv
+    import bot_vw_macd_strategy              as _strat_vw_macd
+    import bot_opening_drive_strategy        as _strat_opening_drive
+    # ── Nivel 2 (requieren macro feeds) ─────────────────
+    import bot_vix_mean_reversion_strategy   as _strat_vix_mr
+    import bot_vix_correlation_strategy      as _strat_vix_corr
+    import bot_vix_squeeze_strategy          as _strat_vix_sq
+    import bot_tick_trin_fade_strategy       as _strat_tt
+    import bot_vrp_strategy                  as _strat_vrp
+    # ── "EMA 3/8 y MACD" suite (v3) — dispatcher compartido con V1 ──
+    import bot_strategies_v3_dispatcher      as _strat_v3
+    _STRATEGIES_AVAILABLE = True
+    logger.info("✅ Estrategias Eolo v1 + Nivel 1/2 + v3 importadas correctamente")
+except ImportError as e:
+    _STRATEGIES_AVAILABLE = False
+    logger.warning(f"⚠️  Estrategias v1 no disponibles: {e}")
+
+# ── Configuración ──────────────────────────────────────────
+
+# Tickers a operar (superset — el universo del que el dashboard puede
+# activar/desactivar por estrategia: puts / covered calls / wheel).
+# La selección real se lee en caliente desde Firestore
+# (eolo-options-config/settings.ticker_selection) y se cachea en
+# self._ticker_selection / self._active_tickers.
+TICKERS = ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA", "TSLA"]
+
+# ⚠️  PAPER TRADING — cambiar a False para ir live
+# En paper mode: órdenes simuladas, CSV log, sin llamadas reales a Schwab
+PAPER_TRADING = True
+
+# Intervalo mínimo entre análisis por ticker (segundos)
+# Para no spamear Claude API. Subido de 60s → 180s para bajar consumo ~3x
+# sin perder capacidad de reacción (las estrategias técnicas corren en cada
+# candle de 1min igualmente, esto solo afecta la frecuencia de decisiones Claude).
+ANALYSIS_INTERVAL = int(os.environ.get("ANALYSIS_INTERVAL", "180"))
+
+# Hora de auto-close (ET)
+AUTO_CLOSE_HOUR   = 15
+AUTO_CLOSE_MINUTE = 27
+
+# Máximo de posiciones abiertas simultáneas por ticker
+MAX_POSITIONS_PER_TICKER = 2
+
+# Buffer de velas por ticker (para indicadores Eolo v1)
+CANDLE_BUFFER_SIZE = 100
+
+# ── Helpers de serialización para Firestore ────────────────
+#
+# Firestore SOLO acepta: None, bool, int, float, str, bytes, datetime,
+# list, dict, GeoPoint, DocumentReference. Todo lo demás (numpy.int64,
+# numpy.float64, set, frozenset, Decimal, np.ndarray, etc.) revienta con
+# "bad argument type for built-in operation".
+#
+# _sanitize_for_firestore: convierte recursivamente a tipos nativos.
+# _find_unserializable_path: recorre el dict y devuelve el primer camino
+# (ej. "claude_bot.history[0].snapshot.spy") cuyo valor Firestore rechaza
+# — solo se usa cuando falla el write, para diagnóstico.
+
+_FS_PRIMITIVES = (type(None), bool, int, float, str, bytes)
+
+
+def _sanitize_for_firestore(obj):
+    """Convierte recursivamente un objeto a tipos que Firestore acepta."""
+    # Primitivos nativos OK (pero excluimos bool-as-int inadvertido)
+    if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+        # numpy bools heredan de int — filtramos
+        try:
+            import numpy as _np
+            if isinstance(obj, _np.generic):
+                return obj.item()
+        except ImportError:
+            pass
+        return obj
+
+    # datetime OK
+    from datetime import datetime as _dt, date as _date
+    if isinstance(obj, (_dt, _date)):
+        return obj
+
+    # numpy scalars → item()
+    try:
+        import numpy as _np
+        if isinstance(obj, _np.generic):
+            return obj.item()
+        if isinstance(obj, _np.ndarray):
+            return [_sanitize_for_firestore(x) for x in obj.tolist()]
+    except ImportError:
+        pass
+
+    # Decimal → float
+    try:
+        from decimal import Decimal as _Dec
+        if isinstance(obj, _Dec):
+            return float(obj)
+    except ImportError:
+        pass
+
+    # set / frozenset → list
+    if isinstance(obj, (set, frozenset)):
+        return [_sanitize_for_firestore(x) for x in obj]
+
+    # tuple → list
+    if isinstance(obj, tuple):
+        return [_sanitize_for_firestore(x) for x in obj]
+
+    # list
+    if isinstance(obj, list):
+        return [_sanitize_for_firestore(x) for x in obj]
+
+    # dict — las keys deben ser strings
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            key = k if isinstance(k, str) else str(k)
+            out[key] = _sanitize_for_firestore(v)
+        return out
+
+    # Fallback: stringify lo que no sepamos serializar
+    return str(obj)
+
+
+def _is_firestore_native(obj) -> bool:
+    """True si el valor es directamente escribible a Firestore sin conversión."""
+    if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+        # Rechazar numpy scalars aunque hereden de int/float
+        try:
+            import numpy as _np
+            if isinstance(obj, _np.generic):
+                return False
+        except ImportError:
+            pass
+        return True
+    from datetime import datetime as _dt, date as _date
+    if isinstance(obj, (_dt, _date)):
+        return True
+    return False
+
+
+def _find_unserializable_path(obj, path: str = "root", _depth: int = 0):
+    """Devuelve el primer path dentro de `obj` cuyo valor NO es serializable
+    directamente por Firestore. Útil para diagnóstico. None si todo OK."""
+    if _depth > 12:
+        return None  # evitar recursión infinita
+
+    if _is_firestore_native(obj):
+        return None
+
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            sub = _find_unserializable_path(v, f"{path}.{k}", _depth + 1)
+            if sub:
+                return sub
+        return None
+
+    if isinstance(obj, (list, tuple)):
+        for i, v in enumerate(obj):
+            sub = _find_unserializable_path(v, f"{path}[{i}]", _depth + 1)
+            if sub:
+                return sub
+        return None
+
+    # Tipo exótico — reportamos
+    return f"{path} = <{type(obj).__name__}>: {repr(obj)[:120]}"
+
+
+# ── Clase principal ────────────────────────────────────────
+
+class EoloV2:
+
+    def __init__(self):
+        # Módulos
+        self.stream        = SchwabStream(tickers=TICKERS)
+        self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
+        self.mispricing    = MispricingScanner()
+        self.brain         = OptionsBrain()
+        self.trader        = OptionsTrader(paper=PAPER_TRADING)
+
+        # Claude Bot — estrategia #14 sobre acciones del underlying.
+        # Corre en paralelo con OptionsBrain (que opera opciones).
+        # Intenta instanciarse, pero si falla la API key no rompe el bot.
+        try:
+            self.claude_bot = ClaudeBotEngine(paper_mode=True)
+            logger.info("[CLAUDE_BOT_V2] Engine inicializado ✅")
+        except Exception as e:
+            self.claude_bot = None
+            logger.warning(f"[CLAUDE_BOT_V2] Engine NO disponible: {e}")
+
+        mode = "📄 PAPER TRADING" if PAPER_TRADING else "💰 LIVE TRADING"
+        logger.info(f"[EOLO v2] Modo: {mode}")
+
+        # Estado interno
+        # Buffer 1-min compartido (eolo_common.CandleBuffer)
+        self._candle_buffer = CandleBuffer(max_len=CANDLE_BUFFER_SIZE)
+        # Quote buffer separado (antes estaba mezclado en candle_buffers con prefijo _quote_)
+        self._quote_buffers: dict[str, dict] = {}
+        # Multi-TF settings (se pueblan en _poll_settings)
+        self._active_timeframes:    list[int] = [1, 5, 15, 30, 60, 240]
+        self._confluence_mode:      bool      = False
+        self._confluence_min_agree: int       = 2
+        self._confluence_snapshot:  dict      = {}
+        # Macro feeds (VIX/VIX9D/VIX3M/TICK/TRIN) para estrategias Nivel 2.
+        # Se instancia acá y se arranca en start() como una de las tasks del gather.
+        # Mientras no haya samples, las estrategias Nivel 2 devuelven HOLD silenciosamente.
+        try:
+            from macro_poll import make_macro_feeds
+            self._macro_feeds = make_macro_feeds(poll_sec=60)
+        except Exception as e:
+            logger.warning(f"[MACRO-v2] no se pudo crear MacroFeeds: {e} — Nivel 2 quedará en HOLD")
+            self._macro_feeds = None
+        # Gate de costos Claude — no llamar a OptionsBrain/ClaudeBotEngine si
+        # no hay nada accionable (señales técnicas, mispricing, posiciones).
+        # Reduce ~80-90% el consumo Anthropic en mercados laterales.
+        self._claude_gate_enabled:  bool      = os.environ.get("CLAUDE_GATE", "1") != "0"
+        self._last_analysis:  dict[str, float] = {}
+        self._open_positions: list[dict] = []
+        self._auto_close_done_date: str | None = None
+        self._running = False
+
+        # ── Dashboard state ───────────────────────────────
+        self._quotes:          dict[str, dict] = {}
+        self._iv_surfaces:     dict[str, dict] = {}
+        self._mispricing_data: dict[str, list] = {}
+        self._signals_data:    dict[str, dict] = {}
+        self._claude_decisions:dict[str, dict] = {}
+        self._claude_history:  list[dict]      = []   # últimas 50 decisiones
+        self._state_file = os.path.join(BASE_DIR, "eolo_state.json")
+
+        # ── Token auto-refresh ────────────────────────────
+        # Refresca el access_token de Schwab cada 25 min (expira a los 30)
+        self._token_refresh_interval = 25 * 60  # segundos
+
+        # ── Control remoto desde el dashboard ─────────────
+        # El dashboard Cloud Run escribe en:
+        #   eolo-options-config/commands → órdenes puntuales (toggle, close_all)
+        #   eolo-options-config/settings → config persistente (budget, max_positions, ticker_selection)
+        # Este bot las lee en _command_watcher_loop() cada 5s.
+        self._active:               bool         = True
+        self._budget_per_trade:     float | None = None
+        self._max_positions:        int          = MAX_POSITIONS_PER_TICKER
+        # Defaults de SL/TP y daily-loss-cap — editables desde el dashboard
+        # (modal Config). El bot los consulta al abrir/gestionar posiciones.
+        self._default_stop_loss_pct:   float = 25.0   # % por debajo del precio de entrada
+        self._default_take_profit_pct: float = 50.0   # % por encima del precio de entrada
+        self._daily_loss_cap_pct:      float = -5.0   # cap diario (negativo, % sobre equity)
+        # Schedule de trading — editable desde el dashboard. Defaults equity
+        # (09:30-15:27 ET con auto-close 15:27). Se refresca en _poll_settings().
+        self._schedule: TradingSchedule = DEFAULTS_EQUITY
+        self._last_command_ts:      float        = 0.0
+        self._last_settings_ts:     float        = 0.0
+        self._command_poll_interval = 5          # segundos
+
+        # Selección de tickers por estrategia (puts/calls/wheel) — defaults
+        # iniciales; el dashboard los puede cambiar en vivo.
+        self._ticker_selection: dict[str, dict[str, bool]] = {
+            "puts":  {t: True for t in ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA"]},
+            "calls": {t: True for t in ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA"]},
+            "wheel": {t: True for t in ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA"]},
+        }
+        # Derivado: set de tickers activos (unión OR sobre los 3 grupos)
+        self._active_tickers: set[str] = set(TICKERS)
+        self._recompute_active_tickers()
+
+        # ── Claude Bot state ─────────────────────────────────
+        # Corre en su propio loop (independiente de _on_chain_update).
+        # Settings se cargan desde Firestore vía _poll_settings() bajo las
+        # claves `claude_bot_enabled`, `claude_bot_interval`, `claude_bot_paper_mode`.
+        self._claude_bot_enabled:    bool = True
+        self._claude_bot_interval:   int  = 60           # segundos entre ticks
+        self._claude_bot_last_tick:  float = 0.0
+        self._claude_bot_decision:   dict | None = None   # última decisión
+        self._claude_bot_history:    list[dict]  = []     # últimas 50
+        # Budget "virtual" para el prompt (en shares el budget es por posición)
+        self._claude_bot_budget:     float = 500.0
+        # Paper mode por default — no hay stock trader en v2 todavía.
+        # Cuando se implemente, se podrá pasar a live desde Firestore.
+        # Posiciones virtuales que el bot abrió en paper (no hay trader real).
+        self._claude_bot_positions:  list[dict] = []
+
+        # ── Strategy selection (dashboard toggles) ─────────
+        # Keys canónicos (matchean los de Bot/bot_main.py DEFAULT_STRATEGIES).
+        # El bot consulta este dict en _run() antes de llamar a cada analyzer.
+        # Defaults = todos ON. Overrides vienen de Firestore:
+        #   eolo-options-config/settings.strategies_enabled
+        self._strategies_enabled: dict[str, bool] = {
+            # Clásicas
+            "ema_crossover": True, "gap_fade": True, "rsi_sma200": True,
+            "hh_ll": True, "ema_tsi": True, "vwap_rsi": True,
+            "bollinger": True, "orb": True, "supertrend": True,
+            "ha_cloud": True, "squeeze": True, "macd_bb": True,
+            "vela_pivot": True,
+            # Nivel 1
+            "rvol_breakout": True, "stop_run": True, "vwap_zscore": True,
+            "volume_reversal_bar": True, "anchor_vwap": True,
+            "obv_mtf": True, "tsv": True, "vw_macd": True,
+            "opening_drive": True,
+            # Nivel 2 (dependen de MacroFeeds — devuelven HOLD si macro=None)
+            "vix_mean_rev": True, "vix_correlation": True,
+            "vix_squeeze": True, "tick_trin_fade": True,
+            "vrp_intraday": True,
+            # Suite "EMA 3/8 y MACD" (v3)
+            "ema_3_8": True, "ema_8_21": True, "macd_accel": True,
+            "volume_breakout": True, "buy_pressure": True,
+            "sell_pressure": True, "vwap_momentum": True,
+            "orb_v3": True, "donchian_turtle": True,
+            "bulls_bsp": True, "net_bsv": True,
+        }
+
+        # ── Circuit breaker: Anthropic billing ──────────────
+        # Si Claude devuelve N errores 400 seguidos por "credit balance is too low"
+        # (o insuficiencia de créditos), el bot se auto-pausa (self._active = False)
+        # y manda Telegram + escribe flag en Firestore para que el dashboard prenda
+        # un semáforo rojo. Se reanuda al redeploy, al toggle manual desde el
+        # dashboard, o al siguiente éxito de OptionsBrain (que resetea el contador).
+        self._anthropic_billing_errors:    int  = 0
+        self._anthropic_billing_threshold: int  = int(os.environ.get("ANTHROPIC_BILLING_THRESHOLD", "5"))
+        self._anthropic_billing_paused:    bool = False
+        self._anthropic_billing_last_err:  str  = ""
+        self._anthropic_billing_last_ts:   float = 0.0
+        self._anthropic_billing_notified:  bool = False  # anti-spam de Telegram
+
+    # ── Arranque ───────────────────────────────────────────
+
+    async def start(self):
+        """Inicia todos los módulos en paralelo."""
+        self._running = True
+        self._loop = asyncio.get_running_loop()   # ref para schedular desde threads
+        logger.info("🚀 EOLO v2 iniciando...")
+
+        # Registrar handlers de eventos
+        self.stream.add_handler(self._on_market_event)
+        self.chain_fetcher.add_handler(self._on_chain_update)
+
+        # MacroFeeds polling task — alimenta las estrategias Nivel 2.
+        # Si _macro_feeds es None (falló en __init__), omitimos la task.
+        macro_task = None
+        if self._macro_feeds is not None:
+            try:
+                from macro_poll import start_macro_loop
+                macro_task = start_macro_loop(self._macro_feeds)
+            except Exception as e:
+                logger.warning(f"[MACRO-v2] no se pudo armar start_macro_loop: {e}")
+                macro_task = None
+
+        # Iniciar tareas en paralelo
+        gather_tasks = [
+            self.stream.start(),
+            self.chain_fetcher.start(),
+            self._position_monitor_loop(),
+            self._auto_close_loop(),
+            self._token_refresh_loop(),
+            self._state_writer_loop(),
+            self._command_watcher_loop(),
+            self._claude_bot_loop(),
+        ]
+        if macro_task is not None:
+            gather_tasks.append(macro_task)
+        await asyncio.gather(*gather_tasks)
+
+    def stop(self):
+        self._running = False
+        self.stream.stop()
+        self.chain_fetcher.stop()
+        logger.info("[EOLO v2] Detenido.")
+
+    # ── Circuit breaker: Anthropic billing ─────────────────
+
+    def _is_anthropic_billing_error(self, err: Exception) -> bool:
+        """
+        Detecta si `err` es un error 400 de billing de Anthropic.
+        Firmas posibles (según SDK anthropic / http):
+          - "credit balance is too low"
+          - "insufficient_credits" / "insufficient credits"
+          - BillingError / BillingException (nombre de clase)
+          - status_code/http 400 + mensaje con "billing"/"credit"
+        """
+        msg = str(err).lower()
+        cls = type(err).__name__.lower()
+        if "credit balance is too low" in msg:
+            return True
+        if "insufficient_credits" in msg or "insufficient credits" in msg:
+            return True
+        if "billing" in cls:
+            return True
+        # Fallback: 400 + palabras clave de crédito/billing
+        if ("400" in msg or "bad request" in msg) and (
+            "credit" in msg or "billing" in msg or "quota" in msg
+        ):
+            return True
+        return False
+
+    def _check_anthropic_billing_error(self, err: Exception) -> None:
+        """
+        Inspecciona `err`. Si es de billing, incrementa contador.
+        Al alcanzar `_anthropic_billing_threshold`, dispara el breaker:
+          - self._active = False       (bloquea análisis + execs)
+          - self._anthropic_billing_paused = True
+          - notifica Telegram + Firestore (una sola vez)
+        Si el error NO es de billing, NO resetea el contador (un ValueError
+        ruidoso en medio no debe enmascarar la racha de 400s).
+        El reset viene por _on_anthropic_success() cuando vuelve a funcionar.
+        """
+        if not self._is_anthropic_billing_error(err):
+            return
+
+        self._anthropic_billing_errors  += 1
+        self._anthropic_billing_last_err = str(err)[:300]
+        self._anthropic_billing_last_ts  = time.time()
+
+        logger.warning(
+            f"[BILLING-BREAKER] Error {self._anthropic_billing_errors}/"
+            f"{self._anthropic_billing_threshold}: {self._anthropic_billing_last_err[:140]}"
+        )
+
+        if (
+            self._anthropic_billing_errors >= self._anthropic_billing_threshold
+            and not self._anthropic_billing_paused
+        ):
+            self._anthropic_billing_paused = True
+            self._active = False
+            logger.error(
+                f"[BILLING-BREAKER] 🚨 TRIPPED. Pausando v2. "
+                f"Cargá créditos en console.anthropic.com/settings/billing."
+            )
+            self._notify_billing_breaker()
+
+    def _on_anthropic_success(self) -> None:
+        """
+        Llamado cuando una request a Anthropic devuelve OK. Resetea el contador
+        de la racha de billing. Si el breaker estaba disparado y el user re-activó
+        manualmente el bot (self._active=True vía dashboard), también limpiamos
+        el flag — Claude vuelve a estar operativo.
+        """
+        if self._anthropic_billing_errors > 0:
+            logger.info(
+                f"[BILLING-BREAKER] reset: Anthropic respondió OK "
+                f"(contador estaba en {self._anthropic_billing_errors})"
+            )
+        self._anthropic_billing_errors  = 0
+        if self._anthropic_billing_paused and self._active:
+            self._anthropic_billing_paused = False
+            self._anthropic_billing_notified = False
+            self._persist_billing_status_to_firestore(paused=False)
+            logger.info("[BILLING-BREAKER] breaker clear: Anthropic OK y bot activo")
+
+    def _notify_billing_breaker(self) -> None:
+        """
+        Telegram + Firestore flag. Anti-spam: sólo manda Telegram una vez
+        hasta que el breaker se resetee.
+        """
+        if self._anthropic_billing_notified:
+            return
+        self._anthropic_billing_notified = True
+
+        msg = (
+            "🚨 <b>EOLO v2 PAUSADO — Anthropic sin créditos</b>\n\n"
+            f"Racha: {self._anthropic_billing_errors} errores 400 billing seguidos.\n"
+            f"Último error: <code>{self._anthropic_billing_last_err[:200]}</code>\n\n"
+            "👉 Cargar créditos: console.anthropic.com/settings/billing\n"
+            "Al redeployar v2 o re-activarlo desde el dashboard, el breaker se libera."
+        )
+        try:
+            _send_telegram(msg)
+        except Exception as e:
+            logger.warning(f"[BILLING-BREAKER] Telegram falló: {e}")
+
+        self._persist_billing_status_to_firestore(paused=True)
+
+    def _persist_billing_status_to_firestore(self, paused: bool) -> None:
+        """
+        Escribe el estado del breaker en Firestore para que el dashboard prenda
+        el semáforo. Path: eolo-options-state/billing
+        """
+        try:
+            from google.cloud import firestore as _fs
+            _db = _fs.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent"))
+            _db.collection("eolo-options-state").document("billing").set({
+                "anthropic_billing_paused": paused,
+                "errors_streak": self._anthropic_billing_errors,
+                "threshold":     self._anthropic_billing_threshold,
+                "last_error":    self._anthropic_billing_last_err[:300],
+                "last_ts":       self._anthropic_billing_last_ts,
+                "updated_at":    time.time(),
+                "service":       "eolo-bot-v2",
+            }, merge=True)
+        except Exception as e:
+            logger.warning(f"[BILLING-BREAKER] Firestore write falló: {e}")
+
+    # ── Handlers de eventos ────────────────────────────────
+
+    async def _on_market_event(self, ticker: str, data: dict):
+        """Recibe cada tick del WebSocket."""
+        event_type = data.get("type")
+
+        if event_type == "candle":
+            # Acumular en CandleBuffer común (shape normalizado)
+            norm = from_schwab_chart_equity(data)
+            if norm is not None:
+                self._candle_buffer.push(norm)
+
+        elif event_type == "quote":
+            # Quote L1: merge con estado previo (Schwab manda partial updates)
+            prev = self._quote_buffers.get(ticker) or {}
+            prev.update(data)
+            self._quote_buffers[ticker] = prev
+            # Dashboard state
+            self._quotes[ticker] = {
+                "bid": data.get("bid"), "ask": data.get("ask"),
+                "last": data.get("last"), "volume": data.get("volume"),
+                "open": data.get("open"), "high": data.get("high"),
+                "low": data.get("low"), "mark": data.get("mark"),
+                "ts": data.get("ts", time.time()),
+            }
+
+    async def _on_chain_update(self, ticker: str, chain: dict):
+        """
+        Se llama cada vez que llega una nueva cadena de opciones.
+        Aquí se dispara el ciclo de análisis completo.
+        """
+        now = time.time()
+        last = self._last_analysis.get(ticker, 0)
+
+        # Throttle: no analizar más de una vez por ANALYSIS_INTERVAL
+        if now - last < ANALYSIS_INTERVAL:
+            return
+
+        self._last_analysis[ticker] = now
+
+        # Bot pausado desde el dashboard → skip
+        if not self._active:
+            logger.debug(f"[EOLO v2] Bot pausado (dashboard) — skip {ticker}")
+            return
+
+        # Ticker desactivado en los 3 grupos del selector → skip
+        if ticker not in self._active_tickers:
+            logger.debug(
+                f"[EOLO v2] {ticker} desactivado en el selector del dashboard — skip"
+            )
+            return
+
+        # No operar después de 15:27 ET
+        if self._is_after_close_time():
+            logger.debug(f"[EOLO v2] Mercado cerca del cierre — sin nuevas órdenes")
+            return
+
+        await self._run_analysis_cycle(ticker, chain)
+
+    # ── Ciclo de análisis ──────────────────────────────────
+
+    async def _run_analysis_cycle(self, ticker: str, chain: dict):
+        """
+        Ciclo completo de análisis para un ticker:
+        1. Obtener señales Eolo v1
+        2. Construir IV surface
+        3. Escanear mispricing
+        4. Consultar Claude
+        5. Ejecutar decisión
+        """
+        logger.info(f"[EOLO v2] ── Ciclo de análisis: {ticker} ──")
+
+        # 1. Señales técnicas Eolo v1
+        signals = self._get_eolo_signals(ticker)
+        self._signals_data[ticker] = signals
+
+        # 2. IV Surface
+        surface = IVSurface.from_chain(chain)
+        # Guardar datos de IV para dashboard
+        self._iv_surfaces[ticker] = {
+            "atm_iv":      round(surface.atm_iv * 100, 2) if surface.atm_iv else None,
+            "skew_index":  round(surface.skew_index * 100, 2) if surface.skew_index is not None else None,
+            "term_slope":  surface.term_slope,
+            "term_structure": surface.get_term_structure(),
+            "skew":        surface.get_skew(),
+            "underlying":  surface.underlying_price,
+            "ts":          surface.ts,
+        }
+
+        # 3. Mispricing
+        alerts = self.mispricing.scan(chain)
+        self._mispricing_data[ticker] = alerts[:20]
+        if alerts:
+            logger.info(f"[EOLO v2] {ticker} — {len(alerts)} alertas de mispricing")
+
+        # 4. Quote del subyacente
+        quote = self._quote_buffers.get(ticker) or chain.get("underlying", {})
+
+        # 5. Posiciones abiertas (actualizadas)
+        ticker_positions = [
+            p for p in self._open_positions
+            if p.get("ticker") == ticker
+        ]
+
+        # No abrir más posiciones si ya tenemos el máximo
+        if len(ticker_positions) >= self._max_positions:
+            logger.info(
+                f"[EOLO v2] {ticker} — máx posiciones alcanzado "
+                f"({len(ticker_positions)}/{self._max_positions}), no abrir nuevas"
+            )
+            return
+
+        # Daily loss cap — freezea nuevas aperturas cuando el P&L del día
+        # cruza el umbral. El cap se configura desde el modal Config del
+        # dashboard (valor negativo, % sobre capital nocional desplegable).
+        if self._is_daily_loss_cap_hit():
+            logger.warning(
+                f"[EOLO v2] {ticker} — Daily loss cap alcanzado "
+                f"({self._daily_loss_cap_pct}%), no se abren nuevas posiciones"
+            )
+            return
+
+        # 5b. Gate de costos Claude — solo llamar a OptionsBrain si hay algo
+        # accionable (señal técnica BUY/SELL, alerta de mispricing, o posición
+        # abierta que pueda querer cerrarse). Sin esto, con confluence_mode=OFF
+        # y mercado lateral, cada ticker dispara 1 llamada Claude cada 60s
+        # aunque ninguna estrategia emita señal. Esto reduce ~80-90% las
+        # llamadas en sesiones tranquilas. Override: set _claude_gate_enabled=False
+        # para deshabilitar (o CLAUDE_GATE=0 en env al arrancar).
+        if getattr(self, "_claude_gate_enabled", True):
+            has_tech_signal = any(
+                (s or {}).get("signal") in ("BUY", "SELL")
+                for s in (signals or {}).values()
+            )
+            has_mispricing = bool(alerts)
+            has_position   = bool(ticker_positions)
+            if not (has_tech_signal or has_mispricing or has_position):
+                logger.debug(
+                    f"[EOLO v2] {ticker} — gate: sin señales/mispricing/posiciones, "
+                    f"skip Claude (ahorro API)"
+                )
+                return
+
+        # 6. Claude decide
+        try:
+            decision = await self.brain.analyze(
+                ticker         = ticker,
+                quote          = quote,
+                chain          = chain,
+                surface        = surface,
+                mispricing_alerts = alerts,
+                eolo_signals   = signals,
+                open_positions = ticker_positions,
+            )
+            # Éxito → resetear contador del circuit breaker de billing
+            self._on_anthropic_success()
+        except Exception as e:
+            logger.error(f"[EOLO v2] Error en OptionsBrain para {ticker}: {e}")
+            # Circuit breaker: si es un error 400 billing, incrementa contador
+            # y eventualmente pausa el bot + Telegram + Firestore flag.
+            self._check_anthropic_billing_error(e)
+            return
+
+        # 7. Guardar decisión de Claude para dashboard
+        decision_record = {
+            **decision,
+            "ts": time.time(),
+            "ts_str": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+            "ticker": ticker,
+            # Guardar inputs que usó Claude (para trazabilidad)
+            "inputs": {
+                "buy_signals":  sum(1 for s in signals.values() if s.get("signal") == "BUY"),
+                "sell_signals": sum(1 for s in signals.values() if s.get("signal") == "SELL"),
+                "total_signals": len(signals),
+                "mispricing_count": len(alerts),
+                "atm_iv": self._iv_surfaces.get(ticker, {}).get("atm_iv"),
+                "skew_index": self._iv_surfaces.get(ticker, {}).get("skew_index"),
+            },
+        }
+        self._claude_decisions[ticker] = decision_record
+        self._claude_history.insert(0, decision_record)
+        self._claude_history = self._claude_history[:50]  # últimas 50
+
+        # 7b. Persistir decisión en Firestore para auditoría + dashboard cross-bot
+        # Path: eolo-claude-decisions-v2/{YYYY-MM-DD}/decisions/{ts}
+        try:
+            from google.cloud import firestore as _fs
+            _db = _fs.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent"))
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            tsid  = f"{time.time():.3f}"
+            _db.collection("eolo-claude-decisions-v2") \
+               .document(today).collection("decisions").document(tsid) \
+               .set({**decision_record, "recorded_ts": time.time()})
+        except Exception as _e:
+            logger.warning(f"[EOLO v2] Firestore write de decisión falló: {_e}")
+
+        # 8. Ejecutar si hay señal
+        action = decision.get("action", "HOLD")
+        if action in ("BUY", "SELL_TO_CLOSE"):
+            await self._execute_decision(decision)
+        else:
+            logger.info(
+                f"[EOLO v2] {ticker} → HOLD | {decision.get('reason','')[:100]}"
+            )
+
+        # 9. Escribir estado al disco para el dashboard
+        self._write_state()
+
+    # ── Ejecución de orden ─────────────────────────────────
+
+    async def _execute_decision(self, decision: dict):
+        """Ejecuta la decisión de Claude via OptionsTrader."""
+        ticker    = decision.get("ticker", "")
+        action    = decision.get("action")
+        opt_type  = decision.get("option_type", "")
+        exp       = decision.get("expiration", "")
+        strike    = decision.get("strike", 0)
+        contracts = decision.get("contracts", 1)
+        limit     = decision.get("limit_price")
+        reason    = decision.get("reason", "")
+
+        logger.info(
+            f"[EOLO v2] EJECUTANDO: {action} {contracts}x "
+            f"{ticker} {opt_type} K={strike} exp={exp} "
+            f"limit=${limit} | {reason[:80]}"
+        )
+
+        try:
+            order_id = await self.trader.execute_decision(decision)
+            if order_id:
+                logger.info(f"[EOLO v2] Orden ejecutada ✅ order_id={order_id}")
+            else:
+                logger.warning(f"[EOLO v2] Orden no ejecutada para {ticker}")
+        except Exception as e:
+            logger.error(f"[EOLO v2] Error ejecutando orden: {e}")
+
+    # ── Señales Eolo v1 ────────────────────────────────────
+
+    def _get_eolo_signals(self, ticker: str) -> dict:
+        """
+        Corre las 13 estrategias de Eolo v1 sobre el buffer 1-min del WebSocket
+        resampleando a cada TF en `self._active_timeframes`. Si confluence_mode
+        está activo, reduce las señales multi-TF a una señal unificada por
+        estrategia (exige ≥N TFs coincidentes). Si está OFF, passthrough.
+
+        Retorna dict {strategy_name: {signal, price, tfs}} o {} si faltan datos.
+        """
+        if not _STRATEGIES_AVAILABLE:
+            return {}
+
+        if self._candle_buffer.size(ticker) < 20:
+            logger.debug(
+                f"[EOLO v2] {ticker} — insuficientes velas "
+                f"({self._candle_buffer.size(ticker)}/20) para señales v1"
+            )
+            return {}
+
+        CLASSIC = {"SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "TSLA"}
+        is_classic   = ticker in CLASSIC
+        is_leveraged = not is_classic
+
+        def _qs(sym: str):
+            return self._quote_buffers.get(sym) or None
+
+        cf = ConfluenceFilter(mode=self._confluence_mode,
+                              min_agree=self._confluence_min_agree)
+        # results_by_tf[strategy][tf] = result (dict)
+        results_by_tf: dict[str, dict[int, dict]] = {}
+
+        # Map: nombre interno que usa _run() → key canónico del toggle
+        # (el mismo que usa Bot/bot_main.py y el dashboard v1).
+        _INTERNAL_TO_CANONICAL = {
+            "EMA":               "ema_crossover",
+            "GAP":               "gap_fade",
+            "RSI_SMA200":        "rsi_sma200",
+            "HH_LL":             "hh_ll",
+            "EMA_TSI":           "ema_tsi",
+            "VWAP_RSI":          "vwap_rsi",
+            "BOLLINGER":         "bollinger",
+            "ORB":               "orb",
+            "SUPERTREND":        "supertrend",
+            "HA_CLOUD":          "ha_cloud",
+            "SQUEEZE":           "squeeze",
+            "MACD_BB":           "macd_bb",
+            "VELA_PIVOT":        "vela_pivot",
+            "RVOL_BREAKOUT":     "rvol_breakout",
+            "STOP_RUN":          "stop_run",
+            "VWAP_ZSCORE":       "vwap_zscore",
+            "VOL_REVERSAL_BAR":  "volume_reversal_bar",
+            "ANCHOR_VWAP":       "anchor_vwap",
+            "OBV_MTF":           "obv_mtf",
+            "TSV":               "tsv",
+            "VW_MACD":           "vw_macd",
+            "OPENING_DRIVE":     "opening_drive",
+            "VIX_MEAN_REV":      "vix_mean_rev",
+            "VIX_CORRELATION":   "vix_correlation",
+            "VIX_SQUEEZE":       "vix_squeeze",
+            "TICK_TRIN_FADE":    "tick_trin_fade",
+            "VRP_INTRADAY":      "vrp_intraday",
+            # Suite "EMA 3/8 y MACD" (v3)
+            "EMA_3_8":           "ema_3_8",
+            "EMA_8_21":          "ema_8_21",
+            "MACD_ACCEL":        "macd_accel",
+            "VOLUME_BREAKOUT":   "volume_breakout",
+            "BUY_PRESSURE":      "buy_pressure",
+            "SELL_PRESSURE":     "sell_pressure",
+            "VWAP_MOMENTUM":     "vwap_momentum",
+            "ORB_V3":            "orb_v3",
+            "DONCHIAN_TURTLE":   "donchian_turtle",
+            "BULLS_BSP":         "bulls_bsp",
+            "NET_BSV":           "net_bsv",
+        }
+
+        def _run(name: str, fn, md, *args, **kwargs):
+            # Gating: si el toggle del dashboard la apagó, skip.
+            canonical = _INTERNAL_TO_CANONICAL.get(name)
+            if canonical is not None and not self._strategies_enabled.get(canonical, True):
+                return
+            tf = md.frequency
+            try:
+                result = fn(md, ticker, *args, **kwargs)
+                if result and result.get("signal") not in (None, "ERROR"):
+                    cf.register(ticker, name, tf, result.get("signal"))
+                    results_by_tf.setdefault(name, {})[tf] = result
+            except Exception as e:
+                logger.debug(f"[SIGNALS] {ticker} {name}/{tf}m error: {e}")
+
+        for tf in self._active_timeframes:
+            md = BufferMarketData(self._candle_buffer, frequency=tf,
+                                  quote_source=_qs)
+
+            if is_classic:
+                _run("EMA",        _strat_ema.analyze,        md, use_sma200_filter=True)
+                _run("GAP",        _strat_gap.analyze,        md)
+                _run("RSI_SMA200", _strat_rsi_sma200.analyze, md)
+                _run("HH_LL",      _strat_hh_ll.analyze,      md)
+                _run("EMA_TSI",    _strat_ema_tsi.analyze,    md)
+
+            if is_leveraged:
+                _run("VWAP_RSI",   _strat_vwap.analyze,       md)
+                _run("BOLLINGER",  _strat_bollinger.analyze,  md)
+                entry = (self.trader.entry_prices.get(ticker)
+                         if hasattr(self.trader, "entry_prices") else None)
+                _run("ORB",        _strat_orb.analyze,        md, entry)
+                _run("SUPERTREND", _strat_supertrend.analyze, md)
+                _run("HA_CLOUD",   _strat_ha_cloud.analyze,   md)
+                _run("SQUEEZE",    _strat_squeeze.analyze,    md)
+                _run("MACD_BB",    _strat_macd_bb.analyze,    md)
+                _run("VELA_PIVOT", _strat_vela_pivot.analyze, md)
+
+            if ticker in ("SPY", "QQQ"):
+                _run("VWAP_RSI",   _strat_vwap.analyze,       md)
+                _run("SUPERTREND", _strat_supertrend.analyze, md)
+
+            # ───────────────────────────────────────────────
+            #  Nivel 1 (trading_strategies_v2.md) — universal
+            # ───────────────────────────────────────────────
+            entry = (self.trader.entry_prices.get(ticker)
+                     if hasattr(self.trader, "entry_prices") else None)
+            _run("RVOL_BREAKOUT",    _strat_rvol.analyze,          md, entry)
+            _run("STOP_RUN",         _strat_stop_run.analyze,      md, entry)
+            _run("VWAP_ZSCORE",      _strat_vwap_z.analyze,        md, entry)
+            _run("VOL_REVERSAL_BAR", _strat_vrb.analyze,           md, entry)
+            _run("ANCHOR_VWAP",      _strat_anchor_vwap.analyze,   md, entry)
+            _run("OBV_MTF",          _strat_obv.analyze,           md, entry)
+            _run("TSV",              _strat_tsv.analyze,           md, entry)
+            _run("VW_MACD",          _strat_vw_macd.analyze,       md, entry)
+
+            # Opening Drive solo sobre ETFs apalancadas
+            if is_leveraged:
+                _run("OPENING_DRIVE", _strat_opening_drive.analyze, md, entry)
+
+            # ───────────────────────────────────────────────
+            #  Nivel 2 (macro) — solo SPY/QQQ/TQQQ.
+            #  macro=self._macro_feeds (None hasta el wiring)
+            # ───────────────────────────────────────────────
+            if ticker in ("SPY", "QQQ", "TQQQ"):
+                _run("VIX_MEAN_REV",    _strat_vix_mr.analyze,   md,
+                     macro=self._macro_feeds, entry_price=entry)
+                _run("VIX_CORRELATION", _strat_vix_corr.analyze, md,
+                     macro=self._macro_feeds, entry_price=entry)
+                _run("VIX_SQUEEZE",     _strat_vix_sq.analyze,   md,
+                     macro=self._macro_feeds, entry_price=entry)
+                _run("TICK_TRIN_FADE",  _strat_tt.analyze,       md,
+                     macro=self._macro_feeds, entry_price=entry)
+                _run("VRP_INTRADAY",    _strat_vrp.analyze,      md,
+                     macro=self._macro_feeds, entry_price=entry)
+
+            # ───────────────────────────────────────────────
+            #  Suite "EMA 3/8 y MACD" (v3) — universal
+            # ───────────────────────────────────────────────
+            _run("EMA_3_8",         _strat_v3.analyze_ema_3_8,         md)
+            _run("EMA_8_21",        _strat_v3.analyze_ema_8_21,        md)
+            _run("MACD_ACCEL",      _strat_v3.analyze_macd_accel,      md)
+            _run("VOLUME_BREAKOUT", _strat_v3.analyze_volume_breakout, md)
+            _run("BUY_PRESSURE",    _strat_v3.analyze_buy_pressure,    md)
+            _run("SELL_PRESSURE",   _strat_v3.analyze_sell_pressure,   md)
+            _run("VWAP_MOMENTUM",   _strat_v3.analyze_vwap_momentum,   md)
+            # ORB_V3 es equity-only por diseño (requiere RTH equity)
+            _run("ORB_V3",          _strat_v3.analyze_orb_v3,          md)
+            _run("DONCHIAN_TURTLE", _strat_v3.analyze_donchian_turtle, md)
+            _run("BULLS_BSP",       _strat_v3.analyze_bulls_bsp,       md)
+            _run("NET_BSV",         _strat_v3.analyze_net_bsv,         md)
+
+        # Consolidar multi-TF → una señal por estrategia
+        self._confluence_snapshot = cf.snapshot()
+        consolidated = cf.consolidate()
+        signals: dict = {}
+        for (t, sname), final_sig in consolidated.items():
+            if t != ticker:
+                continue
+            # Elegir el result del TF más bajo que coincida con la señal final
+            tf_results = results_by_tf.get(sname, {})
+            rep = None
+            for tf in sorted(tf_results.keys()):
+                r = tf_results[tf]
+                if final_sig == "HOLD" or r.get("signal") == final_sig:
+                    rep = r
+                    break
+            if rep is None:
+                continue
+            signals[sname] = {
+                "signal": final_sig,
+                "price":  rep.get("price"),
+                "tfs":    sorted(tf_results.keys()),
+            }
+
+        buy_count  = sum(1 for s in signals.values() if s["signal"] == "BUY")
+        sell_count = sum(1 for s in signals.values() if s["signal"] == "SELL")
+        logger.info(
+            f"[SIGNALS] {ticker} — {len(signals)} estrategias (multi-TF={self._active_timeframes}) | "
+            f"BUY={buy_count} SELL={sell_count} HOLD={len(signals)-buy_count-sell_count} "
+            f"| confluence={self._confluence_mode}/{self._confluence_min_agree}"
+        )
+
+        return signals
+
+    # ── Claude Bot (estrategia #14 sobre acciones) ─────────
+
+    async def _claude_bot_loop(self):
+        """
+        Loop del Claude Bot para acciones del underlying.
+        Corre cada `_claude_bot_interval` segundos (por default 60s).
+        En paper mode: solo registra decisiones en Firestore, no ejecuta.
+        """
+        # Espera inicial: darle tiempo al stream a llenar buffers
+        await asyncio.sleep(45)
+        logger.info(
+            f"[CLAUDE_BOT_V2] Loop iniciado — interval={self._claude_bot_interval}s "
+            f"enabled={self._claude_bot_enabled}"
+        )
+
+        while self._running:
+            try:
+                if (
+                    self._active
+                    and self._claude_bot_enabled
+                    and self.claude_bot is not None
+                    and not self._is_after_close_time()
+                ):
+                    await self._claude_bot_tick()
+            except Exception as e:
+                import traceback
+                logger.error(
+                    f"[CLAUDE_BOT_V2] Error en tick: {e}\n{traceback.format_exc()}"
+                )
+                # Circuit breaker: si Claude-bot #14 también tira 400 billing,
+                # cuenta hacia el mismo umbral compartido con OptionsBrain.
+                self._check_anthropic_billing_error(e)
+
+            await asyncio.sleep(max(10, int(self._claude_bot_interval)))
+
+    async def _claude_bot_tick(self):
+        """Construye snapshot, llama a Claude y persiste la decisión."""
+        snapshot = self._build_claude_bot_snapshot()
+
+        prices = snapshot.get("prices") or {}
+        if not any(prices.values()):
+            logger.warning(
+                "[CLAUDE_BOT_V2] No hay datos de precios para ningún ticker — "
+                "skip este tick"
+            )
+            return
+
+        # Gate de costos: sin señales técnicas BUY/SELL y sin posiciones
+        # abiertas, no hay nada útil que decidir → saltar la llamada Claude.
+        # Con ANALYSIS_INTERVAL=180s y gate activo, en sesiones laterales
+        # consumimos prácticamente 0 tokens. Override: CLAUDE_GATE=0 en env.
+        if getattr(self, "_claude_gate_enabled", True):
+            recent = snapshot.get("recent_signals") or []
+            has_sig = any(
+                (s or {}).get("signal") in ("BUY", "SELL") for s in recent
+            )
+            has_pos = bool(snapshot.get("open_positions"))
+            if not (has_sig or has_pos):
+                logger.debug(
+                    "[CLAUDE_BOT_V2] Gate: sin signals BUY/SELL recientes "
+                    "ni posiciones abiertas — skip tick (ahorro API)"
+                )
+                return
+
+        # [CLAUDE_BOT_SNAP] — visibilidad sobre qué recibe Claude
+        sample = next(iter(self._quotes.values()), None) if self._quotes else None
+        candles_summary = snapshot.get("candles_summary", {})
+        sample_candle = None
+        for t in snapshot.get("tickers", []):
+            buf = self._candle_buffer.raw_candles(t)
+            if buf:
+                sample_candle = buf[-1]
+                break
+        logger.info(
+            f"[CLAUDE_BOT_SNAP] prices={prices} | "
+            f"sample_quote={sample} | "
+            f"candles_summary={candles_summary} | "
+            f"raw_last_candle={sample_candle}"
+        )
+
+        decision = await self.claude_bot.decide(snapshot)
+        # Éxito Anthropic → resetear contador del billing breaker
+        self._on_anthropic_success()
+        self._claude_bot_last_tick = time.time()
+        self._claude_bot_decision  = decision
+
+        decision_record = {
+            **decision,
+            "ts":     time.time(),
+            "ts_str": datetime.now(timezone.utc).strftime("%H:%M:%S"),
+        }
+        self._claude_bot_history.insert(0, decision_record)
+        self._claude_bot_history = self._claude_bot_history[:50]
+
+        logger.info(
+            f"[CLAUDE_BOT_V2] Decisión: {decision.get('ticker')} "
+            f"→ {decision.get('signal')} @ ${decision.get('price')} "
+            f"| conf={decision.get('confidence')} "
+            f"| strat={decision.get('strategy_used')} "
+            f"| reasoning={decision.get('reasoning','')[:500]}"
+        )
+
+        # Persistir en Firestore (namespace separado de OptionsBrain)
+        # Path: eolo-claude-bot-decisions-v2/{YYYY-MM-DD}/decisions/{ts}
+        try:
+            from google.cloud import firestore as _fs
+            _db = _fs.Client(
+                project=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
+            )
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            tsid  = f"{time.time():.3f}"
+            _db.collection("eolo-claude-bot-decisions-v2") \
+               .document(today).collection("decisions").document(tsid) \
+               .set({**decision_record, "recorded_ts": time.time()})
+        except Exception as _e:
+            logger.warning(f"[CLAUDE_BOT_V2] Firestore write falló: {_e}")
+
+        # Ejecución en paper: registrar posición virtual pero sin broker real.
+        # Hay un TODO de integrar stock trader en v2 — hasta entonces,
+        # mantenemos tracking de paper positions en memoria.
+        if decision.get("signal") in ("BUY", "SELL") and not self.claude_bot.paper_mode:
+            logger.warning(
+                "[CLAUDE_BOT_V2] ⚠️  Modo LIVE solicitado pero no hay stock trader "
+                "en v2 — la decisión se loggea pero NO se ejecuta"
+            )
+        elif decision.get("signal") == "BUY":
+            self._claude_bot_positions.append({
+                "ticker":    decision.get("ticker"),
+                "entry":     decision.get("price"),
+                "entry_ts":  time.time(),
+                "strategy":  decision.get("strategy_used"),
+                "reasoning": decision.get("reasoning"),
+                "stop_loss_pct":   decision.get("stop_loss_pct"),
+                "take_profit_pct": decision.get("take_profit_pct"),
+                "paper":     True,
+            })
+        elif decision.get("signal") == "SELL":
+            tkr = decision.get("ticker")
+            self._claude_bot_positions = [
+                p for p in self._claude_bot_positions if p.get("ticker") != tkr
+            ]
+
+    def _build_claude_bot_snapshot(self) -> dict:
+        """
+        Arma el dict de entrada para ClaudeBotEngine.decide() usando
+        los buffers del stream (velas 1m + quotes L1).
+        """
+        from zoneinfo import ZoneInfo
+        et_now = datetime.now(ZoneInfo("America/New_York"))
+
+        tickers = sorted(self._active_tickers) or TICKERS
+
+        # prices: mark > last > mid(bid,ask) por ticker
+        prices: dict[str, float | None] = {}
+        candles_summary: dict[str, dict] = {}
+
+        for t in tickers:
+            q = self._quotes.get(t) or {}
+            p = q.get("mark") or q.get("last")
+            if not p:
+                bid, ask = q.get("bid"), q.get("ask")
+                if bid and ask:
+                    p = (bid + ask) / 2
+            prices[t] = p
+
+            # Resumen de la última vela + trend aproximada de 1m/5m/15m
+            buf = self._candle_buffer.raw_candles(t)
+            if buf:
+                last = buf[-1]
+                o = last.get("open"); h = last.get("high")
+                l = last.get("low");  cl = last.get("close")
+                vol = last.get("volume")
+                change_pct = None
+                if o and cl:
+                    try:
+                        change_pct = round((float(cl) - float(o)) / float(o) * 100, 3)
+                    except (TypeError, ValueError, ZeroDivisionError):
+                        change_pct = None
+
+                # Trends: dirección del close sobre N velas pasadas
+                def _trend(n: int) -> str:
+                    if len(buf) < n + 1:
+                        return "n/a"
+                    try:
+                        past  = float(buf[-n-1].get("close") or 0)
+                        now_c = float(buf[-1].get("close") or 0)
+                        if not past:
+                            return "n/a"
+                        d = (now_c - past) / past * 100
+                        if d > 0.15:
+                            return "up"
+                        if d < -0.15:
+                            return "down"
+                        return "flat"
+                    except (TypeError, ValueError):
+                        return "n/a"
+
+                candles_summary[t] = {
+                    "open":  o, "high": h, "low": l, "close": cl,
+                    "volume": vol,
+                    "change_pct_open": change_pct,
+                    "trend_1m":  _trend(1),
+                    "trend_5m":  _trend(5),
+                    "trend_15m": _trend(15),
+                }
+
+        # recent_signals: usamos las señales técnicas que ya calculan las
+        # estrategias v1 y que guardamos en _signals_data.
+        recent_signals: list[dict] = []
+        for tkr, strat_map in (self._signals_data or {}).items():
+            for strat_name, sig in (strat_map or {}).items():
+                if sig.get("signal") in ("BUY", "SELL"):
+                    recent_signals.append({
+                        "ts":       et_now.strftime("%H:%M:%S"),
+                        "strategy": strat_name,
+                        "ticker":   tkr,
+                        "signal":   sig.get("signal"),
+                        "price":    sig.get("price"),
+                    })
+
+        # open_positions: paper positions del propio Claude Bot
+        open_positions = []
+        for p in self._claude_bot_positions:
+            tkr = p.get("ticker")
+            cur = prices.get(tkr)
+            entry = p.get("entry")
+            pnl_pct = None
+            if cur and entry:
+                try:
+                    pnl_pct = (float(cur) - float(entry)) / float(entry) * 100
+                except (TypeError, ValueError, ZeroDivisionError):
+                    pnl_pct = None
+            open_positions.append({
+                "ticker":  tkr,
+                "entry":   entry,
+                "current": cur,
+                "unrealized_pnl_pct": pnl_pct,
+            })
+
+        # stats del día — usamos lo que tenemos a mano
+        stats_today = {
+            "trades_today":  len(self._claude_bot_history),
+            "signals_today": sum(
+                1 for d in self._claude_bot_history
+                if d.get("signal") in ("BUY", "SELL")
+            ),
+            "total_pnl":     0,   # sin broker real todavía en paper v2
+            "win_rate":      "n/a",
+        }
+
+        return {
+            "tickers":         list(tickers),
+            "prices":          prices,
+            "candles_summary": candles_summary,
+            "recent_signals":  recent_signals,
+            "open_positions":  open_positions,
+            "budget":          self._claude_bot_budget,
+            "market_time_et":  et_now.strftime("%Y-%m-%d %H:%M ET"),
+            "stats_today":     stats_today,
+        }
+
+    # ── Monitor de posiciones ──────────────────────────────
+
+    async def _position_monitor_loop(self):
+        """
+        Actualiza la lista de posiciones abiertas cada 60 segundos.
+        También ejecuta stop-loss / take-profit automáticos.
+        """
+        while self._running:
+            try:
+                self._open_positions = await self.trader.get_positions()
+                logger.debug(
+                    f"[EOLO v2] Posiciones abiertas: {len(self._open_positions)}"
+                )
+
+                # Verificar stop-loss y take-profit
+                await self._check_exit_conditions()
+
+            except Exception as e:
+                logger.error(f"[EOLO v2] Error en monitor de posiciones: {e}")
+
+            await asyncio.sleep(60)
+
+    def _is_daily_loss_cap_hit(self) -> bool:
+        """
+        Retorna True cuando el P&L realizado + no-realizado del día
+        (sobre capital nocional = budget_per_trade × max_positions)
+        es <= self._daily_loss_cap_pct. Fail-soft: ante error, False.
+
+        El cap se setea desde el modal Config (negativo, p.ej. -5 → frena
+        cuando perdés 5% del capital nocional del día).
+        """
+        try:
+            cap = float(self._daily_loss_cap_pct)
+            if cap >= 0:
+                # No configurado o valor inválido → sin cap
+                return False
+
+            budget = float(self._budget_per_trade or 0) or 200.0
+            nominal_equity = budget * max(1, int(self._max_positions))
+            if nominal_equity <= 0:
+                return False
+
+            # Realized: desde paper_trades del día
+            trades = self._read_paper_trades()
+            realized = self._calc_pnl(trades).get("total_pnl", 0.0)
+
+            # Unrealized: posiciones abiertas con current/entry
+            unrealized = 0.0
+            for pos in self._open_positions:
+                entry   = float(pos.get("entry_price", 0) or 0)
+                current = float(pos.get("current_price", 0) or 0)
+                qty     = int(pos.get("contracts", pos.get("qty", 1)) or 1)
+                if entry > 0 and current > 0:
+                    unrealized += (current - entry) * qty * 100
+
+            pnl_total = realized + unrealized
+            pnl_pct   = pnl_total / nominal_equity * 100.0
+            return pnl_pct <= cap
+        except Exception as e:
+            logger.debug(f"[EOLO v2] _is_daily_loss_cap_hit error: {e}")
+            return False
+
+    async def _check_exit_conditions(self):
+        """
+        Para cada posición, verifica si alcanzó el stop-loss o take-profit
+        y la cierra automáticamente.
+
+        Umbrales:
+        - Si la posición trae `stop_loss_pct` / `take_profit_pct` propios
+          (p.ej. los que metió Claude o una estrategia), se respetan.
+        - Si no, se usan los defaults globales editables desde el dashboard
+          (modal Config → Firestore → self._default_stop_loss_pct / _take_profit_pct).
+        """
+        sl_default = float(self._default_stop_loss_pct   or 25.0)
+        tp_default = float(self._default_take_profit_pct or 50.0)
+
+        for pos in self._open_positions:
+            entry   = pos.get("entry_price", 0)
+            current = pos.get("current_price", 0)
+
+            if not entry or not current:
+                continue
+
+            pnl_pct = (current - entry) / entry * 100
+
+            sl_pct = float(pos.get("stop_loss_pct")   or sl_default)
+            tp_pct = float(pos.get("take_profit_pct") or tp_default)
+            # SL es umbral negativo; TP es positivo. Aseguramos signos.
+            sl_threshold = -abs(sl_pct)
+            tp_threshold =  abs(tp_pct)
+
+            if pnl_pct <= sl_threshold:
+                logger.warning(
+                    f"[EOLO v2] STOP LOSS {pos['symbol']}: "
+                    f"P&L={pnl_pct:.1f}% ≤ {sl_threshold:.1f}% — cerrando posición"
+                )
+                await self._close_position(pos)
+
+            elif pnl_pct >= tp_threshold:
+                logger.info(
+                    f"[EOLO v2] TAKE PROFIT {pos['symbol']}: "
+                    f"P&L={pnl_pct:.1f}% ≥ {tp_threshold:.1f}% — cerrando posición 🎯"
+                )
+                await self._close_position(pos)
+
+    async def _close_position(self, pos: dict):
+        """Cierra una posición específica."""
+        opt_type = pos.get("option_type", "call")
+        if opt_type == "call":
+            await self.trader.close_long_call(
+                pos["ticker"], pos["expiration"],
+                pos["strike"], pos["contracts"]
+            )
+        else:
+            await self.trader.close_long_put(
+                pos["ticker"], pos["expiration"],
+                pos["strike"], pos["contracts"]
+            )
+
+    # ── Auto-close 15:27 ET ────────────────────────────────
+
+    async def _auto_close_loop(self):
+        """
+        Cierra todas las posiciones a las 15:27 ET todos los días.
+        Mismo comportamiento que Eolo v1.
+        """
+        while self._running:
+            if self._should_auto_close():
+                today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+                if self._auto_close_done_date != today:
+                    logger.info("[EOLO v2] 🕒 AUTO-CLOSE 15:27 ET — cerrando todas las posiciones")
+                    try:
+                        closed = await self.trader.close_all_positions()
+                        logger.info(
+                            f"[EOLO v2] Auto-close completado: {len(closed)} órdenes de cierre"
+                        )
+                    except Exception as e:
+                        logger.error(f"[EOLO v2] Error en auto-close: {e}")
+                    self._auto_close_done_date = today
+
+            await asyncio.sleep(30)
+
+    def _should_auto_close(self) -> bool:
+        """
+        True si ya pasó el `auto_close_et` configurado y todavía estamos
+        dentro del día de mercado (antes de 16:00 ET). Usa self._schedule,
+        que se refresca cada ciclo desde Firestore vía _poll_settings().
+        """
+        now = now_et()
+        sch = self._schedule or DEFAULTS_EQUITY
+        if not sch.enabled:
+            return False
+        if not _tr_is_after_auto_close(now, sch):
+            return False
+        # Ceiling 16:00 ET — no cerramos fuera del día
+        return now.hour < 16
+
+    def _is_after_close_time(self) -> bool:
+        """
+        True si ya NO se permiten nuevas órdenes — equivale a "fuera del
+        rango de trading" (antes del start o desde end en adelante).
+        """
+        sch = self._schedule or DEFAULTS_EQUITY
+        return not is_within_trading_window(now_et(), sch)
+
+    def _is_within_trading_window(self) -> bool:
+        """True si estamos dentro del rango [start, end) configurado."""
+        sch = self._schedule or DEFAULTS_EQUITY
+        return is_within_trading_window(now_et(), sch)
+
+    # ── State writer loop ──────────────────────────────────
+
+    async def _state_writer_loop(self):
+        """Escribe el estado al disco y Firestore cada 30s, siempre."""
+        await asyncio.sleep(10)  # espera inicial
+        while self._running:
+            self._write_state()
+            await asyncio.sleep(30)
+
+    # ── Token auto-refresh ─────────────────────────────────
+
+    async def _token_refresh_loop(self):
+        """
+        Refresca el Schwab access_token cada 25 minutos.
+        El token expira a los 30 min — esto lo renueva antes de que expire.
+        Usa la misma lógica que refresh_token_local.py.
+        """
+        # Espera inicial: deja que el bot arranque antes de refrescar
+        await asyncio.sleep(60)
+
+        while self._running:
+            try:
+                loop = asyncio.get_event_loop()
+                ok = await loop.run_in_executor(None, self._do_token_refresh)
+                if ok:
+                    logger.info("[TOKEN] ✅ Access token refrescado automáticamente")
+                else:
+                    logger.warning("[TOKEN] ⚠️  Refresh falló — el token puede expirar pronto")
+            except Exception as e:
+                logger.error(f"[TOKEN] Error en auto-refresh: {e}")
+
+            await asyncio.sleep(self._token_refresh_interval)
+
+    def _do_token_refresh(self) -> bool:
+        """Refresca el token de Schwab usando el refresh_token de Firestore."""
+        import base64
+        import requests as _req
+        try:
+            sys.path.insert(0, os.path.join(BASE_DIR, ".."))
+            from helpers import (
+                retrieve_google_secret_dict,
+                retrieve_firestore_value,
+                store_firestore_value,
+            )
+
+            creds = retrieve_google_secret_dict(
+                gcp_id="eolo-schwab-agent", secret_id="cs-app-key"
+            )
+            app_key    = creds["app-key"]
+            app_secret = creds["app-secret"]
+
+            refresh_token = retrieve_firestore_value(
+                collection_id="schwab-tokens",
+                document_id="schwab-tokens-auth",
+                key="refresh_token",
+            )
+            if not refresh_token:
+                logger.error("[TOKEN] refresh_token no encontrado en Firestore")
+                return False
+
+            b64 = base64.b64encode(f"{app_key}:{app_secret}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {b64}",
+                "Content-Type":  "application/x-www-form-urlencoded",
+            }
+            payload = {"grant_type": "refresh_token", "refresh_token": refresh_token}
+
+            resp = _req.post(
+                "https://api.schwabapi.com/v1/oauth/token",
+                headers=headers, data=payload, timeout=15
+            )
+            resp.raise_for_status()
+            tokens = resp.json()
+
+            if "access_token" not in tokens:
+                logger.error(f"[TOKEN] Respuesta inesperada: {tokens}")
+                return False
+
+            # Preservar campos existentes y actualizar
+            existing = {}
+            for key in ["access_token", "refresh_token", "expires_in",
+                        "token_type", "scope", "id_token"]:
+                val = retrieve_firestore_value("schwab-tokens", "schwab-tokens-auth", key)
+                if val is not None:
+                    existing[key] = val
+            existing.update({k: v for k, v in tokens.items() if v is not None})
+
+            store_firestore_value(
+                project_id="eolo-schwab-agent",
+                collection_id="schwab-tokens",
+                document_id="schwab-tokens-auth",
+                value=existing,
+            )
+            return True
+
+        except Exception as e:
+            logger.error(f"[TOKEN] Error en refresh: {e}")
+            return False
+
+    # ── Command watcher (control remoto desde el dashboard) ─
+
+    async def _command_watcher_loop(self):
+        """
+        Lee periódicamente los docs de Firestore que el dashboard usa para
+        controlar el bot:
+          • eolo-options-config/commands  → órdenes puntuales (set_active, close_all)
+          • eolo-options-config/settings  → config persistente (budget, max_positions)
+
+        Los cambios se aplican en caliente (no hace falta reiniciar el bot).
+        """
+        # Espera inicial para que Firestore esté listo
+        await asyncio.sleep(5)
+
+        # Cargar settings iniciales
+        await self._load_settings()
+
+        logger.info("[COMMANDS] Watcher activo — escuchando comandos del dashboard")
+
+        while self._running:
+            try:
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, self._poll_commands)
+                await loop.run_in_executor(None, self._poll_settings)
+            except Exception as e:
+                logger.debug(f"[COMMANDS] Error en poll: {e}")
+
+            await asyncio.sleep(self._command_poll_interval)
+
+    async def _load_settings(self):
+        """Carga la config persistente al arrancar el bot."""
+        try:
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, self._poll_settings)
+        except Exception as e:
+            logger.debug(f"[COMMANDS] Error cargando settings iniciales: {e}")
+
+    def _poll_commands(self):
+        """Lee el doc de comandos y ejecuta si hay uno pendiente."""
+        try:
+            from google.cloud import firestore as _fs
+            db  = _fs.Client()
+            doc = db.collection("eolo-options-config").document("commands").get()
+            if not doc.exists:
+                return
+            cmd = doc.to_dict() or {}
+
+            issued_ts = float(cmd.get("issued_ts") or 0)
+            consumed  = bool(cmd.get("consumed", False))
+
+            # Skip si ya fue consumido o es más viejo que el último visto
+            if consumed or issued_ts <= self._last_command_ts:
+                return
+
+            cmd_type = cmd.get("type")
+            logger.info(f"[COMMANDS] 📩 Comando recibido: {cmd_type} (issued {cmd.get('issued_at')})")
+
+            if cmd_type == "set_active":
+                new_state = bool(cmd.get("active", True))
+                old_state = self._active
+                self._active = new_state
+                logger.warning(
+                    f"[COMMANDS] Bot {'REANUDADO' if new_state else 'PAUSADO'} "
+                    f"(era {'activo' if old_state else 'pausado'})"
+                )
+                # Si el user reactiva, le damos al breaker una pista limpia:
+                # reseteamos el contador de billing errors, el flag paused y el
+                # anti-spam de Telegram. Asumimos que el user cargó créditos — si
+                # aún siguen fallando, el breaker volverá a tripar desde 0 y
+                # Telegram volverá a mandar (no silencio).
+                if new_state and (
+                    self._anthropic_billing_paused
+                    or self._anthropic_billing_errors > 0
+                ):
+                    logger.warning(
+                        "[BILLING-BREAKER] manual reset: user reactivó bot. "
+                        f"(errors era {self._anthropic_billing_errors}, "
+                        f"paused era {self._anthropic_billing_paused})"
+                    )
+                    self._anthropic_billing_errors   = 0
+                    self._anthropic_billing_paused   = False
+                    self._anthropic_billing_notified = False
+                    self._persist_billing_status_to_firestore(paused=False)
+
+            elif cmd_type == "close_all":
+                reason = cmd.get("reason", "dashboard")
+                logger.warning(f"[COMMANDS] 🚨 CLOSE ALL recibido — razón: {reason}")
+                # Programar el cierre asíncrono usando el loop guardado en start()
+                loop = getattr(self, "_loop", None)
+                if loop is not None:
+                    asyncio.run_coroutine_threadsafe(
+                        self._execute_close_all(reason), loop
+                    )
+                else:
+                    logger.error("[COMMANDS] Loop no disponible para close_all")
+
+            else:
+                logger.warning(f"[COMMANDS] Tipo desconocido: {cmd_type}")
+
+            # Marcar consumido y actualizar timestamp
+            self._last_command_ts = issued_ts
+            db.collection("eolo-options-config").document("commands").update({
+                "consumed":     True,
+                "consumed_ts":  time.time(),
+                "consumed_at":  time.strftime("%Y-%m-%d %H:%M:%S"),
+            })
+
+        except Exception as e:
+            logger.debug(f"[COMMANDS] poll_commands error: {e}")
+
+    def _poll_settings(self):
+        """Lee la config persistente (budget, max_positions) y la aplica."""
+        try:
+            from google.cloud import firestore as _fs
+            db  = _fs.Client()
+            doc = db.collection("eolo-options-config").document("settings").get()
+            if not doc.exists:
+                return
+            cfg = doc.to_dict() or {}
+
+            updated_ts = float(cfg.get("updated_ts") or 0)
+            if updated_ts <= self._last_settings_ts:
+                return
+            self._last_settings_ts = updated_ts
+
+            changed = []
+
+            if "budget_per_trade" in cfg:
+                try:
+                    new_val = float(cfg["budget_per_trade"])
+                    if new_val != self._budget_per_trade:
+                        old = self._budget_per_trade
+                        self._budget_per_trade = new_val
+                        # Propagar al brain y al trader si tienen el setter
+                        for obj in (self.brain, self.trader):
+                            if hasattr(obj, "set_budget"):
+                                try:
+                                    obj.set_budget(new_val)
+                                except Exception:
+                                    pass
+                            elif hasattr(obj, "budget_per_trade"):
+                                try:
+                                    obj.budget_per_trade = new_val
+                                except Exception:
+                                    pass
+                        changed.append(f"budget={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "max_positions" in cfg:
+                try:
+                    new_val = int(cfg["max_positions"])
+                    if new_val != self._max_positions:
+                        old = self._max_positions
+                        self._max_positions = new_val
+                        changed.append(f"max_positions={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            # ── Risk defaults (SL / TP / Daily Loss Cap) ──
+            if "default_stop_loss_pct" in cfg:
+                try:
+                    new_val = float(cfg["default_stop_loss_pct"])
+                    if new_val != self._default_stop_loss_pct:
+                        old = self._default_stop_loss_pct
+                        self._default_stop_loss_pct = new_val
+                        changed.append(f"default_sl_pct={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "default_take_profit_pct" in cfg:
+                try:
+                    new_val = float(cfg["default_take_profit_pct"])
+                    if new_val != self._default_take_profit_pct:
+                        old = self._default_take_profit_pct
+                        self._default_take_profit_pct = new_val
+                        changed.append(f"default_tp_pct={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "daily_loss_cap_pct" in cfg:
+                try:
+                    new_val = float(cfg["daily_loss_cap_pct"])
+                    if new_val != self._daily_loss_cap_pct:
+                        old = self._daily_loss_cap_pct
+                        self._daily_loss_cap_pct = new_val
+                        changed.append(f"daily_loss_cap_pct={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            # ── Trading schedule (start/end/auto-close) ───
+            # Keys: trading_start_et, trading_end_et, auto_close_et,
+            # trading_hours_enabled. Defaults equity (09:30/15:27/15:27).
+            new_schedule = load_schedule(cfg, defaults=DEFAULTS_EQUITY)
+            if new_schedule != self._schedule:
+                old = self._schedule
+                self._schedule = new_schedule
+                changed.append(
+                    f"schedule={old.start.strftime('%H:%M')}-{old.end.strftime('%H:%M')}"
+                    f"→{new_schedule.start.strftime('%H:%M')}-{new_schedule.end.strftime('%H:%M')}"
+                    f" ac={new_schedule.auto_close.strftime('%H:%M')}"
+                    f" enabled={new_schedule.enabled}"
+                )
+
+            # ── Multi-TF + confluencia (eolo_common) ────
+            mtf = load_multi_tf_config(cfg)
+            if mtf.active_timeframes != self._active_timeframes:
+                old = self._active_timeframes
+                self._active_timeframes = mtf.active_timeframes
+                changed.append(f"active_timeframes={old}→{mtf.active_timeframes}")
+            if mtf.confluence_mode != self._confluence_mode:
+                old = self._confluence_mode
+                self._confluence_mode = mtf.confluence_mode
+                changed.append(f"confluence_mode={old}→{mtf.confluence_mode}")
+            if mtf.confluence_min_agree != self._confluence_min_agree:
+                old = self._confluence_min_agree
+                self._confluence_min_agree = mtf.confluence_min_agree
+                changed.append(f"confluence_min_agree={old}→{mtf.confluence_min_agree}")
+
+            # ── Claude Bot settings ─────────────────────
+            if "claude_bot_enabled" in cfg:
+                try:
+                    new_val = bool(cfg["claude_bot_enabled"])
+                    if new_val != self._claude_bot_enabled:
+                        old = self._claude_bot_enabled
+                        self._claude_bot_enabled = new_val
+                        changed.append(f"claude_bot_enabled={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "claude_bot_interval" in cfg:
+                try:
+                    new_val = int(cfg["claude_bot_interval"])
+                    if new_val >= 10 and new_val != self._claude_bot_interval:
+                        old = self._claude_bot_interval
+                        self._claude_bot_interval = new_val
+                        changed.append(f"claude_bot_interval={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "claude_bot_budget" in cfg:
+                try:
+                    new_val = float(cfg["claude_bot_budget"])
+                    if new_val != self._claude_bot_budget:
+                        old = self._claude_bot_budget
+                        self._claude_bot_budget = new_val
+                        changed.append(f"claude_bot_budget={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "claude_bot_paper_mode" in cfg and self.claude_bot is not None:
+                try:
+                    new_val = bool(cfg["claude_bot_paper_mode"])
+                    if new_val != self.claude_bot.paper_mode:
+                        old = self.claude_bot.paper_mode
+                        self.claude_bot.paper_mode = new_val
+                        changed.append(f"claude_bot_paper_mode={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            # ── Strategy selection (toggles del dashboard) ──
+            # Dashboard escribe cfg["strategies_enabled"] = {canonical_key: bool}.
+            # Merge con los defaults para no perder keys; overrides explícitos
+            # ganan. Fail-soft: tipos inválidos se ignoran.
+            if "strategies_enabled" in cfg and isinstance(cfg["strategies_enabled"], dict):
+                remote_strats = cfg["strategies_enabled"]
+                strat_changes = []
+                for k, v in remote_strats.items():
+                    k = str(k)
+                    if k in self._strategies_enabled:
+                        new_val = bool(v)
+                        if self._strategies_enabled[k] != new_val:
+                            strat_changes.append(f"{k}={new_val}")
+                            self._strategies_enabled[k] = new_val
+                if strat_changes:
+                    changed.append(f"strategies=[{', '.join(strat_changes)}]")
+
+            if "ticker_selection" in cfg and isinstance(cfg["ticker_selection"], dict):
+                remote = cfg["ticker_selection"]
+                for group in ("puts", "calls", "wheel"):
+                    src = remote.get(group)
+                    if isinstance(src, dict):
+                        # Merge: respeta defaults + aplica lo que vino
+                        self._ticker_selection.setdefault(group, {})
+                        for sym, val in src.items():
+                            self._ticker_selection[group][str(sym).upper()] = bool(val)
+                prev_active = self._active_tickers.copy()
+                self._recompute_active_tickers()
+                if prev_active != self._active_tickers:
+                    changed.append(
+                        f"tickers_activos={sorted(self._active_tickers)}"
+                    )
+
+            if changed:
+                logger.info(f"[COMMANDS] ⚙️  Config actualizada: {', '.join(changed)}")
+
+            # Propagar defaults SL/TP al OptionsBrain para que los use como
+            # fallback cuando Claude no mande valores propios.
+            try:
+                if hasattr(self, "brain") and hasattr(self.brain, "set_risk_defaults"):
+                    self.brain.set_risk_defaults(
+                        self._default_stop_loss_pct,
+                        self._default_take_profit_pct,
+                    )
+            except Exception as e:
+                logger.debug(f"[COMMANDS] no pude propagar defaults al brain: {e}")
+
+        except Exception as e:
+            logger.debug(f"[COMMANDS] poll_settings error: {e}")
+
+    def _recompute_active_tickers(self):
+        """Unión OR: un ticker está activo si cualquier grupo lo habilita."""
+        active: set[str] = set()
+        for group in ("puts", "calls", "wheel"):
+            for sym, on in self._ticker_selection.get(group, {}).items():
+                if on:
+                    active.add(str(sym).upper())
+        self._active_tickers = active
+
+    def _ticker_strategies(self, ticker: str) -> list[str]:
+        """Devuelve los grupos (puts/calls/wheel) en los que el ticker está ON."""
+        return [
+            g for g in ("puts", "calls", "wheel")
+            if self._ticker_selection.get(g, {}).get(ticker, False)
+        ]
+
+    async def _execute_close_all(self, reason: str = "dashboard"):
+        """Cierra todas las posiciones abiertas (invocado por close_all)."""
+        try:
+            closed = await self.trader.close_all_positions()
+            logger.warning(
+                f"[COMMANDS] ✅ Close all completado: {len(closed)} órdenes "
+                f"(razón: {reason})"
+            )
+        except Exception as e:
+            logger.error(f"[COMMANDS] Error en close_all: {e}")
+
+    # ── Dashboard state writer ─────────────────────────────
+
+    def _write_state(self):
+        """
+        Escribe el estado completo del bot en:
+          1. eolo_state.json  (dashboard local)
+          2. Firestore eolo-options-state/current  (dashboard Cloud Run)
+        """
+        try:
+            from zoneinfo import ZoneInfo
+            et_now = datetime.now(ZoneInfo("America/New_York"))
+
+            # P&L desde CSV de paper trades
+            paper_trades = self._read_paper_trades()
+
+            # Schedule status — dashboard usa esto para mostrar el banner
+            # "Pause time limit" cuando is_within_window=False.
+            from eolo_common.trading_hours import format_schedule_for_api
+            schedule_status = format_schedule_for_api(self._schedule, now_et())
+
+            state = {
+                "updated_at":   et_now.strftime("%Y-%m-%d %H:%M:%S ET"),
+                "updated_ts":   time.time(),
+                "mode":         "PAPER" if PAPER_TRADING else "LIVE",
+                "tickers":      TICKERS,
+                "market_open":  self._is_within_trading_window(),
+                "schedule":     schedule_status,
+
+                # Control state (leído desde Firestore eolo-options-config)
+                "active":       self._active,
+                "config": {
+                    "budget_per_trade":        self._budget_per_trade,
+                    "max_positions":           self._max_positions,
+                    "default_stop_loss_pct":   self._default_stop_loss_pct,
+                    "default_take_profit_pct": self._default_take_profit_pct,
+                    "daily_loss_cap_pct":      self._daily_loss_cap_pct,
+                    "ticker_selection":        self._ticker_selection,
+                    # Schedule (editable desde el dashboard)
+                    "trading_start_et":        self._schedule.start.strftime("%H:%M"),
+                    "trading_end_et":          self._schedule.end.strftime("%H:%M"),
+                    "auto_close_et":           self._schedule.auto_close.strftime("%H:%M"),
+                    "trading_hours_enabled":   self._schedule.enabled,
+                },
+                "active_tickers": sorted(self._active_tickers),
+
+                # Quotes en tiempo real
+                "quotes":       self._quotes,
+
+                # IV Surfaces por ticker
+                "iv_surfaces":  self._iv_surfaces,
+
+                # Alertas de mispricing por ticker (top 10 por ticker para no exceder Firestore)
+                "mispricing": {
+                    t: [
+                        {k: v for k, v in a.items() if k not in ("chain",)}
+                        for a in alerts[:10]
+                    ]
+                    for t, alerts in self._mispricing_data.items()
+                },
+
+                # Señales Eolo v1 por ticker
+                "signals":      self._signals_data,
+
+                # Última decisión de Claude por ticker
+                "claude_last":  self._claude_decisions,
+
+                # Historial de decisiones (últimas 20 para Firestore)
+                "claude_history": self._claude_history[:20],
+
+                # Posiciones abiertas
+                "positions":    self._open_positions,
+
+                # Paper trades del día (últimos 50)
+                "paper_trades": paper_trades[-50:],
+
+                # P&L calculado
+                "pnl":          self._calc_pnl(paper_trades),
+
+                # Stats del bot
+                "stats": {
+                    "claude_calls":    self.brain.call_count,
+                    "analysis_count":  len(self._last_analysis),
+                    "candle_buffers":  {
+                        t: self._candle_buffer.size(t)
+                        for t in self._candle_buffer.symbols()
+                    },
+                    "multi_tf": {
+                        "active_timeframes":    self._active_timeframes,
+                        "confluence_mode":      self._confluence_mode,
+                        "confluence_min_agree": self._confluence_min_agree,
+                        "confluence_snapshot":  getattr(self, "_confluence_snapshot", {}),
+                    },
+                },
+
+                # Toggles activos para el dashboard (source of truth live)
+                "strategies_enabled": dict(self._strategies_enabled),
+
+                # Claude Bot (estrategia #14 sobre acciones)
+                "claude_bot": {
+                    "enabled":       self._claude_bot_enabled,
+                    "interval":      self._claude_bot_interval,
+                    "paper_mode":    (
+                        self.claude_bot.paper_mode if self.claude_bot else True
+                    ),
+                    "budget":        self._claude_bot_budget,
+                    "model":         (
+                        self.claude_bot.model if self.claude_bot else None
+                    ),
+                    "call_count":    (
+                        self.claude_bot.call_count if self.claude_bot else 0
+                    ),
+                    "last_tick_ts":  self._claude_bot_last_tick,
+                    "last_tick_str": (
+                        datetime.fromtimestamp(
+                            self._claude_bot_last_tick,
+                            tz=ZoneInfo("America/New_York"),
+                        ).strftime("%H:%M:%S")
+                        if self._claude_bot_last_tick else None
+                    ),
+                    "last_decision": self._claude_bot_decision,
+                    "history":       self._claude_bot_history[:30],
+                    "paper_positions": self._claude_bot_positions,
+                    "available":     self.claude_bot is not None,
+                },
+            }
+
+            # 1. JSON local
+            with open(self._state_file, "w") as f:
+                json.dump(state, f, default=str)
+
+            # 2. Firestore (async en thread para no bloquear el loop)
+            import threading
+            threading.Thread(
+                target=self._write_firestore,
+                args=(state,),
+                daemon=True,
+            ).start()
+
+        except Exception as e:
+            logger.debug(f"[DASHBOARD] Error escribiendo state: {e}")
+
+    def _write_firestore(self, state: dict):
+        """Escribe el estado en Firestore (corre en thread separado).
+
+        Firestore no acepta ciertos tipos (numpy.int64/float64, set, bytes, etc).
+        Sanitizamos el state recursivamente a tipos nativos de Python antes de
+        enviarlo. Si igual falla, logueamos traceback completo con la sub-ruta
+        problemática para poder diagnosticar.
+        """
+        try:
+            from google.cloud import firestore as _fs
+            clean = _sanitize_for_firestore(state)
+            db  = _fs.Client()
+            doc = db.collection("eolo-options-state").document("current")
+            doc.set(clean)
+            logger.debug("[DASHBOARD] State escrito en Firestore ✅")
+        except Exception as e:
+            import traceback
+            bad = _find_unserializable_path(state)
+            logger.error(
+                f"[DASHBOARD] Firestore write error: {type(e).__name__}: {e} "
+                f"— primer campo no-serializable: {bad}\n{traceback.format_exc()}"
+            )
+
+    def _read_paper_trades(self) -> list[dict]:
+        """Lee el CSV de paper trades del día."""
+        csv_path = os.path.join(BASE_DIR, "paper_trades_log.csv")
+        if not os.path.exists(csv_path):
+            return []
+        try:
+            import csv
+            trades = []
+            with open(csv_path, newline="") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    trades.append(dict(row))
+            return trades
+        except Exception:
+            return []
+
+    def _calc_pnl(self, trades: list[dict]) -> dict:
+        """Calcula P&L de paper trades (BUY → SELL_TO_CLOSE pairs)."""
+        open_buys = {}
+        closed = []
+        total_pnl = 0.0
+        wins = losses = 0
+
+        for t in trades:
+            key = (t.get("ticker"), t.get("expiration"), t.get("strike"), t.get("option_type",""))
+            action = t.get("action", "")
+            try:
+                price_raw = t.get("limit_price", 0)
+                price = float(price_raw) if price_raw != "MARKET" else 0
+                qty   = int(t.get("contracts", 1))
+            except (ValueError, TypeError):
+                continue
+
+            if action == "BUY_TO_OPEN":
+                open_buys[key] = {
+                    "price":    price,
+                    "qty":      qty,
+                    "ts":       t.get("timestamp", ""),
+                    "strategy": t.get("strategy", "CLAUDE"),
+                    "reason":   t.get("reason", ""),
+                    "ticker":   t.get("ticker", ""),
+                    "option_type": t.get("option_type", ""),
+                    "strike":   t.get("strike", ""),
+                    "expiration": t.get("expiration", ""),
+                    "symbol":   t.get("symbol", ""),
+                }
+            elif action == "SELL_TO_CLOSE" and key in open_buys:
+                entry = open_buys.pop(key)
+                cost  = entry["price"] * entry["qty"] * 100
+                pnl   = (price - entry["price"]) * entry["qty"] * 100
+                pnl_pct = (pnl / cost * 100) if cost else 0
+                total_pnl += pnl
+                if pnl >= 0:
+                    wins += 1
+                else:
+                    losses += 1
+                closed.append({
+                    "ticker":      entry["ticker"],
+                    "option_type": entry["option_type"],
+                    "strike":      entry["strike"],
+                    "expiration":  entry["expiration"],
+                    "symbol":      entry["symbol"],
+                    "entry_price": entry["price"],
+                    "exit_price":  price,
+                    "qty":         entry["qty"],
+                    "pnl":         round(pnl, 2),
+                    "pnl_pct":     round(pnl_pct, 2),
+                    "entry_ts":    entry["ts"],
+                    "exit_ts":     t.get("timestamp", ""),
+                    "strategy":    entry["strategy"],
+                    "exit_reason": t.get("strategy", "SELL_TO_CLOSE"),
+                    "reason":      entry["reason"],
+                })
+
+        rounds = wins + losses
+
+        # Posiciones abiertas con datos completos
+        open_list = [
+            {
+                "ticker":      v["ticker"],
+                "option_type": v["option_type"],
+                "strike":      v["strike"],
+                "expiration":  v["expiration"],
+                "symbol":      v["symbol"],
+                "entry_price": v["price"],
+                "qty":         v["qty"],
+                "strategy":    v["strategy"],
+                "reason":      v["reason"],
+                "entry_ts":    v["ts"],
+            }
+            for v in open_buys.values()
+        ]
+
+        return {
+            "total_pnl":  round(total_pnl, 2),
+            "wins":       wins,
+            "losses":     losses,
+            "rounds":     rounds,
+            "win_rate":   round(wins / rounds * 100, 1) if rounds > 0 else 0,
+            "open_count": len(open_buys),
+            "open_list":  open_list,
+            "closed":     closed[-30:],
+        }
+
+
+# ── Entry point ────────────────────────────────────────────
+
+# Instancia global del bot (leída por main.py en /status para exponer
+# el estado del circuit breaker de billing al dashboard / curl).
+bot_instance: "EoloV2 | None" = None
+
+
+async def main():
+    global bot_instance
+    bot = EoloV2()
+    bot_instance = bot
+    try:
+        await bot.start()
+    except KeyboardInterrupt:
+        logger.info("Interrupción manual — deteniendo EOLO v2...")
+        bot.stop()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

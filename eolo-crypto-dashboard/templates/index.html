@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>EOLO CRYPTO · Dashboard</title>
+
+<!-- Chart.js (misma versión que dashboards hermanos) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+<style>
+  /* ========== Paleta Binance ========== */
+  :root {
+    --bg:           #0B0E11;
+    --panel:       #161A1E;
+    --panel-2:     #1E2026;
+    --border:      #2B3139;
+    --text:        #EAECEF;
+    --text-dim:    #848E9C;
+    --text-faint:  #5E6673;
+
+    --yellow:      #F0B90B;  /* Binance primary */
+    --yellow-dim:  #C99400;
+    --green:       #0ECB81;  /* success / long */
+    --green-dim:   #0AA068;
+    --red:         #F6465D;  /* danger / short */
+    --red-dim:     #C13449;
+    --blue:        #5687FF;
+
+    --radius:      10px;
+    --radius-sm:   6px;
+    --shadow:      0 2px 8px rgba(0,0,0,.35);
+    --mono:        ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text);
+               font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+               font-size: 14px; line-height: 1.4; }
+
+  a { color: var(--yellow); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ========== Layout ========== */
+  .wrap { max-width: 1480px; margin: 0 auto; padding: 0 20px 40px; }
+
+  /* ----- 1) Header sticky ----- */
+  header.top {
+    position: sticky; top: 0; z-index: 40;
+    background: linear-gradient(180deg, var(--panel) 0%, #0f1215 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px; font-weight: 700; letter-spacing: .5px;
+  }
+  .brand .logo {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: var(--yellow); color: #000;
+    display: grid; place-items: center; font-weight: 900; font-size: 14px;
+  }
+  .brand .title { color: var(--text); font-size: 18px; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; letter-spacing: .5px;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim);
+  }
+  .pill.crypto { background: rgba(240,185,11,.12); color: var(--yellow); border-color: rgba(240,185,11,.35); }
+  .pill.mode-testnet { background: rgba(86,135,255,.10); color: var(--blue); border-color: rgba(86,135,255,.4); }
+  .pill.mode-paper   { background: rgba(132,142,156,.10); color: var(--text-dim); }
+  .pill.mode-live    { background: rgba(246,70,93,.10);   color: var(--red); border-color: rgba(246,70,93,.4); }
+  .pill.ok    { background: rgba(14,203,129,.10); color: var(--green); border-color: rgba(14,203,129,.4); }
+  .pill.warn  { background: rgba(240,185,11,.10); color: var(--yellow); border-color: rgba(240,185,11,.4); }
+  .pill.err   { background: rgba(246,70,93,.12);  color: var(--red);    border-color: rgba(246,70,93,.4); }
+
+  .balance { margin-left: auto; display: flex; align-items: center; gap: 18px; }
+  .balance .kv { display: flex; flex-direction: column; align-items: flex-end; }
+  .balance .kv .label { font-size: 11px; color: var(--text-faint); letter-spacing: .5px; text-transform: uppercase; }
+  .balance .kv .val   { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--text); }
+  .balance .kv .val.pos { color: var(--green); }
+  .balance .kv .val.neg { color: var(--red); }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); background: var(--panel-2); color: var(--text);
+    padding: 8px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+    border-radius: var(--radius-sm); transition: all .15s ease;
+  }
+  .btn:hover { border-color: var(--yellow); color: var(--yellow); }
+  .btn.primary { background: var(--yellow); color: #000; border-color: var(--yellow); }
+  .btn.primary:hover { background: var(--yellow-dim); border-color: var(--yellow-dim); color: #000; }
+  .btn.danger  { background: var(--red); color: #fff; border-color: var(--red); }
+  .btn.danger:hover  { background: var(--red-dim); border-color: var(--red-dim); color: #fff; }
+  .btn.ghost   { background: transparent; }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+
+  /* ----- Grid general ----- */
+  .section { margin-top: 22px; }
+  .section-title {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .section-title h2 {
+    margin: 0; font-size: 13px; font-weight: 700; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--text-dim);
+  }
+  .section-title .hint { font-size: 11px; color: var(--text-faint); }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    box-shadow: var(--shadow);
+  }
+
+  /* ----- 2) Tiles del día ----- */
+  .tiles {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px;
+  }
+  .tile {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px 16px; position: relative;
+  }
+  .tile .label { font-size: 11px; color: var(--text-faint); letter-spacing: .5px;
+                 text-transform: uppercase; margin-bottom: 6px; }
+  .tile .value { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+  .tile .sub   { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .tile.accent { border-color: rgba(240,185,11,.45); box-shadow: 0 0 0 1px rgba(240,185,11,.12) inset; }
+  .pos { color: var(--green) !important; }
+  .neg { color: var(--red)   !important; }
+  .yl  { color: var(--yellow) !important; }
+
+  @media (max-width: 1200px) { .tiles { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 680px)  { .tiles { grid-template-columns: repeat(2, 1fr); } }
+
+  /* ----- 3) Posiciones abiertas ----- */
+  .positions {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px;
+  }
+  .pos-card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 14px; display: flex; flex-direction: column; gap: 10px;
+    transition: border-color .15s;
+  }
+  .pos-card:hover { border-color: var(--yellow); }
+  .pos-card .head {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .pos-card .sym { font-weight: 800; font-size: 16px; letter-spacing: .4px; }
+  .pos-card .strat {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .6px;
+    color: var(--yellow); background: rgba(240,185,11,.10); border: 1px solid rgba(240,185,11,.3);
+    padding: 2px 8px; border-radius: 999px;
+  }
+  .pos-card .row { display: flex; justify-content: space-between; font-family: var(--mono); font-size: 13px; }
+  .pos-card .row span:first-child { color: var(--text-dim); }
+  .pos-card .pnl { font-family: var(--mono); font-weight: 700; font-size: 15px; }
+  .pos-card .reason { font-size: 11px; color: var(--text-faint); border-top: 1px dashed var(--border); padding-top: 8px; }
+  .empty { padding: 20px; text-align: center; color: var(--text-faint); font-style: italic; }
+
+  /* ----- 4) Claude Bot ----- */
+  .claude-grid {
+    display: grid; grid-template-columns: 1.3fr 1fr; gap: 12px;
+  }
+  @media (max-width: 900px) { .claude-grid { grid-template-columns: 1fr; } }
+
+  .claude-head {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
+  }
+  .claude-head .left { display: flex; align-items: center; gap: 10px; }
+  .claude-head .icon {
+    width: 32px; height: 32px; border-radius: 8px;
+    background: rgba(240,185,11,.15); border: 1px solid rgba(240,185,11,.4);
+    color: var(--yellow); display: grid; place-items: center; font-weight: 900; font-size: 14px;
+  }
+  .claude-head .title { font-size: 15px; font-weight: 700; }
+  .claude-head .subtitle { font-size: 11px; color: var(--text-faint); }
+
+  .claude-kv { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .claude-kv .k { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+                  padding: 10px; }
+  .claude-kv .k .label { font-size: 10px; color: var(--text-faint); text-transform: uppercase; letter-spacing: .6px; }
+  .claude-kv .k .val   { font-family: var(--mono); font-size: 16px; font-weight: 700; margin-top: 4px; }
+
+  .claude-last { background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+                 padding: 12px; margin-top: 12px; }
+  .claude-last .top { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-dim); }
+  .claude-last .reason { margin-top: 6px; font-size: 13px; line-height: 1.45; color: var(--text); }
+
+  .decisions-table {
+    width: 100%; border-collapse: collapse; font-size: 12px;
+  }
+  .decisions-table th {
+    text-align: left; padding: 8px 6px; color: var(--text-faint); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .6px; font-size: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .decisions-table td {
+    padding: 8px 6px; border-bottom: 1px solid rgba(43,49,57,.5); font-family: var(--mono);
+  }
+  .decisions-table tr:last-child td { border-bottom: none; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 10px; letter-spacing: .4px;}
+  .tag.BUY   { background: rgba(14,203,129,.15); color: var(--green); }
+  .tag.SELL  { background: rgba(246,70,93,.15);  color: var(--red);    }
+  .tag.HOLD  { background: rgba(132,142,156,.15); color: var(--text-dim); }
+  .tag.SKIP  { background: rgba(132,142,156,.15); color: var(--text-dim); }
+
+  /* ----- 5) Universo + screener ----- */
+  .universe-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 900px) { .universe-grid { grid-template-columns: 1fr; } }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    padding: 5px 10px; border-radius: 999px; font-size: 12px; font-family: var(--mono);
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text);
+  }
+  .chip.core { border-color: rgba(240,185,11,.4); color: var(--yellow); }
+  .chip.screener { border-color: rgba(14,203,129,.35); color: var(--green); }
+  .chip.inactive { opacity: .45; }
+
+  /* ----- 6) Estrategias toggles (layout legacy, queda para Claude Bot) ----- */
+  .strats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  @media (max-width: 1000px) { .strats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 560px)  { .strats { grid-template-columns: 1fr; } }
+  .strat-row {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm);
+  }
+  .strat-row.claude { border-color: rgba(240,185,11,.45); background: rgba(240,185,11,.06); }
+  .strat-row .name { font-family: var(--mono); font-size: 13px; }
+  .strat-row .name .meta { display: block; font-size: 10px; color: var(--text-faint); margin-top: 2px; font-family: inherit; }
+
+  /* ----- 6b) Unified strategy cards (v2-style) ----- */
+  .strat-group { margin-bottom:14px; }
+  .strat-head  { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .strat-title { font-size:.78rem; font-weight:700; letter-spacing:.04em; color:var(--yellow); text-transform:uppercase; flex:1; }
+  .strat-title .hint { color:var(--text-dim); font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px; font-size:.68rem; }
+  .strat-btn-all { font:inherit; font-size:.68rem; font-weight:700; padding:4px 10px; border-radius:5px; cursor:pointer; letter-spacing:.03em; text-transform:uppercase; transition:all .15s; }
+  .strat-btn-all.on  { background:var(--green); color:#000; border:1px solid var(--green); }
+  .strat-btn-all.off { background:var(--border); color:var(--text-dim); border:1px solid var(--border); }
+  .strat-btn-all:hover { transform:translateY(-1px); }
+  .strat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
+  .strat-card { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-radius:var(--radius-sm); border:1px solid var(--border); background:var(--panel-2); transition:all .12s ease; user-select:none; }
+  .strat-card:hover { border-color:var(--yellow); }
+  .strat-card.on  { background:rgba(14,203,129,.10); border-color:var(--green-dim); }
+  .strat-card.off { background:var(--panel-2); }
+  .strat-card.disabled { opacity:.45; cursor:not-allowed; background:rgba(43,49,57,.3); filter:grayscale(.3); }
+  .strat-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; }
+  .strat-card-name { font-family:var(--mono); font-size:.76rem; font-weight:700; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .strat-card.on  .strat-card-name { color:var(--green); }
+  .strat-card.off .strat-card-name { color:var(--text-dim); }
+  .strat-card-pie { width:22px; height:22px; flex-shrink:0; }
+  .strat-toggle { width:28px; height:16px; border-radius:8px; background:var(--border); position:relative; cursor:pointer; transition:background .15s; flex-shrink:0; }
+  .strat-toggle::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:var(--text-dim); transition:all .15s; }
+  .strat-card.on  .strat-toggle { background:rgba(14,203,129,.4); }
+  .strat-card.on  .strat-toggle::after { left:14px; background:var(--green); box-shadow:0 0 4px var(--green); }
+  .strat-card-mini { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:.66rem; color:var(--text-dim); padding-top:4px; border-top:1px dashed var(--border); }
+  .strat-card-mini .mv { font-weight:700; color:var(--text); }
+  .strat-card-mini .pos { color:var(--green); }
+  .strat-card-mini .neg { color:var(--red); }
+  .strat-card-expand { overflow:hidden; max-height:0; transition:max-height .2s ease; }
+  .strat-card.expanded .strat-card-expand { max-height:280px; }
+  .strat-stats-tbl { width:100%; font-size:.68rem; border-collapse:collapse; margin-top:6px; }
+  .strat-stats-tbl td { padding:2px 4px; border-bottom:1px dotted rgba(43,49,57,.5); }
+  .strat-stats-tbl td:first-child { color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; font-size:.6rem; }
+  .strat-stats-tbl .tnum { text-align:right; font-family:var(--mono); }
+  .strat-spark { width:100%; height:44px; margin-top:6px; }
+  .strat-empty { color:var(--text-dim); font-size:.66rem; text-align:center; padding:8px 0; font-style:italic; }
+
+  /* iOS-style switch */
+  .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
+  .switch input { opacity: 0; width: 0; height: 0; }
+  .slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background: var(--border); border-radius: 22px; transition: .25s;
+  }
+  .slider::before {
+    content: ""; position: absolute; height: 16px; width: 16px; left: 3px; top: 3px;
+    background: #fff; border-radius: 50%; transition: .25s;
+  }
+  input:checked + .slider { background: var(--yellow); }
+  input:checked + .slider::before { transform: translateX(16px); }
+
+  /* ----- 7) Performance ----- */
+  .perf-grid {
+    display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 1000px) { .perf-grid { grid-template-columns: 1fr; } }
+  .chart-wrap { position: relative; height: 260px; }
+  .chart-wrap.sm { height: 200px; }
+
+  /* ----- 8) Trades table ----- */
+  .trades-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  .trades-tabs { display: flex; gap: 6px; }
+  .tab {
+    padding: 6px 12px; font-size: 12px; border-radius: 999px; cursor: pointer;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--text-dim);
+  }
+  .tab.active { background: var(--yellow); color: #000; border-color: var(--yellow); font-weight: 700; }
+  .trades-table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12px; }
+  .trades-table th {
+    position: sticky; top: 0; background: var(--panel);
+    text-align: left; padding: 10px 8px; color: var(--text-faint); font-weight: 600;
+    text-transform: uppercase; letter-spacing: .6px; font-size: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .trades-table td {
+    padding: 8px; border-bottom: 1px solid rgba(43,49,57,.5); font-family: var(--mono);
+  }
+  .trades-scroll { max-height: 420px; overflow-y: auto; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+
+  /* ----- Modal config ----- */
+  .modal-bg {
+    position: fixed; inset: 0; background: rgba(0,0,0,.7);
+    display: none; align-items: center; justify-content: center; z-index: 100;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px; width: 420px; max-width: calc(100% - 40px);
+  }
+  .modal h3 { margin: 0 0 12px; font-size: 14px; text-transform: uppercase; letter-spacing: 1px; color: var(--yellow); }
+  .modal label { display: block; margin: 10px 0 4px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: .6px; }
+  .modal input {
+    width: 100%; background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 8px; font-family: var(--mono); font-size: 13px;
+  }
+  .modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+
+  /* ----- Status dots ----- */
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .dot.ok   { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .dot.warn { background: var(--yellow); box-shadow: 0 0 8px var(--yellow); }
+  .dot.err  { background: var(--red);    box-shadow: 0 0 8px var(--red); }
+
+  /* Toast */
+  .toast {
+    position: fixed; bottom: 20px; right: 20px;
+    background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 12px 16px; font-size: 13px; box-shadow: var(--shadow);
+    opacity: 0; transform: translateY(10px); transition: all .25s; z-index: 200;
+  }
+  .toast.show { opacity: 1; transform: translateY(0); }
+  .toast.ok  { border-color: var(--green); }
+  .toast.err { border-color: var(--red); }
+
+  /* scrollbars */
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 10px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+</style>
+</head>
+<body>
+
+<!-- ========== 1) HEADER STICKY ========== -->
+<header class="top">
+  <div class="brand">
+    <div class="logo">E</div>
+    <div class="title">EOLO</div>
+    <span class="pill crypto">CRYPTO</span>
+    <span id="modePill" class="pill">MODE: —</span>
+    <span id="healthPill" class="pill warn"><span class="dot warn"></span>cargando…</span>
+  </div>
+
+  <div class="balance">
+    <div class="kv">
+      <span class="label">Balance USDT</span>
+      <span id="hdrBalance" class="val">—</span>
+    </div>
+    <div class="kv">
+      <span class="label">P&amp;L hoy</span>
+      <span id="hdrPnl" class="val">—</span>
+    </div>
+    <button id="btnConfig"   class="btn ghost">⚙ Config</button>
+    <button id="btnToggle"   class="btn">Pausar bot</button>
+    <button id="btnCloseAll" class="btn danger">Close all</button>
+  </div>
+</header>
+
+<!-- ========== BANNER: Pause time limit (trading_hours) ========== -->
+<div id="schedBanner"
+     style="display:none;background:#f1c40f;color:#1a1a1a;padding:10px 16px;
+            font-weight:600;text-align:center;border-bottom:1px solid #b58900;
+            font-size:14px;">
+  <span id="schedBannerText">⏸ Pause time limit</span>
+</div>
+
+<div class="wrap">
+
+  <!-- ========== 2) TILES DEL DÍA ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Resumen del día (UTC)</h2>
+      <span class="hint" id="lastUpdate">—</span>
+    </div>
+    <div class="tiles">
+      <div class="tile accent">
+        <div class="label">P&amp;L del día</div>
+        <div class="value" id="tPnl">$0.00</div>
+        <div class="sub" id="tPnlPct">—</div>
+      </div>
+      <div class="tile">
+        <div class="label">Operaciones</div>
+        <div class="value" id="tTrades">0</div>
+        <div class="sub"><span id="tWins">0</span>W · <span id="tLosses">0</span>L</div>
+      </div>
+      <div class="tile">
+        <div class="label">Win rate</div>
+        <div class="value yl" id="tWinRate">—%</div>
+        <div class="sub" id="tBestWorst">—</div>
+      </div>
+      <div class="tile">
+        <div class="label">Exposición</div>
+        <div class="value" id="tExposure">$0.00</div>
+        <div class="sub"><span id="tOpen">0</span> posiciones abiertas</div>
+      </div>
+      <div class="tile">
+        <div class="label">Claude calls</div>
+        <div class="value yl" id="tClaudeCalls">0</div>
+        <div class="sub">Costo: <span id="tClaudeCost">$0.00</span></div>
+      </div>
+      <div class="tile">
+        <div class="label">Universo activo</div>
+        <div class="value" id="tUniverseCount">0</div>
+        <div class="sub">core + screener</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 3) POSICIONES ABIERTAS ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Posiciones abiertas</h2>
+      <span class="hint" id="posSummary">—</span>
+    </div>
+    <div id="positionsWrap" class="positions">
+      <div class="empty card">Sin posiciones abiertas</div>
+    </div>
+  </div>
+
+  <!-- ========== 4) CLAUDE BOT #14 ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Claude Bot #14 — Decisión autónoma</h2>
+    </div>
+    <div class="claude-grid">
+      <div class="card">
+        <div class="claude-head">
+          <div class="left">
+            <div class="icon">C</div>
+            <div>
+              <div class="title">Claude Bot #14 Crypto</div>
+              <div class="subtitle" id="claudeModel">claude-sonnet-4-6 · cada 5 min</div>
+            </div>
+          </div>
+          <label class="switch" title="Enable/disable Claude Bot">
+            <input type="checkbox" id="claudeToggle" />
+            <span class="slider"></span>
+          </label>
+        </div>
+        <div class="claude-kv">
+          <div class="k"><div class="label">Llamadas hoy</div><div class="val yl" id="claudeCalls">0</div></div>
+          <div class="k"><div class="label">Costo hoy</div><div class="val" id="claudeCost">$0.00</div></div>
+          <div class="k"><div class="label">Budget diario</div><div class="val" id="claudeBudget">$3.00</div></div>
+        </div>
+        <div class="claude-last" id="claudeLastCard" style="display:none">
+          <div class="top">
+            <span id="claudeLastAction" class="tag">HOLD</span>
+            <span id="claudeLastTs" style="font-family:var(--mono)">—</span>
+          </div>
+          <div class="reason" id="claudeLastReason">—</div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin:0 0 8px">
+          <h2>Historial (últimas 20)</h2>
+        </div>
+        <table class="decisions-table">
+          <thead>
+            <tr>
+              <th>Hora</th><th>Símbolo</th><th>Acción</th><th>Conf.</th><th>SL/TP</th>
+            </tr>
+          </thead>
+          <tbody id="decisionsBody">
+            <tr><td colspan="5" class="empty">Sin decisiones aún</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 5) UNIVERSO + SCREENER ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Universo de trading</h2>
+    </div>
+    <div class="universe-grid">
+      <div class="card">
+        <div class="section-title" style="margin:0 0 8px">
+          <h2>Core fijo (top 10)</h2>
+          <span class="hint" id="coreCount">—</span>
+        </div>
+        <div class="chips" id="coreChips"></div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin:0 0 8px">
+          <h2>Screener dinámico (small caps c/momentum)</h2>
+          <span class="hint" id="screenerCount">—</span>
+        </div>
+        <div class="chips" id="screenerChips">
+          <div class="empty" style="padding:6px">Screener todavía sin candidatos</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 6) ESTRATEGIAS TOGGLES (unificado · 27 señales) ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Estrategias activas</h2>
+      <span class="hint">Click en el card para expandir stats · toggle para activar/desactivar. Nivel 2 (VIX/TICK) no aplica a crypto.</span>
+    </div>
+
+    <!-- Claude Bot #14: fila dedicada encima del grid -->
+    <div class="strats" id="stratsWrap" style="margin-bottom:14px;"></div>
+
+    <div id="strat-groups">
+      <div class="strat-group">
+        <div class="strat-head">
+          <span class="strat-title">🎯 EMA 3/8 y MACD (10) <span class="hint">ORB v3 es equity-only</span></span>
+          <button class="strat-btn-all on"  onclick="setAllStrats('emacd', true)">Todas ON</button>
+          <button class="strat-btn-all off" onclick="setAllStrats('emacd', false)">Todas OFF</button>
+        </div>
+        <div class="strat-grid" id="strat-grid-emacd"></div>
+      </div>
+      <div class="strat-group">
+        <div class="strat-head">
+          <span class="strat-title">📊 Clásicas (13)</span>
+          <button class="strat-btn-all on"  onclick="setAllStrats('classic', true)">Todas ON</button>
+          <button class="strat-btn-all off" onclick="setAllStrats('classic', false)">Todas OFF</button>
+        </div>
+        <div class="strat-grid" id="strat-grid-classic"></div>
+      </div>
+      <div class="strat-group">
+        <div class="strat-head">
+          <span class="strat-title">⚡ Nivel 1 — Volume · Breakout · Reversal (9) <span class="hint">7 aplican a crypto, 2 greyed</span></span>
+          <button class="strat-btn-all on"  onclick="setAllStrats('nivel1', true)">Todas ON</button>
+          <button class="strat-btn-all off" onclick="setAllStrats('nivel1', false)">Todas OFF</button>
+        </div>
+        <div class="strat-grid" id="strat-grid-nivel1"></div>
+      </div>
+      <div class="strat-group">
+        <div class="strat-head">
+          <span class="strat-title">🌡️ Nivel 2 — VIX · TICK/TRIN · VRP (5) <span class="hint">no aplica a crypto 24/7</span></span>
+        </div>
+        <div class="strat-grid" id="strat-grid-nivel2"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 7) PERFORMANCE ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Performance del día</h2>
+    </div>
+    <div class="perf-grid">
+      <div class="card">
+        <div class="section-title" style="margin:0 0 8px">
+          <h2>Curva P&amp;L (acumulado)</h2>
+        </div>
+        <div class="chart-wrap"><canvas id="chartPnl"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin:0 0 8px">
+          <h2>Win / Loss</h2>
+        </div>
+        <div class="chart-wrap sm"><canvas id="chartWinLoss"></canvas></div>
+      </div>
+      <div class="card">
+        <div class="section-title" style="margin:0 0 8px">
+          <h2>PnL por estrategia</h2>
+        </div>
+        <div class="chart-wrap sm"><canvas id="chartByStrategy"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== 8) TABLA DE TRADES ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Trades</h2>
+    </div>
+    <div class="card">
+      <div class="trades-head">
+        <div class="trades-tabs">
+          <div class="tab active" data-filter="all">Todas</div>
+          <div class="tab" data-filter="open">Abiertas</div>
+          <div class="tab" data-filter="closed">Cerradas</div>
+        </div>
+        <button id="btnExport" class="btn ghost">⬇ Exportar CSV</button>
+      </div>
+      <div class="trades-scroll">
+        <table class="trades-table">
+          <thead>
+            <tr>
+              <th>Hora</th><th>Símbolo</th><th>Lado</th><th>Qty</th>
+              <th>Precio</th><th>Notional</th><th>Estrategia</th><th>PnL (USDT)</th><th>Razón</th>
+            </tr>
+          </thead>
+          <tbody id="tradesBody">
+            <tr><td colspan="9" class="empty">Sin trades aún</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ========== MODAL CONFIG ========== -->
+<div id="modalConfig" class="modal-bg">
+  <div class="modal">
+    <h3>Configuración</h3>
+    <label>Tamaño de posición (% balance)</label>
+    <input type="number" id="cfgPosPct" step="0.1" min="0.1" max="100" />
+    <label>Máx. posiciones abiertas</label>
+    <input type="number" id="cfgMaxPos" step="1" min="1" max="50" />
+    <label>Stop loss default (%)</label>
+    <input type="number" id="cfgSL" step="0.1" />
+    <label>Take profit default (%)</label>
+    <input type="number" id="cfgTP" step="0.1" />
+    <label>Daily loss cap (%)  <span style="color:var(--text-faint)">(negativo)</span></label>
+    <input type="number" id="cfgDLC" step="0.1" max="0" />
+    <label>Claude budget/día (USD)</label>
+    <input type="number" id="cfgClaudeBudget" step="0.5" min="0" />
+    <label style="margin-top:14px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="cfg-confluence" style="width:auto;">
+      <span>Confluencia multi-TF (exige agreement entre timeframes)</span>
+    </label>
+    <label for="cfg-confluence-min">Mínimo TFs que deben coincidir</label>
+    <input type="number" id="cfg-confluence-min" min="1" max="10" step="1">
+
+    <hr style="border:0;border-top:1px solid var(--border);margin:16px 0 10px;">
+    <h4 style="margin:0 0 8px;">Horario de trading (ET)</h4>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="cfg-thours-enabled" style="width:auto;">
+      <span>Aplicar horario de trading (si se desactiva opera 24/7)</span>
+    </label>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;">
+      <div>
+        <label for="cfgThStart">Start (HH:MM)</label>
+        <input type="time" id="cfgThStart" />
+      </div>
+      <div>
+        <label for="cfgThEnd">End (HH:MM)</label>
+        <input type="time" id="cfgThEnd" />
+      </div>
+      <div>
+        <label for="cfgThAutoClose">Auto-close (HH:MM)</label>
+        <input type="time" id="cfgThAutoClose" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn ghost" id="cfgCancel">Cancelar</button>
+      <button class="btn primary" id="cfgSave">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
+<script>
+/* ========== Config ========== */
+const POLL_INTERVAL_MS = 5000;
+
+// Crypto no usa Nivel 2 (VIX/TICK/TRIN/VRP no aplica a 24/7).
+// Lo mostramos greyed para mantener consistencia visual con v1/v2.
+window.STRAT_GROUPS_DISABLED = { nivel2: true };
+
+// Definiciones unificadas (27 canónicas). Los grupos 'classic' y 'nivel1'
+// cubren todas las estrategias aplicables a crypto. 'ema_crossover' y 'gap_fade'
+// son mapeados a 'gap' legacy en el backend; las incluimos en classic para
+// visual consistency.
+const STRATEGY_DEFS = {
+  emacd: [
+    { key: "ema_3_8",         label: "EMA 3/8 Crossover" },
+    { key: "ema_8_21",        label: "EMA 8/21 Crossover" },
+    { key: "macd_accel",      label: "MACD Aceleración" },
+    { key: "volume_breakout", label: "Volume Breakout" },
+    { key: "buy_pressure",    label: "Buy Pressure" },
+    { key: "sell_pressure",   label: "Sell Pressure" },
+    { key: "vwap_momentum",   label: "VWAP Momentum" },
+    { key: "donchian_turtle", label: "Donchian Turtle" },
+    { key: "bulls_bsp",       label: "Bulls BSP (breadth)" },
+    { key: "net_bsv",         label: "Net BSV (breadth)" },
+  ],
+  classic: [
+    { key: "ema_crossover", label: "EMA Crossover" },
+    { key: "gap_fade",      label: "Gap Fade" },
+    { key: "rsi_sma200",    label: "RSI + SMA200" },
+    { key: "hh_ll",         label: "HH / LL" },
+    { key: "ema_tsi",       label: "EMA + TSI" },
+    { key: "vwap_rsi",      label: "VWAP + RSI" },
+    { key: "bollinger",     label: "Bollinger" },
+    { key: "orb",           label: "ORB (24/7)" },
+    { key: "supertrend",    label: "Supertrend" },
+    { key: "ha_cloud",      label: "Heikin-Ashi Cloud" },
+    { key: "squeeze",       label: "BB/KC Squeeze" },
+    { key: "macd_bb",       label: "MACD + BB" },
+    { key: "vela_pivot",    label: "Vela + Pivot" },
+  ],
+  nivel1: [
+    { key: "rvol_breakout",       label: "RVOL Breakout" },
+    { key: "stop_run",            label: "Stop Run Reversal" },
+    { key: "vwap_zscore",         label: "VWAP Z-Score" },
+    { key: "volume_reversal_bar", label: "Volume Reversal Bar" },
+    { key: "anchor_vwap",         label: "Anchor VWAP" },
+    { key: "obv_mtf",             label: "OBV Multi-TF" },
+    { key: "tsv",                 label: "TSV" },
+    { key: "vw_macd",             label: "Volume-Weighted MACD" },
+    { key: "opening_drive",       label: "Opening Drive" },
+  ],
+  nivel2: [
+    { key: "vix_mean_rev",    label: "VIX Mean Reversion" },
+    { key: "vix_correlation", label: "VIX Correlation" },
+    { key: "vix_squeeze",     label: "VIX Squeeze" },
+    { key: "tick_trin_fade",  label: "TICK/TRIN Fade" },
+    { key: "vrp_intraday",    label: "VRP Intraday" },
+  ],
+};
+
+let STRATEGIES_STATE = {};
+let STRATEGY_STATS   = {};
+let EXPANDED_STRATS  = new Set();
+const STRAT_GROUPS_DISABLED = window.STRAT_GROUPS_DISABLED || {};
+
+/* ========== Helpers ========== */
+const $ = (sel, root=document) => root.querySelector(sel);
+const $$ = (sel, root=document) => [...root.querySelectorAll(sel)];
+
+function fmt(n, d=2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return Number(n).toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });
+}
+function fmtUSD(n, d=2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const sign = n < 0 ? "-" : "";
+  return sign + "$" + fmt(Math.abs(n), d);
+}
+function fmtSignedUSD(n, d=2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  const sign = n > 0 ? "+" : (n < 0 ? "-" : "");
+  return sign + "$" + fmt(Math.abs(n), d);
+}
+function pnlClass(n) { return n > 0 ? "pos" : (n < 0 ? "neg" : ""); }
+
+function tsToHM(ts) {
+  if (!ts) return "—";
+  const d = (typeof ts === "number") ? new Date(ts * 1000) : new Date(ts);
+  if (isNaN(d.getTime())) return "—";
+  return d.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit", second:"2-digit"});
+}
+function tsToHMS(ts) { return tsToHM(ts); }
+
+function showToast(msg, type="ok") {
+  const el = $("#toast");
+  el.textContent = msg;
+  el.className = "toast " + type + " show";
+  setTimeout(() => el.classList.remove("show"), 2500);
+}
+
+async function api(path, opts={}) {
+  const res = await fetch(path, Object.assign({ headers: { "Content-Type": "application/json" } }, opts));
+  const body = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(body.error || ("HTTP " + res.status));
+  return body;
+}
+
+/* ========== Estado global ========== */
+let LAST_STATE = {};
+let LAST_TRADES = [];
+let LAST_DECISIONS = [];
+let TRADE_FILTER = "all";
+
+/* ========== Charts ========== */
+Chart.defaults.color = "#848E9C";
+Chart.defaults.borderColor = "#2B3139";
+Chart.defaults.font.family = "ui-monospace, Menlo, Monaco, monospace";
+
+const pnlChart = new Chart($("#chartPnl"), {
+  type: "line",
+  data: { labels: [], datasets: [{
+    label: "P&L acumulado (USDT)",
+    data: [],
+    borderColor: "#F0B90B", backgroundColor: "rgba(240,185,11,.12)",
+    fill: true, tension: .25, pointRadius: 0,
+  }]},
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: "rgba(43,49,57,.4)" } },
+      y: { grid: { color: "rgba(43,49,57,.4)" } },
+    },
+  },
+});
+
+const winLossChart = new Chart($("#chartWinLoss"), {
+  type: "doughnut",
+  data: { labels: ["Wins", "Losses"], datasets: [{
+    data: [0,0], backgroundColor: ["#0ECB81", "#F6465D"], borderColor: "#161A1E", borderWidth: 2,
+  }]},
+  options: { responsive: true, maintainAspectRatio: false, cutout: "65%",
+    plugins: { legend: { position: "bottom", labels: { color: "#EAECEF" } } } },
+});
+
+const byStrategyChart = new Chart($("#chartByStrategy"), {
+  type: "bar",
+  data: { labels: [], datasets: [{
+    label: "PnL USDT", data: [], backgroundColor: [],
+  }]},
+  options: {
+    responsive: true, maintainAspectRatio: false, indexAxis: "y",
+    plugins: { legend: { display: false } },
+    scales: {
+      x: { grid: { color: "rgba(43,49,57,.4)" } },
+      y: { grid: { display: false } },
+    },
+  },
+});
+
+/* ========== Render ========== */
+function renderHeader(state) {
+  const mode  = state.mode || "—";
+  const pill  = $("#modePill");
+  pill.textContent = "MODE: " + mode;
+  pill.className = "pill " + ({TESTNET:"mode-testnet", PAPER:"mode-paper", LIVE:"mode-live"}[mode] || "");
+
+  const bal  = state.balance_usdt ?? 0;
+  const pnl  = state.daily_pnl_usdt ?? 0;
+  $("#hdrBalance").textContent = fmtUSD(bal);
+  const hdrPnl = $("#hdrPnl");
+  hdrPnl.textContent = fmtSignedUSD(pnl);
+  hdrPnl.className = "val " + pnlClass(pnl);
+
+  const healthEl = $("#healthPill");
+  const tsIso    = state.ts_updated;
+  let stale = true, ageS = null;
+  if (tsIso) {
+    const d = new Date(tsIso);
+    if (!isNaN(d.getTime())) { ageS = (Date.now() - d.getTime()) / 1000; stale = ageS > 120; }
+  }
+  if (!stale) {
+    healthEl.className = "pill ok"; healthEl.innerHTML = '<span class="dot ok"></span>ONLINE';
+  } else {
+    healthEl.className = "pill err"; healthEl.innerHTML = '<span class="dot err"></span>STALE';
+  }
+  $("#lastUpdate").textContent = tsIso ? ("Última sync: " + new Date(tsIso).toLocaleTimeString()) : "—";
+
+  // Toggle bot button refleja config.active (default true)
+  const cfg = state.config || {};
+  const active = cfg.active !== false;
+  const btn = $("#btnToggle");
+  btn.textContent = active ? "Pausar bot" : "Reanudar bot";
+  btn.classList.toggle("primary", !active);
+}
+
+function renderTiles(state, stats) {
+  const pnl = stats.pnl_today ?? 0;
+  const pnlEl = $("#tPnl");
+  pnlEl.textContent = fmtSignedUSD(pnl);
+  pnlEl.className = "value " + pnlClass(pnl);
+
+  const bal = state.balance_usdt ?? 0;
+  $("#tPnlPct").textContent = bal ? ((pnl/bal*100).toFixed(2) + "% del balance") : "—";
+
+  $("#tTrades").textContent = stats.trades_today ?? 0;
+  $("#tWins").textContent    = stats.wins_today  ?? 0;
+  $("#tLosses").textContent  = stats.losses_today ?? 0;
+
+  $("#tWinRate").textContent = (stats.win_rate_pct ?? 0).toFixed(1) + "%";
+  $("#tBestWorst").textContent =
+    "Mejor " + fmtSignedUSD(stats.best_trade||0) + " · Peor " + fmtSignedUSD(stats.worst_trade||0);
+
+  const positions = state.open_positions || {};
+  const symbols   = Object.keys(positions);
+  let exposure = 0;
+  symbols.forEach(s => {
+    const p = positions[s];
+    exposure += (p.qty || 0) * (p.entry_price || 0);
+  });
+  $("#tExposure").textContent = fmtUSD(exposure);
+  $("#tOpen").textContent     = symbols.length;
+
+  $("#tClaudeCalls").textContent = (state.last_decisions || []).length;
+  $("#tClaudeCost").textContent  = fmtUSD(state.daily_cost_usd ?? 0, 4);
+
+  const universe = state.universe || [];
+  $("#tUniverseCount").textContent = universe.length;
+}
+
+function renderPositions(state) {
+  const positions = state.open_positions || {};
+  const wrap = $("#positionsWrap");
+  const symbols = Object.keys(positions).sort();
+
+  $("#posSummary").textContent = symbols.length
+    ? (symbols.length + " abierta" + (symbols.length === 1 ? "" : "s"))
+    : "Sin posiciones";
+
+  if (!symbols.length) {
+    wrap.innerHTML = '<div class="empty card">Sin posiciones abiertas</div>';
+    return;
+  }
+  wrap.innerHTML = symbols.map(sym => {
+    const p = positions[sym];
+    const qty = p.qty || 0;
+    const entry = p.entry_price || 0;
+    const notional = qty * entry;
+    // Sin precio actual en state → mostramos notional y dejamos PnL vacío
+    // (cuando el bot incluya mark price en el state se puede calcular)
+    return `
+    <div class="pos-card">
+      <div class="head">
+        <span class="sym">${sym}</span>
+        <span class="strat">${p.strategy || "—"}</span>
+      </div>
+      <div class="row"><span>Qty</span><span>${fmt(qty, 6)}</span></div>
+      <div class="row"><span>Entry</span><span>${fmtUSD(entry, 4)}</span></div>
+      <div class="row"><span>Notional</span><span>${fmtUSD(notional, 2)}</span></div>
+      <div class="row"><span>Abierta</span><span>${tsToHM(p.ts)}</span></div>
+      <div class="reason">${p.reason || ""}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderClaude(state, decisions) {
+  const calls = decisions.length;
+  $("#claudeCalls").textContent = calls;
+
+  const cost = state.daily_cost_usd ?? decisions.reduce((a,d)=> a + (d.approx_cost_usd||0), 0);
+  $("#claudeCost").textContent = fmtUSD(cost, 4);
+
+  const cfg = state.config || {};
+  const budget = cfg.claude_max_cost_per_day ?? 3.0;
+  $("#claudeBudget").textContent = fmtUSD(budget);
+  $("#claudeToggle").checked = cfg.claude_bot_enabled !== false;
+
+  // Última decisión
+  const last = decisions[0];
+  if (last) {
+    $("#claudeLastCard").style.display = "";
+    const act = (last.action || "HOLD").toUpperCase();
+    const tag = $("#claudeLastAction");
+    tag.textContent = act; tag.className = "tag " + act;
+    $("#claudeLastTs").textContent = last.ts_iso ? new Date(last.ts_iso).toLocaleString() : "—";
+    const sym   = last.symbol ? (last.symbol + " · ") : "";
+    const conf  = last.confidence != null ? ("conf " + (last.confidence*100).toFixed(0) + "% · ") : "";
+    $("#claudeLastReason").textContent = sym + conf + (last.reason || "—");
+  } else {
+    $("#claudeLastCard").style.display = "none";
+  }
+
+  // Tabla historial
+  const tbody = $("#decisionsBody");
+  if (!decisions.length) {
+    tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin decisiones aún</td></tr>';
+    return;
+  }
+  tbody.innerHTML = decisions.slice(0, 20).map(d => {
+    const act = (d.action || "HOLD").toUpperCase();
+    const sl = d.stop_loss_pct != null ? d.stop_loss_pct + "%" : "—";
+    const tp = d.take_profit_pct != null ? d.take_profit_pct + "%" : "—";
+    return `<tr>
+      <td>${tsToHMS(d.ts_iso)}</td>
+      <td>${d.symbol || "—"}</td>
+      <td><span class="tag ${act}">${act}</span></td>
+      <td>${d.confidence != null ? (d.confidence*100).toFixed(0)+"%" : "—"}</td>
+      <td>${sl} / ${tp}</td>
+    </tr>`;
+  }).join("");
+}
+
+function renderUniverse(state) {
+  const core     = state.core_universe || [];
+  const active   = state.universe || [];
+  const screener = state.screener_active || [];
+
+  $("#coreCount").textContent = core.length + " pares";
+  $("#coreChips").innerHTML = core.map(s => {
+    const on = active.includes(s);
+    return `<span class="chip core${on ? "" : " inactive"}">${s}</span>`;
+  }).join("");
+
+  $("#screenerCount").textContent = screener.length + " pares";
+  if (!screener.length) {
+    $("#screenerChips").innerHTML = '<div class="empty" style="padding:6px">Screener todavía sin candidatos</div>';
+  } else {
+    $("#screenerChips").innerHTML = screener.map(s =>
+      `<span class="chip screener">${s}</span>`).join("");
+  }
+}
+
+/* ========== Unified strategy cards (v2-style) ========== */
+function _fmt(n)       { return (n == null) ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2); }
+function _fmtPct(w, t) { return t > 0 ? (100 * w / t).toFixed(0) + '%' : '—'; }
+
+function _pieSvg(wins, losses) {
+  const total = wins + losses;
+  if (total === 0) {
+    return `<svg class="strat-card-pie" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="10" fill="none" stroke="#2B3139" stroke-width="4"/>
+    </svg>`;
+  }
+  const r = 10, c = 2 * Math.PI * r;
+  const winFrac = wins / total;
+  const winLen  = winFrac * c;
+  return `<svg class="strat-card-pie" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="${r}" fill="none" stroke="#F6465D" stroke-width="4"/>
+    <circle cx="12" cy="12" r="${r}" fill="none" stroke="#0ECB81" stroke-width="4"
+            stroke-dasharray="${winLen} ${c}" transform="rotate(-90 12 12)"/>
+  </svg>`;
+}
+
+function _sparkSvg(series) {
+  if (!series || series.length === 0) {
+    return `<div class="strat-empty">sin trades últimas 24h</div>`;
+  }
+  const vals = series.map(p => p.cum_pnl);
+  const n   = vals.length;
+  const min = Math.min(0, ...vals);
+  const max = Math.max(0, ...vals);
+  const span = (max - min) || 1;
+  const W = 200, H = 40, pad = 2;
+  const pts = vals.map((v, i) => {
+    const x = pad + (i / Math.max(1, n - 1)) * (W - 2 * pad);
+    const y = H - pad - ((v - min) / span) * (H - 2 * pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const zeroY = H - pad - ((0 - min) / span) * (H - 2 * pad);
+  const last  = vals[vals.length - 1];
+  const color = last >= 0 ? '#0ECB81' : '#F6465D';
+  const areaPath = `M${pts[0]} L${pts.join(' L')} L${W - pad},${zeroY} L${pad},${zeroY} Z`;
+  return `<svg class="strat-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path d="${areaPath}" fill="${color}" fill-opacity="0.12"/>
+    <line x1="0" y1="${zeroY.toFixed(1)}" x2="${W}" y2="${zeroY.toFixed(1)}"
+          stroke="#2B3139" stroke-dasharray="2 2" stroke-width="1"/>
+    <polyline fill="none" stroke="${color}" stroke-width="1.5"
+              points="${pts.join(' ')}"/>
+  </svg>`;
+}
+
+function renderStrategyGroup(groupKey) {
+  const defs = STRATEGY_DEFS[groupKey] || [];
+  const grid = document.getElementById(`strat-grid-${groupKey}`);
+  if (!grid) return;
+  const disabled = !!STRAT_GROUPS_DISABLED[groupKey];
+  grid.innerHTML = defs.map(d => {
+    const on = STRATEGIES_STATE[d.key] !== false;
+    const st = STRATEGY_STATS[d.key] || {
+      h24:  { trades: 0, wins: 0, losses: 0, net_pnl: 0, series: [] },
+      week: { trades: 0, wins: 0, losses: 0, net_pnl: 0 },
+    };
+    const exp    = EXPANDED_STRATS.has(d.key);
+    const pnl24  = st.h24.net_pnl || 0;
+    const pnlCls = pnl24 > 0 ? 'pos' : (pnl24 < 0 ? 'neg' : '');
+    const clickHandler  = disabled ? '' : `onclick="toggleExpand('${d.key}', event)"`;
+    const toggleHandler = disabled ? '' : `onclick="toggleStrat('${d.key}', event)"`;
+    const cardCls = `strat-card ${on ? 'on' : 'off'}${exp ? ' expanded' : ''}${disabled ? ' disabled' : ''}`;
+    return `<div class="${cardCls}" data-strat="${d.key}">
+      <div class="strat-card-head" ${clickHandler}>
+        <span class="strat-card-name" title="${d.label}">${d.label}</span>
+        ${_pieSvg(st.h24.wins, st.h24.losses)}
+        <div class="strat-toggle" ${toggleHandler}></div>
+      </div>
+      <div class="strat-card-mini">
+        <span>24h: <span class="mv">${st.h24.trades}</span> · <span class="mv">${_fmtPct(st.h24.wins, st.h24.trades)}</span></span>
+        <span class="${pnlCls}">${_fmt(pnl24)}</span>
+      </div>
+      <div class="strat-card-expand">
+        ${_sparkSvg(st.h24.series)}
+        <table class="strat-stats-tbl">
+          <tr>
+            <td>24h</td>
+            <td class="tnum">${st.h24.trades} trades</td>
+            <td class="tnum">${_fmtPct(st.h24.wins, st.h24.trades)} win</td>
+            <td class="tnum" style="color:${pnl24 > 0 ? '#0ECB81' : pnl24 < 0 ? '#F6465D' : 'var(--text-dim)'}">${_fmt(pnl24)}</td>
+          </tr>
+          <tr>
+            <td>Week</td>
+            <td class="tnum">${st.week.trades} trades</td>
+            <td class="tnum">${_fmtPct(st.week.wins, st.week.trades)} win</td>
+            <td class="tnum" style="color:${st.week.net_pnl > 0 ? '#0ECB81' : st.week.net_pnl < 0 ? '#F6465D' : 'var(--text-dim)'}">${_fmt(st.week.net_pnl)}</td>
+          </tr>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderStrategiesUnified() {
+  ['emacd', 'classic', 'nivel1', 'nivel2'].forEach(renderStrategyGroup);
+}
+
+function toggleExpand(key, ev) {
+  if (ev) ev.stopPropagation();
+  if (EXPANDED_STRATS.has(key)) EXPANDED_STRATS.delete(key);
+  else EXPANDED_STRATS.add(key);
+  renderStrategiesUnified();
+}
+
+async function toggleStrat(key, ev) {
+  if (ev) ev.stopPropagation();
+  const newVal = !(STRATEGIES_STATE[key] !== false);
+  STRATEGIES_STATE[key] = newVal;
+  renderStrategiesUnified();
+  try {
+    await api("/api/toggle-strategy", { method: "POST", body: JSON.stringify({strategy: key, enabled: newVal}) });
+    showToast(key + " → " + (newVal ? "ON" : "OFF"));
+  } catch (e) {
+    STRATEGIES_STATE[key] = !newVal;
+    renderStrategiesUnified();
+    showToast(String(e), "err");
+  }
+}
+
+async function setAllStrats(groupKey, enabled) {
+  const defs = STRATEGY_DEFS[groupKey] || [];
+  const updates = [];
+  for (const d of defs) {
+    if ((STRATEGIES_STATE[d.key] !== false) !== enabled) {
+      STRATEGIES_STATE[d.key] = enabled;
+      updates.push(d.key);
+    }
+  }
+  renderStrategiesUnified();
+  await Promise.all(updates.map(k => api("/api/toggle-strategy", {
+    method: "POST", body: JSON.stringify({strategy: k, enabled}),
+  }).catch(()=>{})));
+}
+
+async function fetchStrategies() {
+  try {
+    const data = await api("/api/strategies");
+    STRATEGIES_STATE = data.strategies_enabled || {};
+  } catch (e) { STRATEGIES_STATE = {}; }
+  renderStrategiesUnified();
+}
+
+async function fetchStrategyStats() {
+  try {
+    const data = await api("/api/strategy-stats");
+    STRATEGY_STATS = data.stats || {};
+  } catch (e) { STRATEGY_STATS = {}; }
+  renderStrategiesUnified();
+}
+
+/* renderStrategies(state) -- ahora solo renderiza el toggle de Claude Bot
+ * (el grid de estrategias lo maneja renderStrategiesUnified via fetchStrategies) */
+function renderStrategies(state) {
+  const cfg = state.config || {};
+  const wrap = $("#stratsWrap");
+
+  const claudeOn = cfg.claude_bot_enabled !== false;
+  wrap.innerHTML = `<div class="strat-row claude">
+    <div class="name">🤖 Claude Bot #14 (LLM · decisión autónoma)
+      <span class="meta">claude_bot · ${LAST_DECISIONS.length} decisiones hoy</span>
+    </div>
+    <label class="switch"><input type="checkbox" data-strat="__claude" ${claudeOn?"checked":""}/><span class="slider"></span></label>
+  </div>`;
+
+  $$('input[data-strat]', wrap).forEach(inp => {
+    inp.addEventListener("change", async (e) => {
+      const key = e.target.dataset.strat;
+      const enabled = e.target.checked;
+      try {
+        if (key === "__claude") {
+          await api("/api/toggle-claude", { method: "POST", body: JSON.stringify({enabled}) });
+          showToast("Claude Bot " + (enabled ? "activado" : "pausado"));
+        }
+      } catch (err) { showToast(String(err), "err"); e.target.checked = !enabled; }
+    });
+  });
+
+  // También sincronizar STRATEGIES_STATE desde state.config (source of truth)
+  const cfgMap = cfg.strategies_enabled || {};
+  for (const k of Object.keys(cfgMap)) {
+    STRATEGIES_STATE[k] = !!cfgMap[k];
+  }
+  renderStrategiesUnified();
+}
+
+function renderCharts(stats) {
+  // Win/loss donut
+  winLossChart.data.datasets[0].data = [stats.wins_today || 0, stats.losses_today || 0];
+  winLossChart.update("none");
+
+  // PnL acumulado (desde trades UTC hoy)
+  const startTs = new Date(); startTs.setUTCHours(0,0,0,0);
+  const today = LAST_TRADES
+    .filter(t => t.side === "SELL" && (t.pnl_usdt != null || t.pnl != null) && (t.ts || 0) * 1000 >= startTs.getTime())
+    .slice().reverse();  // cronológico asc
+
+  let acc = 0;
+  const labels = [], vals = [];
+  today.forEach(t => {
+    acc += Number(t.pnl_usdt ?? t.pnl ?? 0);
+    labels.push(tsToHM(t.ts));
+    vals.push(Number(acc.toFixed(2)));
+  });
+  pnlChart.data.labels = labels;
+  pnlChart.data.datasets[0].data = vals;
+  pnlChart.data.datasets[0].borderColor = acc >= 0 ? "#0ECB81" : "#F6465D";
+  pnlChart.data.datasets[0].backgroundColor = acc >= 0 ? "rgba(14,203,129,.12)" : "rgba(246,70,93,.12)";
+  pnlChart.update("none");
+
+  // PnL por estrategia (bar horizontal)
+  const per = {};
+  today.forEach(t => {
+    const s = t.strategy || "—";
+    per[s] = (per[s] || 0) + Number(t.pnl_usdt ?? t.pnl ?? 0);
+  });
+  const entries = Object.entries(per).sort((a,b) => b[1] - a[1]);
+  byStrategyChart.data.labels = entries.map(e => e[0]);
+  byStrategyChart.data.datasets[0].data = entries.map(e => Number(e[1].toFixed(2)));
+  byStrategyChart.data.datasets[0].backgroundColor = entries.map(e => e[1] >= 0 ? "#0ECB81" : "#F6465D");
+  byStrategyChart.update("none");
+}
+
+function renderTrades() {
+  const tbody = $("#tradesBody");
+  let rows = LAST_TRADES.slice();
+  if (TRADE_FILTER === "open") {
+    const openSyms = new Set(Object.keys((LAST_STATE.open_positions || {})));
+    rows = rows.filter(t => t.side === "BUY" && openSyms.has(t.symbol));
+  } else if (TRADE_FILTER === "closed") {
+    rows = rows.filter(t => t.side === "SELL");
+  }
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="9" class="empty">Sin trades en esta vista</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.slice(0, 200).map(t => {
+    const pnl = Number(t.pnl_usdt ?? t.pnl ?? 0);
+    const pnlTd = (t.side === "SELL")
+      ? `<span class="${pnlClass(pnl)}">${fmtSignedUSD(pnl)}</span>`
+      : "—";
+    return `<tr>
+      <td>${tsToHM(t.ts)}</td>
+      <td>${t.symbol || "—"}</td>
+      <td><span class="tag ${t.side}">${t.side}</span></td>
+      <td>${fmt(t.qty, 6)}</td>
+      <td>${fmtUSD(t.price, 4)}</td>
+      <td>${fmtUSD(t.notional, 2)}</td>
+      <td>${t.strategy || "—"}</td>
+      <td>${pnlTd}</td>
+      <td style="color:var(--text-dim)">${t.reason || ""}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* ========== Poll loop ========== */
+async function refresh() {
+  try {
+    const [state, tradesRes, decisionsRes] = await Promise.all([
+      api("/api/state"),
+      api("/api/trades?limit=300"),
+      api("/api/decisions?limit=50"),
+    ]);
+
+    LAST_STATE     = state;
+    LAST_TRADES    = tradesRes.trades || [];
+    LAST_DECISIONS = decisionsRes.decisions || [];
+
+    renderHeader(state);
+    renderTiles(state, tradesRes.stats || {});
+    renderPositions(state);
+    renderClaude(state, LAST_DECISIONS);
+    renderUniverse(state);
+    renderStrategies(state);
+    renderCharts(tradesRes.stats || {});
+    renderTrades();
+  } catch (e) {
+    // 503: bot sin state en Firestore todavía
+    const healthEl = $("#healthPill");
+    healthEl.className = "pill err";
+    healthEl.innerHTML = '<span class="dot err"></span>' + (String(e).includes("503") ? "OFFLINE" : "ERR");
+    console.warn("refresh failed:", e);
+  }
+}
+refresh();
+setInterval(refresh, POLL_INTERVAL_MS);
+
+/* ========== Trading hours banner ========== */
+async function refreshScheduleBanner() {
+  try {
+    const s = await api("/api/schedule-status");
+    const banner = document.getElementById('schedBanner');
+    const text   = document.getElementById('schedBannerText');
+    const reason = s.banner_reason;
+    const enabled = s.enabled !== false;
+    const within = s.market_open === true || s.is_within_window === true;
+    if (!enabled || within) {
+      banner.style.display = 'none';
+      return;
+    }
+    let msg = "⏸ Pause time limit";
+    if (reason === "before_start") {
+      msg = `⏸ Pause time limit — antes del start (${s.trading_start_et} ET)`;
+    } else if (reason === "after_end") {
+      msg = `⏸ Pause time limit — después del end (${s.trading_end_et} ET)`;
+    } else if (reason === "disabled") {
+      msg = "⏸ Pause time limit — horario deshabilitado";
+    }
+    text.textContent = msg;
+    banner.style.display = 'block';
+  } catch (e) {
+    // silencioso — no queremos un toast por algo cosmético
+    console.warn("schedule-status failed:", e);
+  }
+}
+refreshScheduleBanner();
+setInterval(refreshScheduleBanner, 15000);
+
+// Strategy state + stats (cálculo más pesado → poll más relajado)
+fetchStrategies();
+setInterval(fetchStrategies, 30000);
+fetchStrategyStats();
+setInterval(fetchStrategyStats, 60000);
+
+/* ========== Tabs + export ========== */
+$$(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    $$(".tab").forEach(t => t.classList.remove("active"));
+    tab.classList.add("active");
+    TRADE_FILTER = tab.dataset.filter;
+    renderTrades();
+  });
+});
+
+$("#btnExport").addEventListener("click", () => {
+  const header = ["ts_utc","symbol","side","qty","price","notional","strategy","pnl_usdt","reason","mode"];
+  const rows = [header.join(",")];
+  LAST_TRADES.forEach(t => {
+    rows.push([
+      t.ts ? new Date(t.ts*1000).toISOString() : "",
+      t.symbol||"", t.side||"", t.qty||"", t.price||"", t.notional||"",
+      t.strategy||"", (t.pnl_usdt ?? t.pnl ?? ""),
+      (t.reason||"").replace(/,/g," "), t.mode||"",
+    ].join(","));
+  });
+  const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement("a");
+  a.href = url; a.download = "eolo-crypto-trades-" + new Date().toISOString().slice(0,10) + ".csv";
+  a.click(); URL.revokeObjectURL(url);
+});
+
+/* ========== Botones header ========== */
+$("#btnToggle").addEventListener("click", async () => {
+  const cfg = LAST_STATE.config || {};
+  const newActive = !(cfg.active !== false);
+  try {
+    await api("/api/toggle-active", { method: "POST", body: JSON.stringify({ active: newActive }) });
+    showToast("Bot " + (newActive ? "reanudado" : "pausado"));
+    refresh();
+  } catch (e) { showToast(String(e), "err"); }
+});
+
+$("#btnCloseAll").addEventListener("click", async () => {
+  if (!confirm("¿Cerrar TODAS las posiciones Eolo? (market sell)")) return;
+  try {
+    await api("/api/close-all", { method: "POST", body: JSON.stringify({ reason: "manual_from_dashboard" }) });
+    showToast("Close all enviado");
+  } catch (e) { showToast(String(e), "err"); }
+});
+
+/* ========== Modal config ========== */
+const modal = $("#modalConfig");
+$("#btnConfig").addEventListener("click", async () => {
+  try {
+    const cfg = await api("/api/config");
+    $("#cfgPosPct").value       = cfg.position_size_pct         ?? 2.0;
+    $("#cfgMaxPos").value       = cfg.max_open_positions        ?? 5;
+    $("#cfgSL").value           = cfg.default_stop_loss_pct     ?? 2.5;
+    $("#cfgTP").value           = cfg.default_take_profit_pct   ?? 5.0;
+    $("#cfgDLC").value           = cfg.daily_loss_cap_pct       ?? -5.0;
+    $("#cfgClaudeBudget").value = cfg.claude_max_cost_per_day   ?? 3.0;
+    document.getElementById('cfg-confluence').checked   = !!cfg.confluence_mode;
+    document.getElementById('cfg-confluence-min').value = cfg.confluence_min_agree ?? 2;
+    document.getElementById('cfg-thours-enabled').checked = (cfg.trading_hours_enabled ?? true);
+    document.getElementById('cfgThStart').value       = cfg.trading_start_et ?? "00:00";
+    document.getElementById('cfgThEnd').value         = cfg.trading_end_et   ?? "23:59";
+    document.getElementById('cfgThAutoClose').value   = cfg.auto_close_et    ?? "23:59";
+    modal.classList.add("show");
+  } catch (e) { showToast(String(e), "err"); }
+});
+$("#cfgCancel").addEventListener("click", () => modal.classList.remove("show"));
+$("#cfgSave").addEventListener("click", async () => {
+  const body = {
+    position_size_pct:        parseFloat($("#cfgPosPct").value),
+    max_open_positions:       parseInt($("#cfgMaxPos").value),
+    default_stop_loss_pct:    parseFloat($("#cfgSL").value),
+    default_take_profit_pct:  parseFloat($("#cfgTP").value),
+    daily_loss_cap_pct:       parseFloat($("#cfgDLC").value),
+    claude_max_cost_per_day:  parseFloat($("#cfgClaudeBudget").value),
+    confluence_mode:          document.getElementById('cfg-confluence').checked,
+    confluence_min_agree:     parseInt(document.getElementById('cfg-confluence-min').value, 10),
+    trading_hours_enabled:    document.getElementById('cfg-thours-enabled').checked,
+    trading_start_et:         document.getElementById('cfgThStart').value || "00:00",
+    trading_end_et:           document.getElementById('cfgThEnd').value   || "23:59",
+    auto_close_et:            document.getElementById('cfgThAutoClose').value || "23:59",
+  };
+  try {
+    await api("/api/config", { method: "POST", body: JSON.stringify(body) });
+    modal.classList.remove("show");
+    showToast("Config guardada");
+    refresh();
+  } catch (e) { showToast(String(e), "err"); }
+});
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("show"); });
+</script>
+
+</body>
+</html>

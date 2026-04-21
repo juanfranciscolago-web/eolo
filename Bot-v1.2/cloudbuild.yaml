@@ -1,0 +1,61 @@
+# ============================================================
+#  EOLO v1.2 Bot — Cloud Build Pipeline
+#
+#  Servicio: eolo-bot-v12 (separado de eolo-bot v1, que sigue corriendo).
+#
+#  IMPORTANT: build context = repo root (.) porque incluye el
+#  paquete compartido eolo_common/.
+#
+#  Manual trigger:
+#    gcloud builds submit --config Bot-v1.2/cloudbuild.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  # ── Step 1: Build Docker image ────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Bot-v1.2/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v12:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v12:latest'
+      - '.'
+
+  # ── Step 2: Push ──────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v12:latest'
+
+  # ── Step 3: Deploy to Cloud Run ───────────────────────
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot-v12'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot-v12:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=1Gi'            # más mem que v1: buffers de candles + pandas
+      - '--cpu=1'
+      - '--timeout=3600'
+      - '--max-instances=1'       # único bot activo
+      - '--min-instances=1'       # 24/7, no scale-to-zero
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      # ANTHROPIC_API_KEY se lee directo desde Secret Manager dentro del proceso
+      # (ver claude_bot.py → _load_api_key_from_secret_manager). No hace falta
+      # exponerla como env var, lo cual es más seguro. La service account de
+      # eolo-bot-v12 necesita el rol roles/secretmanager.secretAccessor.
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-v12:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

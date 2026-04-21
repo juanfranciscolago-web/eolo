@@ -1,0 +1,32 @@
+# No meter al container nada que sea de desarrollo local
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.coverage
+
+# Logs y estado local
+eolo_bot.log
+*.log
+paper_trades_log.csv
+eolo_state.json
+
+# Dashboards locales (en Cloud Run usamos el de /eolo/dashboard-v12-cloudrun)
+dashboard/
+dashboard.html
+dashboard_server.py
+dashboard-cloudrun/
+
+# Scripts locales que no hacen falta en Cloud Run
+start_eolo.sh
+run_paper.sh
+smoke_test.py
+
+# IDE / SO
+.idea/
+.vscode/
+.DS_Store

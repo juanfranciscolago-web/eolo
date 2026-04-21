@@ -1,6 +1,23 @@
 from loguru import logger
 import json
+import time
 from google.cloud import secretmanager, firestore
+
+# Cache TTL en RAM para firestore reads repetitivos (access_token sobre
+# todo — se re-lee antes de cada HTTP call a Schwab). El token dura 30min,
+# 30s de cache es conservador y reduce ~1500 reads/ciclo → ~50.
+# Si Schwab devuelve 401 por token stale, el caller hace retry y puede
+# llamar a _invalidate_firestore_cache() para forzar re-lectura.
+_FS_CACHE: dict = {}
+_FS_CACHE_TTL_SEC = 30
+
+def _invalidate_firestore_cache(collection_id=None, document_id=None, key=None):
+    """Invalida entradas del cache. Sin args = flush total."""
+    if collection_id is None:
+        _FS_CACHE.clear()
+        return
+    ck = (collection_id, document_id, key)
+    _FS_CACHE.pop(ck, None)
 
 def retrieve_google_secret_dict(
     gcp_id, secret_id, version_id="latest"
@@ -20,6 +37,11 @@ def retrieve_google_secret_dict(
     return secret_dict
 
 def retrieve_firestore_value(collection_id, document_id, key) -> str:
+    ck = (collection_id, document_id, key)
+    hit = _FS_CACHE.get(ck)
+    if hit and (time.time() - hit[0]) < _FS_CACHE_TTL_SEC:
+        return hit[1]
+
     db = firestore.Client()
 
     try:
@@ -28,8 +50,10 @@ def retrieve_firestore_value(collection_id, document_id, key) -> str:
         doc = document.get()
 
         if doc.exists:
-            logger.debug(f"Successfully retrieved {key} value.")
-            return doc.get(key)
+            logger.debug(f"Successfully retrieved {key} value (fresh).")
+            value = doc.get(key)
+            _FS_CACHE[ck] = (time.time(), value)
+            return value
 
         else:
             logger.error(f"Failed to retrieve {key} value")

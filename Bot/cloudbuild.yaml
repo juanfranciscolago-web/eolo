@@ -1,0 +1,60 @@
+# ============================================================
+#  EOLO Bot — Cloud Build Pipeline
+#
+#  Triggered daily at 9:00 AM ET via Cloud Scheduler.
+#  Builds the bot Docker image and deploys to Cloud Run.
+#
+#  IMPORTANT: build context = repo root (.) porque necesitamos
+#  copiar también el paquete compartido eolo_common/.
+#
+#  Manual trigger:
+#    gcloud builds submit --config Bot/cloudbuild.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  # ── Step 1: Build the Docker image ─────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Bot/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:latest'
+      - '.'
+
+  # ── Step 2: Push to Container Registry ─────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:latest'
+
+  # ── Step 3: Deploy to Cloud Run ─────────────────────────
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=3600'          # 1 hora max por request (el bot es long-running)
+      - '--max-instances=1'       # solo 1 instancia del bot a la vez
+      - '--min-instances=1'       # SIEMPRE 1 instancia activa (nunca scale-to-zero)
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+
+# Imagen final guardada en Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot:latest'
+
+# Timeout total del build (10 minutos)
+timeout: '600s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

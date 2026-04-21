@@ -3,7 +3,7 @@ import pandas
 import requests
 from loguru import logger
 
-from helpers import retrieve_firestore_value
+from helpers import retrieve_firestore_value, _invalidate_firestore_cache
 
 from secret_stuff import (
     project_id,
@@ -19,14 +19,13 @@ os.environ["GCLOUD_PROJECT"] = gcloud_project
 
 class MarketData:
     def __init__(self):
-        # Initialize access token, base_url, and headers
-        # during class instantiation
-        # Instance variable
         self.access_token = None
-        # Method
         self.refresh_access_token()
-        self.base_url = "https://api.schwabapi.com/marketdata/v1"
-        self.headers = {"Authorization": f"Bearer {self.access_token}"}
+        self.base_url  = "https://api.schwabapi.com/marketdata/v1"
+        self.headers   = {"Authorization": f"Bearer {self.access_token}"}
+        # Timeframe activo — se actualiza desde bot_main según Firestore
+        # Valores válidos: 1, 5, 15, 30, 60, 240, 1440 (minutos)
+        self.frequency = 1
 
     def refresh_access_token(self):
         self.access_token = retrieve_firestore_value(
@@ -59,39 +58,82 @@ class MarketData:
             return None
 
     def get_price_history(self, symbol: str, candles: int = 50, days: int = 1,
-                          frequency: int = 1):
+                          frequency: int = None):
         """
-        Fetches intraday candles for a symbol via Schwab Market Data API.
+        Fetches candles for a symbol via Schwab Market Data API.
         Returns a DataFrame with columns: datetime, open, high, low, close, volume
-        Returns None on error.
-        Auto-retries once if token is expired (401).
+        Returns None on error. Auto-retries once si el token expira (401).
 
-        frequency: tamaño de vela en minutos (1 o 5). Default: 1.
-        days     : días de historia (1-10).
-                   Con frequency=1: 1 día ≈ 390 velas, suficiente para SMA200.
-                   Con frequency=5: 1 día ≈  78 velas.
+        frequency: minutos por vela. None = usa self.frequency (set desde Firestore).
+                   Valores soportados: 1, 5, 15, 30 → Schwab nativo
+                                       60, 240      → Schwab 30min + pandas resample
+                                       1440         → Schwab daily
+        days     : días de historia.
         candles  : cuántas velas finales devolver (tail). 0 = todas.
         """
-        days      = max(1, min(10, days))
-        frequency = frequency if frequency in (1, 5, 10, 15, 30) else 1
+        if frequency is None:
+            frequency = self.frequency
 
-        url = self.base_url + "/pricehistory"
+        # ── Auto-scale días según el TF ──────────────────────
+        # Antes de este fix, la mayoría de las estrategias llamaban con
+        # days=1, y en freq=15m/30m eso da ~26/13 velas — insuficiente
+        # para SMA200, EMA50, ATR(14) + contextos largos → HOLD silencioso.
+        # Con este ajuste, cualquier caller que pase days=1 en 15m recibe
+        # ≥3 días de historia, y en 30m ≥5 días (≈60–78 velas utilizables).
+        if frequency == 15:
+            days = max(days, 3)
+        elif frequency == 30:
+            days = max(days, 5)
+        elif frequency == 5:
+            days = max(days, 2)
+
+        # ── Daily timeframe (1440 min = 1 día) ───────────────
+        if frequency == 1440:
+            return self._get_daily_history(symbol, candles=candles, days=max(days, 30))
+
+        # ── 1h / 4h — fetch 30min + resample ─────────────────
+        if frequency in (60, 240):
+            raw = self._fetch_minute_candles(symbol, schwab_freq=30,
+                                             days=max(days, 10), candles=0)
+            if raw is None:
+                return None
+            rule = f"{frequency}min"
+            df = (raw.set_index("datetime")
+                     .resample(rule, label="right", closed="right")
+                     .agg({"open": "first", "high": "max",
+                           "low": "min", "close": "last", "volume": "sum"})
+                     .dropna(subset=["close"])
+                     .reset_index())
+            if candles > 0:
+                df = df.tail(candles).reset_index(drop=True)
+            logger.debug(f"Fetched {len(df)} {frequency}min candles for {symbol} (resampled)")
+            return df
+
+        # ── Minute timeframes (1, 5, 15, 30) ─────────────────
+        schwab_freq = frequency if frequency in (1, 5, 10, 15, 30) else 1
+        return self._fetch_minute_candles(symbol, schwab_freq=schwab_freq,
+                                          days=days, candles=candles)
+
+    def _fetch_minute_candles(self, symbol: str, schwab_freq: int = 1,
+                               days: int = 1, candles: int = 0):
+        """Fetches minute candles directly from Schwab API."""
+        days = max(1, min(10, days))
+        url  = self.base_url + "/pricehistory"
         params = {
             "symbol":                symbol,
             "periodType":            "day",
             "period":                days,
             "frequencyType":         "minute",
-            "frequency":             frequency,
+            "frequency":             schwab_freq,
             "needExtendedHoursData": False,
         }
-
-        for attempt in range(2):   # try up to 2 times (once fresh, once after token refresh)
+        for attempt in range(2):
             self.refresh_access_token()
             self.headers = {"Authorization": f"Bearer {self.access_token}"}
             response = requests.get(url, headers=self.headers, params=params)
 
             if response.status_code == 200:
-                data = response.json()
+                data         = response.json()
                 candles_data = data.get("candles", [])
                 if not candles_data:
                     logger.error(f"No candles returned for {symbol}")
@@ -101,23 +143,56 @@ class MarketData:
                 df = df[["datetime", "open", "high", "low", "close", "volume"]]
                 if candles > 0:
                     df = df.tail(candles).reset_index(drop=True)
-                logger.debug(f"Fetched {len(df)} 5-min candles for {symbol} ({days}d)")
+                logger.debug(f"Fetched {len(df)} {schwab_freq}min candles for {symbol} ({days}d)")
                 return df
 
             elif response.status_code == 401:
                 if attempt == 0:
-                    logger.warning(f"401 for {symbol} — token may be expired. "
-                                   f"Retrying after re-fetch from Firestore...")
+                    logger.warning(f"401 for {symbol} — token expirado, invalidando cache y reintentando...")
+                    _invalidate_firestore_cache(collection_id, document_id, key)
                 else:
-                    logger.error(
-                        f"401 persists for {symbol}. Your Schwab access token is expired.\n"
-                        f"  ➡ Run your token refresh Cloud Function to get a new one:\n"
-                        f"     gcloud functions call refresh_tokens --region=us-east1"
-                    )
+                    logger.error(f"401 persiste para {symbol}. Token Schwab expirado.\n"
+                                 f"  ➡ gcloud functions call refresh_tokens --region=us-east1")
                     return None
             else:
-                logger.error(f"Error fetching price history for {symbol}: "
-                             f"{response.status_code} {response.text}")
+                logger.error(f"Error fetching {symbol}: {response.status_code} {response.text}")
+                return None
+
+    def _get_daily_history(self, symbol: str, candles: int = 50, days: int = 30):
+        """Fetches daily (1d) candles from Schwab API."""
+        url    = self.base_url + "/pricehistory"
+        period = max(1, min(20, days // 30 + 1))  # Schwab period en meses
+        params = {
+            "symbol":                symbol,
+            "periodType":            "month",
+            "period":                period,
+            "frequencyType":         "daily",
+            "frequency":             1,
+            "needExtendedHoursData": False,
+        }
+        for attempt in range(2):
+            self.refresh_access_token()
+            self.headers = {"Authorization": f"Bearer {self.access_token}"}
+            response = requests.get(url, headers=self.headers, params=params)
+            if response.status_code == 200:
+                data         = response.json()
+                candles_data = data.get("candles", [])
+                if not candles_data:
+                    return None
+                df = pandas.DataFrame(candles_data)
+                df["datetime"] = pandas.to_datetime(df["datetime"], unit="ms")
+                df = df[["datetime", "open", "high", "low", "close", "volume"]]
+                if candles > 0:
+                    df = df.tail(candles).reset_index(drop=True)
+                logger.debug(f"Fetched {len(df)} daily candles for {symbol}")
+                return df
+            elif response.status_code == 401:
+                if attempt == 0:
+                    _invalidate_firestore_cache(collection_id, document_id, key)
+                    self.refresh_access_token()
+                else:
+                    return None
+            else:
                 return None
 
     def get_candles(self, symbol: str, period_type: str = "day", period: int = 1,

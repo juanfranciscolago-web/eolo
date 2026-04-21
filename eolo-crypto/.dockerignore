@@ -1,0 +1,55 @@
+# ============================================================
+#  .dockerignore para eolo-crypto
+#  Aplicado cuando el build context es la raíz `eolo/`.
+# ============================================================
+
+# Python cache
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+**/*.egg-info/
+**/.pytest_cache/
+**/.mypy_cache/
+
+# Entornos virtuales (enormes si viajan al build)
+.venv/
+venv/
+env/
+**/.venv/
+**/venv/
+
+# Git
+.git/
+.gitignore
+.github/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs y datos locales
+**/*.log
+**/paper_trades_*.csv
+**/eolo_state.json
+**/eolo_bot.log
+
+# Documentación (no necesaria en el container)
+README.md
+**/README.md
+docs/
+
+# Cosas específicas de eolo-options (no mezclar en el image de crypto)
+eolo-options/paper_trades_log.csv
+eolo-options/eolo_bot.log
+eolo-options/eolo_state.json
+eolo-options/dashboard-cloudrun/
+
+# Crypto local artifacts
+eolo-crypto/paper_trades_crypto.csv
+
+# OS
+.DS_Store
+Thumbs.db

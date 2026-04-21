@@ -1,0 +1,79 @@
+{
+  "updated_at": "2026-04-17 09:53:35 ET",
+  "updated_ts": 1776434015.588219,
+  "bot": "eolo-v1.2",
+  "active": true,
+  "market_open": true,
+  "auto_close_now": false,
+  "tickers": [
+    "SPY",
+    "QQQ",
+    "AAPL",
+    "TSLA",
+    "NVDA",
+    "SOXL",
+    "TSLL",
+    "NVDL",
+    "TQQQ"
+  ],
+  "active_tickers": {
+    "classic": [
+      "SPY",
+      "QQQ",
+      "AAPL",
+      "TSLA",
+      "NVDA"
+    ],
+    "leveraged": [
+      "SOXL",
+      "TSLL",
+      "NVDL",
+      "TQQQ"
+    ]
+  },
+  "active_timeframes": [
+    1,
+    5,
+    15
+  ],
+  "active_strategies": {
+    "ema_crossover": true,
+    "sma200_filter": true,
+    "gap_fade": true,
+    "vwap_rsi": true,
+    "bollinger": true,
+    "orb": true,
+    "rsi_sma200": true,
+    "supertrend": true,
+    "hh_ll": true,
+    "ha_cloud": true,
+    "squeeze": true,
+    "macd_bb": true,
+    "ema_tsi": true,
+    "vela_pivot": true
+  },
+  "budget": 100.0,
+  "positions": [],
+  "prices": {
+    "SPY": 707.8,
+    "QQQ": 646.41,
+    "AAPL": 268.22,
+    "TSLA": 396.94,
+    "NVDA": 201.38,
+    "SOXL": 92.055
+  },
+  "candle_counts": {
+    "SPY": 2,
+    "QQQ": 2,
+    "AAPL": 2,
+    "TSLA": 2,
+    "NVDA": 2,
+    "SOXL": 2,
+    "TSLL": 2,
+    "NVDL": 2,
+    "TQQQ": 2
+  },
+  "signals_today": 0,
+  "last_signal_ts": 0.0,
+  "uptime_s": 51
+}

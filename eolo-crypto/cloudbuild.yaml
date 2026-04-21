@@ -1,0 +1,74 @@
+# ============================================================
+#  EOLO Crypto — Cloud Build pipeline
+#
+#  Servicio: eolo-bot-crypto (us-east1, mismo region que v2)
+#
+#  Submit desde la raíz del repo `eolo/`:
+#    cd /Users/JUAN/PycharmProjects/eolo
+#    gcloud builds submit --config eolo-crypto/cloudbuild.yaml . \
+#        --project eolo-schwab-agent
+#
+#  Antes del primer deploy, crear los secretos en Secret Manager:
+#    gcloud secrets create binance-testnet-api-key    --data-file=-
+#    gcloud secrets create binance-testnet-api-secret --data-file=-
+#  (anthropic-api-key ya existe de eolo-options/v2, se reusa)
+#
+#  Y darle permiso a la service account de Cloud Run:
+#    gcloud projects add-iam-policy-binding eolo-schwab-agent \
+#      --member=serviceAccount:<PROJECT_NUMBER>-compute@developer.gserviceaccount.com \
+#      --role=roles/secretmanager.secretAccessor
+# ============================================================
+
+steps:
+  # ── Step 1: Build Docker image ────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-crypto/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+      - '.'
+
+  # ── Step 2: Push ──────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+
+  # ── Step 3: Deploy to Cloud Run ───────────────────────
+  #
+  # IMPORTANTE: NO usar us-east1 (ni ninguna región US) — Binance
+  # geo-bloquea el tráfico desde Estados Unidos con HTTP 451
+  # "Unavailable For Legal Reasons". La API de binance.com y
+  # testnet.binance.vision solo aceptan IPs fuera de USA.
+  # Regiones OK: southamerica-east1, europe-west1, asia-east1,
+  # asia-southeast1. Elegimos Sao Paulo por latencia hacia LATAM.
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot-crypto'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+      - '--region=southamerica-east1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--cpu-boost'                   # Arranque rápido (backfill de 10+ pares en paralelo)
+      - '--no-cpu-throttling'           # CPU 24/7 — el WS no genera tráfico HTTP
+      - '--timeout=3600'
+      - '--max-instances=1'
+      - '--min-instances=1'             # 24/7, NUNCA scale-to-zero
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,BINANCE_MODE=TESTNET'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

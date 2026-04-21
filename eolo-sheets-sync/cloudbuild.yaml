@@ -1,0 +1,53 @@
+# ============================================================
+#  EOLO — Sheets Sync — Cloud Build Pipeline
+#
+#  Servicio: eolo-sheets-sync (us-central1, en línea con los otros servicios)
+#
+#  Manual trigger (DESDE LA RAÍZ del repo):
+#    cd /path/to/eolo
+#    gcloud builds submit --config eolo-sheets-sync/cloudbuild.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-sheets-sync/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-sheets-sync:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-sheets-sync:latest'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-sheets-sync:latest'
+
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-sheets-sync'
+      - '--image=gcr.io/$PROJECT_ID/eolo-sheets-sync:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--no-allow-unauthenticated'          # solo Scheduler o Juan con gcloud identity-token
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=300'
+      - '--max-instances=1'
+      - '--min-instances=0'                    # puede escalar a 0 entre runs
+      - '--concurrency=1'
+      - '--service-account=eolo-sheets-sync@$PROJECT_ID.iam.gserviceaccount.com'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,DRIVE_FOLDER_NAME=eolo - API,DRIVE_PARENT_FOLDER=nino,LOOKBACK_DAYS=7'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-sheets-sync:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

@@ -1,0 +1,6 @@
+Flask==3.0.3
+gunicorn==22.0.0
+loguru==0.7.2
+google-cloud-firestore==2.16.1
+google-auth==2.32.0
+google-api-python-client==2.138.0

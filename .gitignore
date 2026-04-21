@@ -1,0 +1,39 @@
+# ── Secrets / credenciales ────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+refresh_token_local.py
+secret_stuff.py
+token*.json
+credentials*.json
+
+# ── Python build artifacts ────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Virtualenvs ────────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── IDE ────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ── Data / logs del bot ────────────────────────────────────
+trades_log.csv
+*.log
+*.log.*
+
+# ── Cowork / scratch temporales ────────────────────────────
+/tmp/
+runcycle.log
