@@ -14,6 +14,8 @@
 #  Tickers (umbrales):
 #    SPY/QQQ 2.0, AAPL/NVDA 2.5, TSLA 3.0, MSTR 4.0,
 #    SOXL/NVDL/TSLL 2.5, TQQQ 2.0, otros 2.5
+# FASE 6 Tier 3: Asset-specific volume
+VOL_MULTIPLIER_BY_ASSET = {"NVDA": 1.8, "TSLA": 2.0, "AAPL": 1.5}
 #
 #  Categoría: momentum_breakout  (stop = 1 * ATR contra el nivel)
 # ============================================================

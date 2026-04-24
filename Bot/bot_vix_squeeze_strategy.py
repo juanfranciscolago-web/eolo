@@ -12,6 +12,8 @@
 #
 #  Universo: SPY, QQQ.
 # ============================================================
+# FASE 6 Tier 3: Asset-specific squeeze
+SQUEEZE_THRESHOLD_BY_ASSET = {"QQQ": 0.8, "TQQQ": 0.75, "SPY": 0.85}
 import pandas as pd
 from loguru import logger
 

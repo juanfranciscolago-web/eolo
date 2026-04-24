@@ -13,6 +13,9 @@
 #  Categoría: momentum_breakout.
 # ============================================================
 import pandas as pd
+# FASE 6 Tier 3: Asset-specific TSV periods
+TSV_PERIOD_BY_ASSET = {"TQQQ": 12, "SOXL": 15, "SPY": 14}
+FAST_MA_BY_ASSET = {"TSLA": 3, "NVDA": 3, "AAPL": 4}
 from loguru import logger
 
 STRATEGY_NAME = "TSV"

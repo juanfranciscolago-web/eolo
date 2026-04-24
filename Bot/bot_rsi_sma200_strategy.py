@@ -17,6 +17,9 @@ from loguru import logger
 
 STRATEGY_NAME = "RSI_SMA200"
 RSI_PERIOD    = 14
+# FASE 6 Tier 3: Asset-specific RSI thresholds
+RSI_BUY_MAX_BY_ASSET = {"JPM": 35, "SPY": 40, "QQQ": 38}
+RSI_SELL_MIN_BY_ASSET = {"JPM": 65, "SPY": 60, "TSLA": 58}
 RSI_BUY_MAX   = 40    # BUY cuando RSI  < 40 (zona de oversold)
 RSI_SELL_MIN  = 60    # SELL cuando RSI > 60 (zona de overbought)
 SMA_PERIOD    = 200   # filtro de tendencia
@@ -65,18 +68,17 @@ def detect_signal(df: pd.DataFrame, ticker: str) -> str:
         )
         return "SELL"
 
-    # ── BUY: RSI oversold + sobre SMA200 ──────────────────
-    if rsi < RSI_BUY_MAX and close > sma200:
+    # ── BUY: RSI oversold (filtro SMA200 deshabilitado — permite entrar en cualquier tendencia)
+    if rsi < RSI_BUY_MAX:
         logger.info(
             f"[RSI_SMA200] {ticker} BUY ✅ — RSI={rsi:.1f} < {RSI_BUY_MAX} | "
-            f"close={close:.4f} > SMA200={sma200:.4f}"
+            f"close={close:.4f} | sma200={sma200:.4f}"
         )
         return "BUY"
 
-    if rsi < RSI_BUY_MAX and close <= sma200:
+    if False:  # placeholder — SMA200 block removido
         logger.info(
-            f"[RSI_SMA200] {ticker} BUY bloqueado — bajo SMA200: "
-            f"close={close:.4f} <= sma200={sma200:.4f} | RSI={rsi:.1f}"
+            f"[RSI_SMA200] {ticker} — (SMA200 block deshabilitado)"
         )
 
     return "HOLD"

@@ -10,6 +10,8 @@
 #
 #    NOTA: El original también tiene SHORT pero Eolo opera solo LONG.
 #          La señal de SELL es el stop de la posición LONG.
+# FASE 6 Tier 3: Asset-specific lookback
+HH_LL_PERIOD_BY_ASSET = {"JPM": 20, "NVDA": 15, "QQQ": 18}
 #
 #  Indicadores:
 #    EMA3, EMA5, EMA8, EMA17  (rápidas para tendencia inmediata)
