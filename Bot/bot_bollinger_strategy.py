@@ -14,7 +14,7 @@ import pandas as pd
 from loguru import logger
 
 STRATEGY_NAME = "BOLLINGER"
-BB_PERIOD     = 20
+BB_PERIOD     = 25  # Increased from 20 — FASE 6 tuning (reduces whipsaws on 30m)
 BB_STD        = 2.0
 
 

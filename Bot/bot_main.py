@@ -36,6 +36,10 @@ from eolo_common.trading_hours import (  # noqa: E402
     is_after_auto_close as _tr_is_after_auto_close,
     now_et,
 )
+from eolo_common.diagnostics import (  # noqa: E402
+    compute_strategy_diagnostics,
+    DIAGNOSTICS_TICKERS_DEFAULT,
+)
 
 from marketdata import MarketData
 from macro_polling import start_macro_feeds  # Nivel 2 (VIX/TICK/TRIN polling)
@@ -68,9 +72,12 @@ import bot_vix_correlation_strategy      as vix_corr_strategy
 import bot_vix_squeeze_strategy          as vix_sq_strategy
 import bot_tick_trin_fade_strategy       as tt_strategy
 import bot_vrp_strategy                  as vrp_strategy
+# ── FASE 5 Winner (30m intraday) ────────────────────────
+import bot_xom_30m_strategy              as xom_30m_strategy
 # ── "EMA 3/8 y MACD" suite (v3) — dispatcher compartido ──
 import bot_strategies_v3_dispatcher      as v3_strategy
 import bot_trader             as trader
+from strategy_router import should_run_strategy  # FASE 6: Asset/TF routing
 
 # ── Tickers por grupo ─────────────────────────────────────
 TICKERS_EMA_GAP   = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA"]
@@ -120,6 +127,8 @@ DEFAULT_STRATEGIES = {
     "vix_squeeze":         True,
     "tick_trin_fade":      True,
     "vrp_intraday":        True,
+    # ── FASE 5 Winner: XOM 30m Bollinger (PF 1.38, backtest 60d real data)
+    "xom_30m":             True,
     # ── Suite "EMA 3/8 y MACD" (v3) ─────────────────────────
     "ema_3_8":             True,
     "ema_8_21":            True,
@@ -132,6 +141,14 @@ DEFAULT_STRATEGIES = {
     "donchian_turtle":     True,
     "bulls_bsp":           True,
     "net_bsv":             True,
+    # ── Combos Ganadores (2026-04) ────────────────────────────
+    "combo1_ema_scalper":  True,   # ALTA  — EMA3/8 + EMA stack 8>21>34>55>89
+    "combo2_rubber_band":  True,   # ALTA  — Rubber Band VWAP 09:45-14:30 ET
+    "combo3_nino_squeeze": True,   # MEDIA — Nino Squeeze ⭐ (stack+TTM+vol+MACD)
+    "combo4_slimribbon":   True,   # MEDIA — SlimRibbon EMA8>13>21 + MACD + TDI
+    "combo5_btd":          True,   # MEDIA — BTD % cross0 + stack + PullBack34
+    "combo6_fractalccix":  True,   # BAJA  — TEMA/HA + CCI extremo + squeeze≥4
+    "combo7_campbell":     True,   # BAJA  — EMA34 trend + EMA3 cross + Supertrend
 }
 
 
@@ -177,6 +194,7 @@ def get_global_settings() -> dict:
                 "max_positions":           5,
                 "default_stop_loss_pct":   2.0,
                 "default_take_profit_pct": 4.0,
+                "allow_short_selling":     False,  # OFF por defecto — requiere cuenta con margen
                 "daily_loss_cap_pct":     -5.0,
                 # trading_hours defaults (equity): 09:30-15:27 ET con auto-close 15:27
                 "trading_start_et":       "09:30",
@@ -321,7 +339,8 @@ def is_market_open(settings: dict = None) -> bool:
 
 # ── One scan cycle ────────────────────────────────────────
 
-def close_all_open_positions(market_data: MarketData, budget: float):
+def close_all_open_positions(market_data: MarketData, budget: float,
+                               settings: dict | None = None):
     """Cierra en market order todas las posiciones con estado LONG."""
     logger.warning("🚨 CLOSE ALL — cerrando todas las posiciones abiertas")
     all_tickers = TICKERS_EMA_GAP + TICKERS_LEVERAGED
@@ -336,8 +355,15 @@ def close_all_open_positions(market_data: MarketData, budget: float):
                     candles = market_data.get_candles(ticker, period_type="day", period=1)
                     price = float(candles["close"].iloc[-1]) if candles is not None and not candles.empty else 0
                 if price and price > 0:
-                    result = {"ticker": ticker, "signal": "SELL",
-                              "price": price, "strategy": "CLOSE_ALL", "_budget": budget}
+                    result = {
+                        "ticker":       ticker,
+                        "signal":       "SELL",
+                        "price":        price,
+                        "strategy":     "CLOSE_ALL",
+                        "_budget":      budget,
+                        "reason":       "CLOSE_ALL manual flag",
+                        "_macro_feeds": (settings or {}).get("_macro_feeds"),
+                    }
                     trader.execute(result)
                     closed += 1
             except Exception as e:
@@ -429,7 +455,7 @@ def enforce_risk_exits(market_data: "MarketData", settings: dict, budget: float)
         return
 
     for ticker, state in list(trader.positions.items()):
-        if state != "LONG":
+        if state not in ("LONG", "SHORT"):
             continue
         entry = trader.entry_prices.get(ticker)
         if not entry or entry <= 0:
@@ -440,20 +466,35 @@ def enforce_risk_exits(market_data: "MarketData", settings: dict, budget: float)
             price = None
         if not price or price <= 0:
             continue
-        pnl_pct = (price - entry) / entry * 100.0
-        reason  = None
-        if sl_pct is not None and pnl_pct <= -sl_pct:
-            reason = f"RISK_SL {pnl_pct:+.2f}% ≤ -{sl_pct:.2f}%"
-        elif tp_pct is not None and pnl_pct >=  tp_pct:
-            reason = f"RISK_TP {pnl_pct:+.2f}% ≥ +{tp_pct:.2f}%"
+
+        reason = None
+        if state == "LONG":
+            pnl_pct = (price - entry) / entry * 100.0
+            if sl_pct is not None and pnl_pct <= -sl_pct:
+                reason = f"RISK_SL {pnl_pct:+.2f}% ≤ -{sl_pct:.2f}%"
+            elif tp_pct is not None and pnl_pct >= tp_pct:
+                reason = f"RISK_TP {pnl_pct:+.2f}% ≥ +{tp_pct:.2f}%"
+            exit_signal = "SELL"
+
+        else:  # SHORT — P&L invertido: ganás cuando el precio baja
+            pnl_pct = (entry - price) / entry * 100.0
+            if sl_pct is not None and pnl_pct <= -sl_pct:
+                reason = f"RISK_SL_SHORT {pnl_pct:+.2f}% ≤ -{sl_pct:.2f}% (precio subió)"
+            elif tp_pct is not None and pnl_pct >= tp_pct:
+                reason = f"RISK_TP_SHORT {pnl_pct:+.2f}% ≥ +{tp_pct:.2f}% (precio bajó)"
+            exit_signal = "BUY"  # BUY_TO_COVER
+
         if reason:
-            logger.warning(f"[RISK-WATCHDOG] {ticker} {reason} — forzando SELL")
+            logger.warning(f"[RISK-WATCHDOG] {ticker} ({state}) {reason} — forzando {exit_signal}")
             trader.execute({
-                "ticker":   ticker,
-                "signal":   "SELL",
-                "price":    price,
-                "strategy": "RISK_WATCHDOG",
-                "_budget":  budget,
+                "ticker":        ticker,
+                "signal":        exit_signal,
+                "price":         price,
+                "strategy":      "RISK_WATCHDOG",
+                "_budget":       budget,
+                "reason":        reason,
+                "_macro_feeds":  settings.get("_macro_feeds"),
+                "_allow_short":  False,  # watchdog nunca abre nuevas posiciones
             })
 
 
@@ -516,9 +557,12 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         if daily_cap_hit and result.get("signal") == "BUY":
             result["signal"] = "HOLD"
             result["_daily_cap_suppressed"] = True
-        result["strategy"]   = strat_name
-        result["_budget"]    = budget
-        result["_timeframe"] = timeframe
+        result["strategy"]     = strat_name
+        result["_budget"]      = budget
+        result["_timeframe"]   = timeframe
+        result["_macro_feeds"] = settings.get("_macro_feeds")
+        # Habilita apertura de shorts si el setting lo permite
+        result["_allow_short"] = bool(settings.get("allow_short_selling", False))
         trader.print_status(result)
 
         # ── Modo "collect" para confluencia multi-TF ──
@@ -568,7 +612,11 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     if strategies.get("gap_fade"):
         print(f"\n  [GAP] Tickers: {tickers_ema_gap}")
         for ticker in tickers_ema_gap:
-            result = gap_strategy.analyze(market_data, ticker)
+            # FASE 6: gap only works on 1h+ (skip 30m)
+            if should_run_strategy("gap_fade", ticker, CANDLE_MINUTES):
+                result = gap_strategy.analyze(market_data, ticker)
+            else:
+                result = {"ticker": ticker, "signal": "HOLD", "strategy": "GAP", "reason": "below_1h_tf"}
             _exec(result, "GAP")
 
     # ── VWAP + RSI ───────────────────────────────────────
@@ -613,7 +661,11 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     if strategies.get("supertrend"):
         print(f"\n  [SUPERTREND] Tickers: {tickers_leveraged}")
         for ticker in tickers_leveraged:
-            result = supertrend_strategy.analyze(market_data, ticker)
+            # FASE 6 Tier 2: Asset-specific ATR tuning (QQQ=7, UNH=6)
+            if should_run_strategy("supertrend", ticker, CANDLE_MINUTES):
+                result = supertrend_strategy.analyze(market_data, ticker)
+            else:
+                result = {"ticker": ticker, "signal": "HOLD", "strategy": "SUPERTREND", "reason": "not_in_tier2_map"}
             _exec(result, "SUPERTREND")
 
     # ── High/Low Breakout ────────────────────────────────
@@ -641,7 +693,11 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     if strategies.get("macd_bb"):
         print(f"\n  [MACD_BB] Tickers: {tickers_leveraged}")
         for ticker in tickers_leveraged:
-            result = macd_bb_strategy.analyze(market_data, ticker)
+            # FASE 6 Tier 2: Asset/TF specific routing
+            if should_run_strategy("macd_bb", ticker, CANDLE_MINUTES):
+                result = macd_bb_strategy.analyze(market_data, ticker)
+            else:
+                result = {"ticker": ticker, "signal": "HOLD", "strategy": "MACD_BB", "reason": "not_in_tier2_map"}
             _exec(result, "MACD_BB")
 
     # ── EMA Cloud + TSI + MACD ───────────────────────────
@@ -677,24 +733,36 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     if strategies.get("stop_run"):
         print(f"\n  [STOP_RUN] Tickers: {tickers_all}")
         for ticker in tickers_all:
-            entry = trader.entry_prices.get(ticker)
-            result = stop_run_strategy.analyze(market_data, ticker, entry)
+            # FASE 6 Tier 2: Asset-specific lookback (JPM=20, XOM=10)
+            if should_run_strategy("stop_run", ticker, CANDLE_MINUTES):
+                entry = trader.entry_prices.get(ticker)
+                result = stop_run_strategy.analyze(market_data, ticker, entry)
+            else:
+                result = {"ticker": ticker, "signal": "HOLD", "strategy": "STOP_RUN", "reason": "not_in_tier2_map"}
             _exec(result, "STOP_RUN")
 
     # ── VWAP Z-Score (#11) ───────────────────────────────
     if strategies.get("vwap_zscore"):
         print(f"\n  [VWAP_ZSCORE] Tickers: {tickers_all}")
         for ticker in tickers_all:
-            entry = trader.entry_prices.get(ticker)
-            result = vwap_z_strategy.analyze(market_data, ticker, entry)
+            # FASE 6 Tier 2: Tighter Z-score for JPM (1.2 instead of 2.5)
+            if should_run_strategy("vwap_zscore", ticker, CANDLE_MINUTES):
+                entry = trader.entry_prices.get(ticker)
+                result = vwap_z_strategy.analyze(market_data, ticker, entry)
+            else:
+                result = {"ticker": ticker, "signal": "HOLD", "strategy": "VWAP_ZSCORE", "reason": "not_in_tier2_map"}
             _exec(result, "VWAP_ZSCORE")
 
     # ── Volume Reversal Bar (#15r) ───────────────────────
     if strategies.get("volume_reversal_bar"):
         print(f"\n  [VOL_REVERSAL_BAR] Tickers: {tickers_all}")
         for ticker in tickers_all:
-            entry = trader.entry_prices.get(ticker)
-            result = vrb_strategy.analyze(market_data, ticker, entry)
+            # FASE 6 Tier 2: Higher vol multiplier for TSLA (2.0 vs 1.5)
+            if should_run_strategy("volume_reversal_bar", ticker, CANDLE_MINUTES):
+                entry = trader.entry_prices.get(ticker)
+                result = vrb_strategy.analyze(market_data, ticker, entry)
+            else:
+                result = {"ticker": ticker, "signal": "HOLD", "strategy": "VOL_REVERSAL_BAR", "reason": "not_in_tier2_map"}
             _exec(result, "VOL_REVERSAL_BAR")
 
     # ── Anchor VWAP (#16) ────────────────────────────────
@@ -873,6 +941,69 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
             result = v3_strategy.analyze_net_bsv(market_data, ticker)
             _exec(result, "NET_BSV")
 
+    # ═══════════════════════════════════════════════════════════
+    #  Combos Ganadores (2026-04) — 7 estrategias
+    #  Universo: mismo que v3 (clásicas + leveraged).
+    #  COMBO2_RUBBER_BAND es equity-only (excluida de crypto).
+    # ═══════════════════════════════════════════════════════════
+
+    # ── Combo 1 — EMA Scalper 3/8 ──────────────────────
+    if strategies.get("combo1_ema_scalper"):
+        print(f"\n  [COMBO1_EMA_SCALPER] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo1_ema_scalper(market_data, ticker)
+            _exec(result, "COMBO1_EMA_SCALPER")
+
+    # ── Combo 2 — Rubber Band VWAP (equity only) ───────
+    if strategies.get("combo2_rubber_band"):
+        print(f"\n  [COMBO2_RUBBER_BAND] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo2_rubber_band(market_data, ticker)
+            _exec(result, "COMBO2_RUBBER_BAND")
+
+    # ── Combo 3 — Nino Squeeze ⭐ ────────────────────────
+    if strategies.get("combo3_nino_squeeze"):
+        print(f"\n  [COMBO3_NINO_SQUEEZE] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo3_nino_squeeze(market_data, ticker)
+            _exec(result, "COMBO3_NINO_SQUEEZE")
+
+    # ── Combo 4 — SlimRibbon + MACD ─────────────────────
+    if strategies.get("combo4_slimribbon"):
+        print(f"\n  [COMBO4_SLIMRIBBON] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo4_slimribbon(market_data, ticker)
+            _exec(result, "COMBO4_SLIMRIBBON")
+
+    # ── Combo 5 — BTD + Stacked + PullBack34 ────────────
+    if strategies.get("combo5_btd"):
+        print(f"\n  [COMBO5_BTD] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo5_btd(market_data, ticker)
+            _exec(result, "COMBO5_BTD")
+
+    # ── Combo 6 — FractalCCIx Premium ───────────────────
+    if strategies.get("combo6_fractalccix"):
+        print(f"\n  [COMBO6_FRACTALCCIX] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo6_fractalccix(market_data, ticker)
+            _exec(result, "COMBO6_FRACTALCCIX")
+
+    # ── Combo 7 — Campbell Swing ─────────────────────────
+    if strategies.get("combo7_campbell"):
+        print(f"\n  [COMBO7_CAMPBELL] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo7_campbell(market_data, ticker)
+            _exec(result, "COMBO7_CAMPBELL")
+
+    # ═══════════════════════════════════════════════════════════
+    #  FASE 5 Winner: XOM 30m Bollinger (PF 1.38, real backtest)
+    # ═══════════════════════════════════════════════════════════
+    if strategies.get("xom_30m"):
+        print(f"\n  [XOM_30M_BOLLINGER] FASE 5 Winner | PF=1.38 (60d backtest)")
+        result = xom_30m_strategy.analyze(market_data, "XOM")
+        _exec(result, "XOM_30M")
+
     # Note: wait display is informational — actual sleep happens in main()
     print(f"\n{'='*76}")
 
@@ -958,12 +1089,13 @@ def run_multi_tf_confluence_cycle(market_data: MarketData, settings: dict,
                     f"tfs={tfs_used} | "
                     f"mode={'confluence' if cfilter.mode else 'any'}")
         trader.execute({
-            "ticker":   ticker,
-            "signal":   signal,
-            "price":    price,
-            "strategy": f"CONFLUENCE:{strat_name}",
-            "_budget":  budget,
-            "_reason":  reason,
+            "ticker":       ticker,
+            "signal":       signal,
+            "price":        price,
+            "strategy":     f"CONFLUENCE:{strat_name}",
+            "_budget":      budget,
+            "reason":       reason,                          # persiste entry/exit_reason
+            "_macro_feeds": settings.get("_macro_feeds"),
         })
         logger.info(f"[CONFLUENCE] {signal} {ticker} @ {price} ({reason})")
 
@@ -998,6 +1130,77 @@ def interruptible_sleep(seconds: float, check_interval: float = 3.0):
             pass   # si Firestore falla, seguir durmiendo normal
 
     return False
+
+
+# ── Strategy Diagnostics (Plan B — 2026-04-21) ─────────────
+#
+# Corre los 22 wrappers direccionales sobre un universo de 9 tickers vía
+# Schwab MarketData (yfinance quedó bloqueado por Yahoo desde IPs GCP).
+# Persiste a Firestore `eolo-strategy-diagnostics/{YYYY-MM-DD}`, overwrite
+# cada vez. Sheets-sync lo lee desde ahí.
+
+DIAGNOSTICS_INTERVAL_MIN = 15   # cada N minutos dentro del trading window
+DIAGNOSTICS_COLLECTION   = "eolo-strategy-diagnostics"
+
+
+def _diagnostics_get_df(market_data: MarketData, ticker: str):
+    """Adapter Schwab → DataFrame para el módulo común.
+
+    Usa frequency=5m (matching lo que hacía sheets-sync con yfinance) y
+    days=2 — el auto-scale de marketdata expande a 3 días cuando hace falta.
+    Devuelve None si Schwab no responde.
+    """
+    try:
+        prev_freq = market_data.frequency
+        market_data.frequency = 5   # 5 minutos
+        df = market_data.get_price_history(ticker, candles=0, days=2)
+        market_data.frequency = prev_freq
+    except Exception as e:
+        logger.warning(f"[DIAG] Schwab get_price_history({ticker}) falló: {e}")
+        return None
+    if df is None or df.empty:
+        return None
+    # Asegurar index datetime si viene en columna.
+    if "datetime" in df.columns and df.index.name != "datetime":
+        try:
+            df = df.set_index("datetime").sort_index()
+        except Exception:
+            pass
+    return df
+
+
+def _run_and_persist_diagnostics(market_data: MarketData) -> None:
+    """Computa los 22 wrappers × 9 tickers y persiste a Firestore.
+
+    Seguro contra fallos: cualquier excepción se loguea y se traga — no puede
+    romper el ciclo de trading. Si Schwab está caído para todos los tickers,
+    el compute devuelve None y no persiste nada.
+    """
+    try:
+        diag = compute_strategy_diagnostics(
+            get_df=lambda t: _diagnostics_get_df(market_data, t),
+            tickers=DIAGNOSTICS_TICKERS_DEFAULT,
+            interval="5m",
+            period="2d",
+        )
+    except Exception as e:
+        logger.error(f"[DIAG] compute falló: {e}")
+        return
+    if diag is None:
+        return
+    try:
+        fs = firestore.Client()
+        fs.collection(DIAGNOSTICS_COLLECTION).document(diag["date"]).set(
+            diag, merge=False,
+        )
+        logger.info(
+            f"[DIAG] persistido a Firestore: {diag['date']} — "
+            f"{len(diag['tickers'])} tickers × {len(diag['strategies'])} wrappers "
+            f"(raw_total={sum(s['raw_count'] for s in diag['summary'])}, "
+            f"final_total={sum(s['final_count'] for s in diag['summary'])})"
+        )
+    except Exception as e:
+        logger.error(f"[DIAG] persist Firestore falló: {e}")
 
 
 # ── Main ──────────────────────────────────────────────────
@@ -1038,6 +1241,7 @@ def main():
     auto_close_done_date = None   # evita ejecutar el cierre automático más de una vez por día
     prev_timeframes      = []     # para loguear cambios de timeframe
     last_tf_eval: dict   = {}     # {tf_minutos: datetime_ET} — gate per-TF anti re-evaluar
+    last_diag_ts: datetime | None = None  # Plan B 2026-04-21 — diagnostic cada 15 min
 
     # ── MacroFeeds: polling VIX/VIX9D/VIX3M/TICK/TRIN ─────
     # Alimenta las 5 estrategias Nivel 2 (VIX_MEAN_REV, VIX_CORRELATION,
@@ -1070,7 +1274,7 @@ def main():
             budget = float(settings.get("budget", 100))
             logger.warning("⏰ AUTO-CLOSE — cerrando todas las posiciones")
             try:
-                close_all_open_positions(market_data, budget)
+                close_all_open_positions(market_data, budget, settings=settings)
             except Exception as e:
                 logger.error(f"Auto-close error: {e}")
             auto_close_done_date = today   # no volver a ejecutar hoy
@@ -1078,7 +1282,9 @@ def main():
         # ── Close All flag manual (dashboard) ─────────────────
         if settings.get("close_all"):
             try:
-                close_all_open_positions(market_data, float(settings.get("budget", 100)))
+                close_all_open_positions(market_data,
+                                         float(settings.get("budget", 100)),
+                                         settings=settings)
             except Exception as e:
                 logger.error(f"Close all error: {e}")
                 clear_close_all_flag()
@@ -1155,6 +1361,23 @@ def main():
                     last_tf_eval[tf] = now_eval
                 except Exception as e:
                     logger.error(f"Cycle error (tf={tf}m): {e}")
+
+        # ── Strategy Diagnostics (Plan B — 2026-04-21) ─────────
+        # Corre cada DIAGNOSTICS_INTERVAL_MIN minutos durante trading. En el
+        # primer ciclo del día (last_diag_ts=None) se dispara también para
+        # que sheets-sync tenga data recién el bot arranca, sin esperar 15 min.
+        try:
+            now_et_local = datetime.now(EASTERN)
+            should_run = (
+                last_diag_ts is None or
+                (now_et_local - last_diag_ts).total_seconds()
+                    >= DIAGNOSTICS_INTERVAL_MIN * 60
+            )
+            if should_run:
+                _run_and_persist_diagnostics(market_data)
+                last_diag_ts = now_et_local
+        except Exception as e:
+            logger.warning(f"[DIAG] hook falló: {e}")
 
         # ── Sleep hasta la próxima vela del TF más corto ──
         # Ejemplo: si activos son [1, 5, 15] → dormir hasta la próxima vela de 1m

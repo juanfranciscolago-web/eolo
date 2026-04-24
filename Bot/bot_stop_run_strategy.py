@@ -20,10 +20,19 @@ STRATEGY_NAME = "STOP_RUN"
 
 VOL_MA_PERIOD   = 20
 VOL_SPIKE_MULT  = 3.0
-SWING_LOOKBACK  = 5
+SWING_LOOKBACK  = 20  # Increased from 5 — FASE 6 tuning (JPM 30m needs longer context)
 ATR_PERIOD      = 14
 STOP_ATR_MULT   = 0.5
 TIME_STOP_MIN   = 3
+
+# FASE 6 Tier 2 tuning: Asset-specific overrides
+SWING_LOOKBACK_BY_ASSET = {
+    "JPM": 20,   # Tier 2: needs longer lookback
+    "XOM": 10,   # Tier 1: moderate lookback
+}
+VOLUME_MULTIPLIER_BY_ASSET = {
+    "MSFT": 1.2,  # Tier 2: filter noise in 1h/4h
+}
 
 
 # ── Indicadores ───────────────────────────────────────────
@@ -36,13 +45,17 @@ def calculate_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 
-def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def calculate_indicators(df: pd.DataFrame, ticker: str = None) -> pd.DataFrame:
     df = df.copy()
     df["vol_ma"] = df["volume"].rolling(VOL_MA_PERIOD).mean()
     df["atr"]    = calculate_atr(df, ATR_PERIOD)
+
+    # NEW: Asset-specific swing lookback (FASE 6 tuning)
+    lookback = SWING_LOOKBACK_BY_ASSET.get(ticker, SWING_LOOKBACK)
+
     # Swings previos: excluimos la vela actual
-    df["swing_low"]  = df["low"].rolling(SWING_LOOKBACK).min().shift(1)
-    df["swing_high"] = df["high"].rolling(SWING_LOOKBACK).max().shift(1)
+    df["swing_low"]  = df["low"].rolling(lookback).min().shift(1)
+    df["swing_high"] = df["high"].rolling(lookback).max().shift(1)
     return df
 
 
@@ -85,7 +98,9 @@ def detect_signal(
         return "HOLD"
 
     # ── Entrada ───────────────────────────────────────────
-    spike = float(last["volume"]) > VOL_SPIKE_MULT * float(vol_ma)
+    # NEW: Asset-specific volume multiplier (FASE 6 tuning for MSFT noise filtering)
+    vol_mult = VOLUME_MULTIPLIER_BY_ASSET.get(ticker, VOL_SPIKE_MULT)
+    spike = float(last["volume"]) > vol_mult * float(vol_ma)
 
     broke_low  = float(last["low"])  < float(swing_low)
     broke_high = float(last["high"]) > float(swing_high)
@@ -127,7 +142,7 @@ def analyze(
         return {"ticker": ticker, "signal": "ERROR", "strategy": STRATEGY_NAME,
                 "price": None}
 
-    df     = calculate_indicators(df)
+    df     = calculate_indicators(df, ticker)  # Pass ticker for asset-specific tuning
     signal = detect_signal(df, ticker, entry_price, profit_target, stop_loss)
     last   = df.iloc[-1]
 

@@ -28,6 +28,12 @@ VOL_MA_PERIOD   = 20
 ATR_PERIOD      = 14
 STOP_ATR_MULT   = 0.75
 
+# FASE 6 Tier 2 tuning: Asset-specific Z-score thresholds
+ZSCORE_THRESH_BY_ASSET = {
+    "JPM": 1.2,    # Tier 2: Tighter threshold for mean reversion
+    "AMZN": 2.5,   # Tier 1: Keep aggressive threshold
+}
+
 EASTERN = pytz.timezone("America/New_York")
 
 ACTIVE_FROM_HOUR   = 11
@@ -121,14 +127,17 @@ def detect_signal(
     # ── Entrada ───────────────────────────────────────────
     high_vol = float(last["volume"]) > float(vol_ma)
 
-    if z < -ZSCORE_THRESH and high_vol:
+    # NEW: Asset-specific Z-score threshold (FASE 6 tuning)
+    thresh = ZSCORE_THRESH_BY_ASSET.get(ticker, ZSCORE_THRESH)
+
+    if z < -thresh and high_vol:
         logger.info(
-            f"[{STRATEGY_NAME}] {ticker} BUY — z={z:.2f} (<-{ZSCORE_THRESH}) | "
+            f"[{STRATEGY_NAME}] {ticker} BUY — z={z:.2f} (<-{thresh}) | "
             f"close={price:.2f} vwap={vwap:.2f} | target=VWAP"
         )
         return "BUY"
 
-    if z > ZSCORE_THRESH and high_vol:
+    if z > thresh and high_vol:
         logger.debug(
             f"[{STRATEGY_NAME}] {ticker} SHORT setup (long-only → HOLD) | z={z:.2f}"
         )

@@ -28,6 +28,12 @@ ATR_PERIOD    = 6      # nATR del ThinkScript original
 ATR_MULT      = 0.60   # multiplicador de banda
 MIN_BARS      = 20     # mínimo de velas para calcular
 
+# FASE 6 Tier 2 tuning: Asset-specific ATR periods
+ATR_PERIOD_BY_ASSET = {
+    "QQQ": 7,      # Tier 2: Faster volatility response for QQQ
+    "UNH": 6,      # Tier 1: Keep original (already optimal)
+}
+
 
 # ── Indicadores ───────────────────────────────────────────
 
@@ -149,7 +155,9 @@ def analyze(market_data, ticker: str) -> dict:
         return {"ticker": ticker, "signal": "ERROR", "strategy": STRATEGY_NAME,
                 "price": None, "supertrend": None, "direction": None}
 
-    df     = calculate_supertrend(df)
+    # NEW: Asset-specific ATR period (FASE 6 tuning)
+    atr_period = ATR_PERIOD_BY_ASSET.get(ticker, ATR_PERIOD)
+    df     = calculate_supertrend(df, period=atr_period)
     signal = detect_signal(df, ticker)
     last   = df.iloc[-1]
 

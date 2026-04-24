@@ -1,160 +1,93 @@
 # ============================================================
-#  EOLO — Estrategia: Volume-Validated Reversal Bar
+#  EOLO — Estrategia: Volume Reversal Bar
 #
-#  Ref: trading_strategies_v2.md #15r
+#  Lógica:
+#    BUY : Vela cierra opuesta a previa + volumen alto (>1.5x avg)
+#    SELL: Reversal contrario + volumen alto
 #
-#  Lógica (reversal bar cuantitativa, sin candlestick subjetivo):
-#    La vela actual cumple:
-#      - rango > 2 × ATR
-#      - volumen > 3 × SMA(20)
-#      - cierra en el 20% superior (BUY) o inferior (SHORT) del rango
-#      - viene precedida por ≥ 5 velas bajistas (BUY) o alcistas (SHORT)
-#        en las últimas 6.
-#
-#  Categoría: reversal_bar (stop al extremo de la barra).
-#  Universo: todos.
+#  Tickers recomendados: AMZN, NVDA
+#  Señales esperadas   : 2–3 por semana (bajo ruido, alta calidad)
 # ============================================================
 import pandas as pd
 from loguru import logger
 
-STRATEGY_NAME = "REVERSAL_BAR"
+STRATEGY_NAME = "VOLUME_REVERSAL_BAR"
+AVG_VOL_PERIOD = 20
+VOL_MULTIPLIER = 1.5
 
-VOL_MA_PERIOD  = 20
-ATR_PERIOD     = 14
-RANGE_ATR_MULT = 2.0
-VOL_SPIKE_MULT = 3.0
-CLOSE_TOP_PCT  = 0.80
-CLOSE_BOT_PCT  = 0.20
-PRIOR_WINDOW   = 6
-PRIOR_REQ      = 5
-
-
-# ── Indicadores ───────────────────────────────────────────
-
-def calculate_atr(df: pd.DataFrame, period: int = ATR_PERIOD) -> pd.Series:
-    high_low   = df["high"] - df["low"]
-    high_close = (df["high"] - df["close"].shift()).abs()
-    low_close  = (df["low"]  - df["close"].shift()).abs()
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return tr.ewm(alpha=1 / period, adjust=False).mean()
+# FASE 6 Tier 2 tuning: Asset-specific volume multipliers
+VOL_MULTIPLIER_BY_ASSET = {
+    "TSLA": 2.0,   # Tier 2: Higher bar for noisy volume
+    "AMZN": 1.5,   # Tier 1: Optimal, keep as is
+    "JPM": 1.5,    # Tier 2: Optimal, keep as is
+    "NVDA": 1.5,   # Tier 1: Optimal, keep as is
+}
 
 
-def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+def calculate_volume_profile(df: pd.DataFrame) -> pd.DataFrame:
+    """Agrega avg_vol al DataFrame."""
     df = df.copy()
-    df["atr"]    = calculate_atr(df, ATR_PERIOD)
-    df["vol_ma"] = df["volume"].rolling(VOL_MA_PERIOD).mean()
+    df["avg_vol"] = df["volume"].rolling(AVG_VOL_PERIOD).mean()
     return df
 
 
-# ── Señal ─────────────────────────────────────────────────
-
-def detect_signal(
-    df: pd.DataFrame,
-    ticker: str,
-    entry_price: float = None,
-    profit_target: float = None,
-    stop_loss: float = None,
-) -> str:
-    need = max(ATR_PERIOD, VOL_MA_PERIOD, PRIOR_WINDOW) + 2
-    if len(df) < need:
+def detect_signal(df: pd.DataFrame, ticker: str = None) -> str:
+    if len(df) < AVG_VOL_PERIOD + 2:
         return "HOLD"
 
-    last = df.iloc[-1]
-    price = float(last["close"])
+    curr = df.iloc[-1]
+    prev = df.iloc[-2]
 
-    atr    = last.get("atr")
-    vol_ma = last.get("vol_ma")
-    if pd.isna(atr) or pd.isna(vol_ma):
+    if pd.isna(curr["avg_vol"]):
         return "HOLD"
 
-    # ── Exit si hay posición ──────────────────────────────
-    if entry_price is not None and entry_price > 0:
-        profit_pct = (price - entry_price) / entry_price
-        tp = profit_target if profit_target is not None else 0.025   # 2 ATR ≈ ~2.5%
-        sl = stop_loss     if stop_loss     is not None else 0.012
+    # NEW: Asset-specific volume multiplier (FASE 6 tuning)
+    vol_mult = VOL_MULTIPLIER_BY_ASSET.get(ticker, VOL_MULTIPLIER)
 
-        if profit_pct >= tp:
-            logger.info(f"[{STRATEGY_NAME}] {ticker} SELL — TP {profit_pct:+.2%}")
-            return "SELL"
-        if profit_pct <= -sl:
-            logger.info(f"[{STRATEGY_NAME}] {ticker} SELL — SL {profit_pct:+.2%}")
-            return "SELL"
-        return "HOLD"
-
-    # ── Entrada ───────────────────────────────────────────
-    bar_range = float(last["high"]) - float(last["low"])
-    if bar_range <= 0:
-        return "HOLD"
-
-    wide_range   = bar_range > RANGE_ATR_MULT * float(atr)
-    high_volume  = float(last["volume"]) > VOL_SPIKE_MULT * float(vol_ma)
-    close_pos    = (float(last["close"]) - float(last["low"])) / bar_range
-    close_top    = close_pos > CLOSE_TOP_PCT
-    close_bottom = close_pos < CLOSE_BOT_PCT
-
-    prior = df.iloc[-(PRIOR_WINDOW + 1):-1]
-    prior_bearish_ct = int((prior["close"] < prior["open"]).sum())
-    prior_bullish_ct = int((prior["close"] > prior["open"]).sum())
-
-    if wide_range and high_volume and close_top and prior_bearish_ct >= PRIOR_REQ:
+    # BUY: vela alcista después de bajista + volumen alto
+    if (curr["close"] > curr["open"] and
+        prev["close"] < prev["open"] and
+        curr["volume"] > curr["avg_vol"] * vol_mult):
         logger.info(
-            f"[{STRATEGY_NAME}] {ticker} BUY — reversal bar alcista | "
-            f"range={bar_range:.2f} ({bar_range/atr:.1f}×ATR) vol={last['volume']:.0f} "
-            f"close_pos={close_pos:.0%} prior_bearish={prior_bearish_ct}/{PRIOR_WINDOW}"
+            f"[VOLUME_REVERSAL_BAR] BUY ✅ — reversión alcista + volumen | "
+            f"price={curr['close']:.2f} vol={curr['volume']:.0f} avg_vol={curr['avg_vol']:.0f} | mult={vol_mult}"
         )
         return "BUY"
 
-    if wide_range and high_volume and close_bottom and prior_bullish_ct >= PRIOR_REQ:
-        logger.debug(
-            f"[{STRATEGY_NAME}] {ticker} SHORT setup (long-only → HOLD) | "
-            f"range={bar_range:.2f} close_pos={close_pos:.0%} "
-            f"prior_bullish={prior_bullish_ct}/{PRIOR_WINDOW}"
+    # SELL: vela bajista después de alcista + volumen alto
+    if (curr["close"] < curr["open"] and
+        prev["close"] > prev["open"] and
+        curr["volume"] > curr["avg_vol"] * vol_mult):
+        logger.info(
+            f"[VOLUME_REVERSAL_BAR] SELL — reversión bajista + volumen | "
+            f"price={curr['close']:.2f} vol={curr['volume']:.0f} avg_vol={curr['avg_vol']:.0f} | mult={vol_mult}"
         )
-        return "HOLD"
+        return "SELL"
 
     return "HOLD"
 
 
-# ── Pipeline completo ─────────────────────────────────────
-
-def analyze(
-    market_data,
-    ticker: str,
-    entry_price: float = None,
-    profit_target: float = None,
-    stop_loss: float = None,
-) -> dict:
-    df = market_data.get_price_history(ticker, candles=40)
+def analyze(market_data, ticker: str, entry=None) -> dict:
+    """
+    entry: optional entry price (ignoring for now; reserved for future features)
+    """
+    df = market_data.get_price_history(ticker, candles=60)
 
     if df is None or df.empty:
-        logger.error(f"[{STRATEGY_NAME}] Sin datos para {ticker}")
+        logger.error(f"[VOLUME_REVERSAL_BAR] Sin datos para {ticker}")
         return {"ticker": ticker, "signal": "ERROR", "strategy": STRATEGY_NAME,
-                "price": None}
+                "price": None, "volume": None, "avg_vol": None}
 
-    df     = calculate_indicators(df)
-    signal = detect_signal(df, ticker, entry_price, profit_target, stop_loss)
+    df     = calculate_volume_profile(df)
+    signal = detect_signal(df, ticker)  # Pass ticker for asset-specific tuning
     last   = df.iloc[-1]
 
-    def safe_round(val, nd=4):
-        return round(float(val), nd) if pd.notna(val) else None
-
-    bar_range = float(last["high"]) - float(last["low"])
-    close_pos = (
-        (float(last["close"]) - float(last["low"])) / bar_range if bar_range > 0 else None
-    )
-
     return {
-        "ticker":       ticker,
-        "signal":       signal,
-        "strategy":     STRATEGY_NAME,
-        "price":        round(float(last["close"]), 4),
-        "atr":          safe_round(last.get("atr")),
-        "bar_range":    round(bar_range, 4),
-        "close_pos":    round(close_pos, 2) if close_pos is not None else None,
-        "vol_ratio":    safe_round(
-                            float(last["volume"]) / float(last["vol_ma"])
-                            if pd.notna(last.get("vol_ma")) and last.get("vol_ma") else None,
-                            2,
-                       ),
-        "candle_time":  str(last["datetime"]),
+        "ticker":      ticker,
+        "signal":      signal,
+        "strategy":    STRATEGY_NAME,
+        "price":       round(float(last["close"]), 4),
+        "volume":      int(last["volume"]),
+        "avg_vol":     round(float(last["avg_vol"]), 0),
+        "candle_time": str(last["datetime"]),
     }
