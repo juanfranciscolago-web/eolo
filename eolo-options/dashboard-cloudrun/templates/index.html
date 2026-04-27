@@ -3078,79 +3078,137 @@ function updateThetaHarvest() {
     let vixData  = [];
     const mode   = thChartMode;  // 'price' | 'pnl'
 
+    // ── Full-day grid 09:00 → 16:30 every 5 min (91 slots) ──
+    const DAY_GRID = (() => {
+      const g = [];
+      for (let m = 9*60; m <= 16*60+30; m += 5) {
+        const h = Math.floor(m/60), mm = m % 60;
+        g.push(`${h.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`);
+      }
+      return g;
+    })();
+    labels = DAY_GRID;
+
     if (hist.length > 0) {
-      // Real data from bot
-      labels  = hist.map(h => h.time);
-      vixData = hist.map(h => h.vix != null ? h.vix : null);
-      // Collect all position labels
+      // Real data — align each snapshot to its HH:MM slot in the full-day grid
+      const snapMap = {};
+      hist.forEach(h => {
+        const t = (h.time || '').slice(-5);  // "HH:MM"
+        if (t) snapMap[t] = h;
+      });
+      vixData = DAY_GRID.map(t => { const h = snapMap[t]; return h ? (h.vix ?? null) : null; });
+
       const posLabels = new Set();
       hist.forEach(h => (h.datasets || []).forEach(d => posLabels.add(d.label)));
+      // PUTs first, then CALLs, then alpha
+      const sortedLabels = [...posLabels].sort((a, b) => {
+        const aP = a.toLowerCase().includes('put'), bP = b.toLowerCase().includes('put');
+        if (aP !== bP) return aP ? -1 : 1;
+        return a < b ? -1 : 1;
+      });
       let putIdx = 0, callIdx = 0;
-      posLabels.forEach(label => {
+      sortedLabels.forEach(label => {
         const isPut = label.toLowerCase().includes('put');
         const color = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
                             : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
-        const data  = hist.map(h => {
+        const data = DAY_GRID.map(t => {
+          const h = snapMap[t]; if (!h) return null;
           const d = (h.datasets || []).find(x => x.label === label);
           if (!d) return null;
           return mode === 'price' ? (d.price ?? null) : (d.pnl ?? null);
         });
         datasets.push({
           label, data, borderColor: color, backgroundColor: color + '18',
-          borderWidth: 2, tension: 0.3, spanGaps: true,
-          fill: mode === 'price',
+          borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
           pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y',
         });
       });
+
     } else if (pos.length > 0) {
-      // No history yet — show entry credit as current price
+      // No history yet — plot entry + current on full-day axis
       const now  = new Date();
-      const hhmm = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-      const entryTime = '10:00';
-      labels = [entryTime, hhmm];
+      const nowT = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+      const snapToGrid = t => DAY_GRID.reduce((best, g) =>
+        Math.abs(parseInt(g.replace(':','')) - parseInt(t.replace(':',''))) <
+        Math.abs(parseInt(best.replace(':','')) - parseInt(t.replace(':',''))) ? g : best, DAY_GRID[0]);
+      const nowSlot = snapToGrid(nowT);
+      vixData = DAY_GRID.map(t => t === nowSlot ? (vix_cur ?? null) : null);
+
+      const sortedPos = [...pos].sort((a, b) => {
+        const aP = (a.spread_type||'').includes('put'), bP = (b.spread_type||'').includes('put');
+        if (aP !== bP) return aP ? -1 : 1;
+        if (a.ticker !== b.ticker) return a.ticker < b.ticker ? -1 : 1;
+        return (a.dte_slot||a.dte||0) - (b.dte_slot||b.dte||0);
+      });
       let putIdx = 0, callIdx = 0;
-      pos.forEach(p => {
-        const isPut   = (p.spread_type || '').includes('put');
-        const color   = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
-                              : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
-        const dteSlot = p.dte_slot ?? p.dte;
-        const tid     = p.tranche_id ?? 0;
-        const label   = `${p.ticker} ${isPut ? 'PUT' : 'CALL'} ${dteSlot}DTE T${tid}`;
-        const entryVal = mode === 'price' ? (p.net_credit || 0) : 0;
-        const curVal   = mode === 'price'
+      sortedPos.forEach(p => {
+        const isPut    = (p.spread_type || '').includes('put');
+        const color    = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
+                               : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
+        const dteSlot  = p.dte_slot ?? p.dte;
+        const tid      = p.tranche_id ?? 0;
+        const label    = `${p.ticker} ${isPut ? 'PUT' : 'CALL'} ${dteSlot}DTE T${tid}`;
+        const rawEntry = p.entry_time ? (p.entry_time+'').slice(-5) : '09:45';
+        const entrySlot = snapToGrid(rawEntry);
+        const entryVal  = mode === 'price' ? (p.net_credit || 0) : 0;
+        const curVal    = mode === 'price'
           ? (p.current_value ?? p.net_credit ?? 0)
           : (p.unrealized_pnl || 0);
+        const data = DAY_GRID.map(t => {
+          if (t === entrySlot) return entryVal;
+          if (t === nowSlot && nowSlot !== entrySlot) return curVal;
+          return null;
+        });
         datasets.push({
-          label, data: [entryVal, curVal], borderColor: color, backgroundColor: color + '18',
+          label, data, borderColor: color, backgroundColor: color + '18',
           borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
-          pointRadius: 4, pointHoverRadius: 6, yAxisID: 'y',
+          pointRadius: 3, pointHoverRadius: 6, yAxisID: 'y',
         });
       });
-      vixData = [vix_cur ?? null, vix_cur ?? null];
+
     } else {
-      // Demo data — precio del spread descendiendo (theta decay)
-      labels = ['09:30','10:00','10:15','10:30','10:45','11:00','11:30','12:00',
-                '13:00','14:00','14:30','15:00','15:15'];
-      const demoPos = mode === 'price' ? [
-        {label:'SPY PUT 0DTE',  color:TH_COLORS_PUT[0],  vals:[null,0.42,0.38,0.32,0.26,0.21,0.18,0.14,0.10,0.08,0.05,null,null]},
-        {label:'SPY PUT 1DTE',  color:TH_COLORS_PUT[1],  vals:[null,0.38,0.35,0.32,0.29,0.27,0.24,0.22,0.19,0.17,0.15,0.13,0.12]},
-        {label:'SPY CALL 2DTE', color:TH_COLORS_CALL[0], vals:[null,0.45,0.44,0.46,0.42,0.40,0.37,0.33,0.30,0.27,0.25,0.23,0.22]},
-        {label:'TQQQ PUT 0DTE', color:TH_COLORS_PUT[2],  vals:[null,0.55,0.50,0.44,0.39,0.36,0.31,0.24,0.18,0.14,0.10,null,null]},
-        {label:'TQQQ PUT 1DTE', color:TH_COLORS_PUT[3],  vals:[null,0.48,0.46,0.43,0.40,0.38,0.35,0.32,0.29,0.26,0.23,0.21,0.20]},
-      ] : [
-        {label:'SPY PUT 0DTE',  color:TH_COLORS_PUT[0],  vals:[null,0,4,10,16,21,24,28,32,34,37,null,null]},
-        {label:'SPY PUT 1DTE',  color:TH_COLORS_PUT[1],  vals:[null,0,3,6,9,11,14,16,19,21,23,25,26]},
-        {label:'SPY CALL 2DTE', color:TH_COLORS_CALL[0], vals:[null,0,1,-1,3,5,8,12,15,18,20,22,23]},
-        {label:'TQQQ PUT 0DTE', color:TH_COLORS_PUT[2],  vals:[null,0,5,11,16,19,24,31,37,41,45,null,null]},
-        {label:'TQQQ PUT 1DTE', color:TH_COLORS_PUT[3],  vals:[null,0,2,5,8,10,13,16,19,22,25,27,28]},
-      ];
-      vixData = [19.2,18.9,18.5,18.2,17.8,17.5,17.2,17.0,17.3,17.8,18.1,18.4,18.2];
-      demoPos.forEach(d => datasets.push({
-        label: d.label, data: d.vals.map(v => v === null ? null : v),
-        borderColor: d.color, backgroundColor: d.color + '18',
-        borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
-        pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y',
-      }));
+      // Demo data — 6 spreads (SPY + TQQQ, PUTs + CALLs) across full day
+      const DP = {  // anchor: 'HH:MM' → value (null = position closed/not yet open)
+        price: [
+          {label:'SPY PUT 0DTE',   color:TH_COLORS_PUT[0],
+           a:{'09:45':0.50,'10:00':0.47,'10:30':0.42,'11:00':0.36,'11:30':0.29,'12:00':0.22,'12:30':0.16,'13:00':0.11,'13:30':0.07,'14:00':0.04}},
+          {label:'SPY PUT 1DTE',   color:TH_COLORS_PUT[1],
+           a:{'09:45':0.42,'10:00':0.40,'10:30':0.37,'11:00':0.34,'11:30':0.31,'12:00':0.28,'12:30':0.25,'13:00':0.22,'13:30':0.20,'14:00':0.18,'14:30':0.16,'15:00':0.14,'15:30':0.13,'15:55':0.12}},
+          {label:'SPY CALL 2DTE',  color:TH_COLORS_CALL[0],
+           a:{'09:45':0.48,'10:00':0.47,'10:30':0.44,'11:00':0.41,'11:30':0.39,'12:00':0.36,'12:30':0.33,'13:00':0.30,'13:30':0.28,'14:00':0.26,'14:30':0.24,'15:00':0.22,'15:30':0.21,'15:55':0.20}},
+          {label:'TQQQ PUT 0DTE',  color:TH_COLORS_PUT[2],
+           a:{'09:45':0.62,'10:00':0.57,'10:30':0.50,'11:00':0.42,'11:30':0.33,'12:00':0.24,'12:30':0.17,'13:00':0.11,'13:30':0.07,'14:00':0.03}},
+          {label:'TQQQ PUT 1DTE',  color:TH_COLORS_PUT[3],
+           a:{'09:45':0.55,'10:00':0.52,'10:30':0.49,'11:00':0.45,'11:30':0.41,'12:00':0.38,'12:30':0.34,'13:00':0.31,'13:30':0.28,'14:00':0.25,'14:30':0.23,'15:00':0.21,'15:30':0.20,'15:55':0.19}},
+          {label:'TQQQ CALL 2DTE', color:TH_COLORS_CALL[1],
+           a:{'09:45':0.58,'10:00':0.56,'10:30':0.53,'11:00':0.50,'11:30':0.47,'12:00':0.44,'12:30':0.41,'13:00':0.38,'13:30':0.35,'14:00':0.33,'14:30':0.30,'15:00':0.28,'15:30':0.27,'15:55':0.26}},
+        ],
+        pnl: [
+          {label:'SPY PUT 0DTE',   color:TH_COLORS_PUT[0],
+           a:{'09:45':0,'10:00':3,'10:30':8,'11:00':14,'11:30':21,'12:00':28,'12:30':34,'13:00':39,'13:30':43,'14:00':46}},
+          {label:'SPY PUT 1DTE',   color:TH_COLORS_PUT[1],
+           a:{'09:45':0,'10:00':2,'10:30':5,'11:00':8,'11:30':11,'12:00':14,'12:30':17,'13:00':20,'13:30':22,'14:00':24,'14:30':26,'15:00':28,'15:30':29,'15:55':30}},
+          {label:'SPY CALL 2DTE',  color:TH_COLORS_CALL[0],
+           a:{'09:45':0,'10:00':1,'10:30':4,'11:00':7,'11:30':9,'12:00':12,'12:30':15,'13:00':18,'13:30':20,'14:00':22,'14:30':24,'15:00':26,'15:30':27,'15:55':28}},
+          {label:'TQQQ PUT 0DTE',  color:TH_COLORS_PUT[2],
+           a:{'09:45':0,'10:00':5,'10:30':12,'11:00':20,'11:30':29,'12:00':38,'12:30':45,'13:00':51,'13:30':55,'14:00':59}},
+          {label:'TQQQ PUT 1DTE',  color:TH_COLORS_PUT[3],
+           a:{'09:45':0,'10:00':3,'10:30':6,'11:00':10,'11:30':14,'12:00':17,'12:30':21,'13:00':24,'13:30':27,'14:00':30,'14:30':32,'15:00':34,'15:30':35,'15:55':36}},
+          {label:'TQQQ CALL 2DTE', color:TH_COLORS_CALL[1],
+           a:{'09:45':0,'10:00':2,'10:30':5,'11:00':8,'11:30':11,'12:00':14,'12:30':17,'13:00':20,'13:30':23,'14:00':25,'14:30':28,'15:00':30,'15:30':31,'15:55':32}},
+        ],
+      };
+      const demoVix = {'09:00':19.5,'09:30':19.2,'10:00':18.9,'10:30':18.5,'11:00':18.2,'11:30':17.8,'12:00':17.5,'12:30':17.2,'13:00':17.0,'13:30':17.3,'14:00':17.8,'14:30':18.1,'15:00':18.4,'15:30':18.2,'16:00':17.9,'16:30':17.7};
+      vixData = DAY_GRID.map(t => demoVix[t] ?? null);
+      (mode === 'price' ? DP.price : DP.pnl).forEach(d => {
+        const data = DAY_GRID.map(t => d.a[t] !== undefined ? d.a[t] : null);
+        datasets.push({
+          label: d.label, data,
+          borderColor: d.color, backgroundColor: d.color + '18',
+          borderWidth: 2, tension: 0.4, spanGaps: true, fill: mode === 'price',
+          pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y',
+        });
+      });
     }
 
     // VIX dataset (always last, dashed, right axis)
