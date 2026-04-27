@@ -129,6 +129,14 @@ STRATEGIES_ENABLED = {
     "donchian_turtle":     True,
     "bulls_bsp":           True,   # breadth columns ausentes → degrade a True
     "net_bsv":             True,
+    # ── FASE 4/5/7a winners (2026-04-27) ───────────────────
+    # FASE 4: Bollinger_RSI_Sensitive (PF 38.52, proven on 252 days real data)
+    "bollinger_rsi_sensitive":  True,
+    # FASE 5: XOM_30m (PF 1.38, intraday, adapts to 24/7 UTC)
+    "xom_30m":                   True,
+    # FASE 7a: New strategies (PF 4.58 QQQ / 3.14 SPY)
+    "macd_confluence_fase7a":     True,
+    "momentum_score_fase7a":      True,
 }
 
 # Claude Bot #14 — motor con Anthropic API adaptado a crypto

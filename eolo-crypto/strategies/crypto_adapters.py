@@ -74,6 +74,14 @@ STRATEGY_MODULES = {
     "obv_mtf":             "bot_obv_strategy",
     "tsv":                 "bot_tsv_strategy",
     "vw_macd":             "bot_vw_macd_strategy",
+    # ── FASE 4/5/7a winners (2026-04-27) ──────────────────
+    # FASE 4: Bollinger_RSI_Sensitive (PF 38.52 SPY, 14.78 AAPL, 14.02 QQQ)
+    "bollinger_rsi_sensitive": "bot_bollinger_rsi_sensitive_strategy",
+    # FASE 5: XOM_30m (PF 1.38, intraday crypto 24/7 → adaptado a crypto)
+    "xom_30m":             "bot_xom_30m_strategy",
+    # FASE 7a: MACD Confluence (PF 4.58 QQQ / 3.14 SPY) + Momentum Score (PF 4.58 QQQ / 3.14 SPY)
+    "macd_confluence_fase7a":   "bot_macd_confluence_fase7a_strategy",
+    "momentum_score_fase7a":    "bot_momentum_score_fase7a_strategy",
 }
 
 

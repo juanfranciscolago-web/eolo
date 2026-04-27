@@ -1,0 +1,47 @@
+steps:
+  # Step 1: Build Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:latest'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:${BUILD_ID}'
+      - '-f'
+      - 'Bot/Dockerfile'
+      - '.'
+    id: 'build-image'
+
+  # Step 2: Push image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:latest'
+    id: 'push-image'
+    waitFor: ['build-image']
+
+  # Step 3: Deploy to Cloud Run (eolo-bot in us-central1)
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot:latest'
+      - '--region=us-central1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=512Mi'
+      - '--cpu=1'
+      - '--timeout=3600'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+    id: 'deploy-service'
+    waitFor: ['push-image']
+
+timeout: '1800s'
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot:latest'
+  - 'gcr.io/$PROJECT_ID/eolo-bot:${BUILD_ID}'
