@@ -87,9 +87,9 @@ class TradingSchedule:
 # ── Defaults por tipo de bot ───────────────────────────────
 
 DEFAULTS_EQUITY = TradingSchedule(
-    start=time(9, 30),
-    end=time(15, 27),
-    auto_close=time(15, 27),
+    start=time(9, 30),        # NYSE/NASDAQ open
+    end=time(16, 0),          # NYSE/NASDAQ close
+    auto_close=time(15, 55),  # cierre automático 5 min antes del close
     enabled=True,
 )
 

@@ -526,6 +526,9 @@ class EoloV2:
         except Exception as _e:
             logger.debug(f"[ThetaHarvest] log_calendar_status error: {_e}")
 
+        # ── Restaurar posiciones theta desde Firestore (sobrevive reinicios) ─
+        self._load_theta_positions_from_firestore()
+
         # Registrar handlers de eventos
         self.stream.add_handler(self._on_market_event)
         self.chain_fetcher.add_handler(self._on_chain_update)
@@ -1135,6 +1138,7 @@ class EoloV2:
                             "dte_slot":  dte,
                         }
                         self._theta_positions.append(pos)
+                        self._save_theta_positions_to_firestore()
                         opened_any = True
                         # Sumar crédito total del día
                         self._theta_stats["credit_total"] = round(
@@ -1284,6 +1288,7 @@ class EoloV2:
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
                         self._theta_positions.remove(pos)
+                        self._save_theta_positions_to_firestore()
 
                         # Liberar el DTE slot solo cuando TODOS los tranches del
                         # mismo DTE están cerrados. T0 cierra antes (35% target)
@@ -2737,6 +2742,76 @@ class EoloV2:
                 f"[DASHBOARD] Firestore write error: {type(e).__name__}: {e} "
                 f"— primer campo no-serializable: {bad}\n{traceback.format_exc()}"
             )
+
+    # ── Persistencia de theta positions (sobrevive reinicios) ─────────────
+
+    _THETA_POS_COLL = "eolo-options-state"
+    _THETA_POS_DOC  = "theta-positions"
+
+    def _load_theta_positions_from_firestore(self):
+        """
+        Restaura self._theta_positions desde Firestore al arrancar.
+        Solo carga posiciones del día actual (evita cargar spreads vencidos).
+        """
+        try:
+            from google.cloud import firestore as _fs
+            from zoneinfo import ZoneInfo
+            today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+            db  = _fs.Client()
+            doc = db.collection(self._THETA_POS_COLL).document(self._THETA_POS_DOC).get()
+            if not doc.exists:
+                logger.info("[ThetaHarvest] No hay posiciones guardadas en Firestore")
+                return
+            data = doc.to_dict() or {}
+            saved_date = data.get("date", "")
+            if saved_date != today:
+                logger.info(
+                    f"[ThetaHarvest] Posiciones guardadas son de {saved_date}, "
+                    f"hoy es {today} — descartando (slots liberados)"
+                )
+                return
+            positions = data.get("positions", [])
+            if positions:
+                self._theta_positions = positions
+                # Reconstruir slots desde las posiciones cargadas
+                for pos in positions:
+                    ticker  = pos.get("ticker", "")
+                    dte     = pos.get("dte_slot", pos.get("dte"))
+                    if ticker and dte is not None:
+                        self._theta_slots.setdefault(ticker, {})[dte] = today
+                logger.info(
+                    f"[ThetaHarvest] ✅ Restauradas {len(positions)} posiciones desde Firestore"
+                )
+                _send_telegram(
+                    f"♻️ ThetaHarvest: {len(positions)} posiciones restauradas tras reinicio"
+                )
+        except Exception as e:
+            logger.warning(f"[ThetaHarvest] Error cargando posiciones desde Firestore: {e}")
+
+    def _save_theta_positions_to_firestore(self):
+        """
+        Persiste self._theta_positions en Firestore (en thread separado).
+        Llamado tras cada apertura/cierre de posición.
+        """
+        import threading
+        def _do_save():
+            try:
+                from google.cloud import firestore as _fs
+                from zoneinfo import ZoneInfo
+                today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+                db  = _fs.Client()
+                doc = db.collection(self._THETA_POS_COLL).document(self._THETA_POS_DOC)
+                # Serializar: convertir floats nan/inf a None
+                safe_pos = []
+                for p in self._theta_positions:
+                    safe_pos.append({
+                        k: (None if isinstance(v, float) and (v != v or abs(v) == float("inf")) else v)
+                        for k, v in p.items()
+                    })
+                doc.set({"date": today, "positions": safe_pos, "updated_at": time.time()})
+            except Exception as e:
+                logger.debug(f"[ThetaHarvest] Error guardando posiciones: {e}")
+        threading.Thread(target=_do_save, daemon=True).start()
 
     def _read_paper_trades(self) -> list[dict]:
         """
