@@ -1,0 +1,278 @@
+{
+  "timestamp": "2026-04-22T12:47:42.632620",
+  "symbols_tested": [
+    "SPY",
+    "QQQ",
+    "AAPL",
+    "MSFT",
+    "TSLA"
+  ],
+  "strategies": {
+    "FASE4_gen_confluence_trailing_12": {
+      "SPY": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "QQQ": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "AAPL": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "MSFT": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "TSLA": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      }
+    },
+    "FASE4_gen_confluence_atr_01": {
+      "SPY": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "QQQ": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "AAPL": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "MSFT": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "TSLA": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      }
+    },
+    "FASE4_gen_confluence_trailing_10": {
+      "SPY": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "QQQ": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "AAPL": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "MSFT": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "TSLA": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      }
+    },
+    "Bot_RSI_SMA200": {
+      "SPY": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "QQQ": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "AAPL": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "MSFT": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "TSLA": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      }
+    },
+    "Bot_ORB": {
+      "SPY": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "QQQ": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "AAPL": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "MSFT": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "TSLA": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      }
+    },
+    "Bot_VWAP_RSI": {
+      "SPY": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "QQQ": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "AAPL": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "MSFT": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      },
+      "TSLA": {
+        "score": 0,
+        "verdict": "RECHAZAR",
+        "reason": "error"
+      }
+    }
+  },
+  "raw_results": {
+    "FASE4_gen_confluence_trailing_12": {
+      "SPY": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "QQQ": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "AAPL": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "MSFT": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "TSLA": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      }
+    },
+    "FASE4_gen_confluence_atr_01": {
+      "SPY": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "QQQ": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "AAPL": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "MSFT": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "TSLA": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      }
+    },
+    "FASE4_gen_confluence_trailing_10": {
+      "SPY": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "QQQ": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "AAPL": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "MSFT": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "TSLA": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      }
+    },
+    "Bot_RSI_SMA200": {
+      "SPY": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "QQQ": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "AAPL": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "MSFT": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "TSLA": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      }
+    },
+    "Bot_ORB": {
+      "SPY": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "QQQ": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "AAPL": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "MSFT": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "TSLA": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      }
+    },
+    "Bot_VWAP_RSI": {
+      "SPY": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "QQQ": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "AAPL": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "MSFT": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      },
+      "TSLA": {
+        "error": "BacktestEngine.run() got an unexpected keyword argument 'signal_func'"
+      }
+    }
+  }
+}

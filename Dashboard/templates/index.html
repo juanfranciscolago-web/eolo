@@ -65,6 +65,12 @@
   .strat-card-mini .neg { color:#f85149; }
   .strat-card-expand { overflow:hidden; max-height:0; transition:max-height .2s ease; }
   .strat-card.expanded .strat-card-expand { max-height:280px; }
+  .strat-pos-badge { display:inline-flex; align-items:center; justify-content:center;
+                     min-width:18px; height:16px; border-radius:8px; font-size:.6rem;
+                     font-weight:700; padding:0 5px; margin-left:4px; flex-shrink:0; }
+  .strat-pos-badge.long  { background:rgba(35,134,54,.25); color:#3fb950; border:1px solid #238636; }
+  .strat-pos-badge.short { background:rgba(248,81,73,.2);  color:#f85149; border:1px solid #da3633; }
+  .strat-pos-badge.zero  { background:rgba(48,54,61,.4);   color:#8b949e; border:1px solid #30363d; }
   .strat-stats-tbl { width:100%; font-size:.68rem; border-collapse:collapse; margin-top:6px; }
   .strat-stats-tbl td { padding:2px 4px; border-bottom:1px dotted rgba(48,54,61,.5); }
   .strat-stats-tbl td:first-child { color:#8b949e; text-transform:uppercase; letter-spacing:.04em; font-size:.6rem; }
@@ -636,6 +642,14 @@
       </div>
       <div class="strat-grid" id="strat-grid-nivel2"></div>
     </div>
+    <div class="strat-group">
+      <div class="strat-head">
+        <span class="strat-title">🏆 Combos Ganadores (7) <span class="hint">⭐C3 Nino Squeeze · ⚡alta · 🎯media · 💎baja frecuencia</span></span>
+        <button class="strat-btn-all on"  onclick="setAllStrats('combos', true)">Todas ON</button>
+        <button class="strat-btn-all off" onclick="setAllStrats('combos', false)">Todas OFF</button>
+      </div>
+      <div class="strat-grid" id="strat-grid-combos"></div>
+    </div>
   </div>
 </div>
 
@@ -862,11 +876,23 @@ const STRATEGY_DEFS = {
     { key: "tick_trin_fade",  label: "TICK/TRIN Fade" },
     { key: "vrp_intraday",    label: "VRP Intraday" },
   ],
+  combos: [
+    { key: "combo1_ema_scalper",  label: "⚡ C1 — EMA Scalper 3/8 (ALTA)" },
+    { key: "combo2_rubber_band",  label: "⚡ C2 — Rubber Band VWAP (ALTA, equity)" },
+    { key: "combo3_nino_squeeze", label: "⭐ C3 — Nino Squeeze (MEDIA)" },
+    { key: "combo4_slimribbon",   label: "🎯 C4 — SlimRibbon + MACD (MEDIA)" },
+    { key: "combo5_btd",          label: "🎯 C5 — BTD + Stacked + PB34 (MEDIA)" },
+    { key: "combo6_fractalccix",  label: "💎 C6 — FractalCCIx Premium (BAJA)" },
+    { key: "combo7_campbell",     label: "💎 C7 — Campbell Swing (BAJA)" },
+  ],
 };
 
 let STRATEGIES_STATE = {};   // canonical_key → bool
 let STRATEGY_STATS   = {};   // canonical_key → {h24, week}
-let EXPANDED_STRATS  = new Set();
+let LIVE_POS_BY_STRAT = {};  // canonical_key → {longs:[...], shorts:[...]}
+let EXPANDED_STRATS  = new Set(
+  Object.values(STRATEGY_DEFS).flat().map(d => d.key)
+);
 const STRAT_GROUPS_DISABLED = window.STRAT_GROUPS_DISABLED || {};
 
 function _fmt(n)   { return (n == null) ? '—' : (n >= 0 ? '+' : '') + n.toFixed(2); }
@@ -934,9 +960,18 @@ function renderStrategyGroup(groupKey) {
     const clickHandler  = disabled ? '' : `onclick="toggleExpand('${d.key}', event)"`;
     const toggleHandler = disabled ? '' : `onclick="toggleStrat('${d.key}', event)"`;
     const cardCls = `strat-card ${on ? 'on' : 'off'}${exp ? ' expanded' : ''}${disabled ? ' disabled' : ''}`;
+    const pos = LIVE_POS_BY_STRAT[d.key] || {};
+    const nLong  = (pos.longs  || []).length;
+    const nShort = (pos.shorts || []).length;
+    const badgeHtml = nLong > 0 && nShort > 0
+      ? `<span class="strat-pos-badge long">${nLong}L</span><span class="strat-pos-badge short">${nShort}S</span>`
+      : nLong  > 0 ? `<span class="strat-pos-badge long">${nLong}</span>`
+      : nShort > 0 ? `<span class="strat-pos-badge short">${nShort}</span>`
+      : `<span class="strat-pos-badge zero">0</span>`;
     return `<div class="${cardCls}" data-strat="${d.key}">
       <div class="strat-card-head" ${clickHandler}>
         <span class="strat-card-name" title="${d.label}">${d.label}</span>
+        ${badgeHtml}
         ${_pieSvg(st.h24.wins, st.h24.losses)}
         <div class="strat-toggle" ${toggleHandler}></div>
       </div>
@@ -966,7 +1001,7 @@ function renderStrategyGroup(groupKey) {
 }
 
 function renderStrategies() {
-  ['emacd', 'classic', 'nivel1', 'nivel2'].forEach(renderStrategyGroup);
+  ['emacd', 'classic', 'nivel1', 'nivel2', 'combos'].forEach(renderStrategyGroup);
 }
 
 function toggleExpand(key, ev) {
@@ -1149,6 +1184,8 @@ function render(data) {
   const openMap    = livePos.open        || {};
   const byStrategy = livePos.by_strategy || {};
   const strategies = data.strategies     || {};
+  LIVE_POS_BY_STRAT = byStrategy;
+  if (typeof renderStrategies === 'function') renderStrategies();
   renderSemaphore(byStrategy, strategies, openMap);
 
   // Trades table — con P&L por par BUY/SELL
@@ -1225,7 +1262,11 @@ function renderSemaphore(byStrategy, strategies, openMap) {
 
   grid.innerHTML = STRAT_META.map(({ key, label, color }) => {
     const isEnabled  = strategies[key] !== false;
-    const tickers    = (byStrategy[key] || []);
+    // byStrategy[key] puede ser array legacy [] o nuevo {longs:[],shorts:[]}
+    const posData    = byStrategy[key] || {};
+    const longs      = Array.isArray(posData) ? posData : (posData.longs  || []);
+    const shorts     = Array.isArray(posData) ? []       : (posData.shorts || []);
+    const tickers    = [...longs, ...shorts];
     const count      = tickers.length;
     const hasOpen    = count > 0;
 
@@ -1234,11 +1275,14 @@ function renderSemaphore(byStrategy, strategies, openMap) {
     const statusText = !isEnabled
       ? 'Desactivada'
       : hasOpen
-        ? `${count} posici${count === 1 ? 'ón' : 'ones'} abierta${count === 1 ? '' : 's'}`
+        ? `${longs.length > 0 ? longs.length + ' LONG' : ''}${longs.length > 0 && shorts.length > 0 ? ' · ' : ''}${shorts.length > 0 ? shorts.length + ' SHORT' : ''}`
         : 'Activa — sin posiciones';
 
     const tickerBadges = hasOpen
-      ? tickers.map(t => `<span class="sem-badge">${t}</span>`).join('')
+      ? [
+          ...longs.map(t  => `<span class="sem-badge">${t}</span>`),
+          ...shorts.map(t => `<span class="sem-badge" style="background:rgba(248,81,73,.18);border-color:#da3633;color:#f85149">${t}↓</span>`),
+        ].join('')
       : `<span class="sem-empty">—</span>`;
 
     return `

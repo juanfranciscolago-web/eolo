@@ -74,6 +74,11 @@ import bot_tick_trin_fade_strategy       as tt_strategy
 import bot_vrp_strategy                  as vrp_strategy
 # ── FASE 5 Winner (30m intraday) ────────────────────────
 import bot_xom_30m_strategy              as xom_30m_strategy
+# ── FASE 4 Winner (daily mean-revert, SPY/AAPL/QQQ) ──────
+import bot_bollinger_rsi_sensitive_strategy as bb_rsi_sens_strategy
+# ── FASE 7a Winners (30m intraday, SPY/QQQ) ──────────────
+import bot_macd_confluence_fase7a_strategy as macd_conf_strategy
+import bot_momentum_score_fase7a_strategy as momentum_strategy
 # ── "EMA 3/8 y MACD" suite (v3) — dispatcher compartido ──
 import bot_strategies_v3_dispatcher      as v3_strategy
 import bot_trader             as trader
@@ -129,6 +134,11 @@ DEFAULT_STRATEGIES = {
     "vrp_intraday":        True,
     # ── FASE 5 Winner: XOM 30m Bollinger (PF 1.38, backtest 60d real data)
     "xom_30m":             True,
+    # ── FASE 4 Winner: Bollinger+RSI Sensitive (PF 38.52 SPY / 14.78 AAPL / 14.02 QQQ, 252d)
+    "bollinger_rsi_sensitive": True,
+    # ── FASE 7a Winners: MACD Confluence + Momentum Score (PF 4.58 QQQ / 3.14 SPY, 30m)
+    "macd_confluence_fase7a": True,
+    "momentum_score_fase7a": True,
     # ── Suite "EMA 3/8 y MACD" (v3) ─────────────────────────
     "ema_3_8":             True,
     "ema_8_21":            True,
@@ -1003,6 +1013,39 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [XOM_30M_BOLLINGER] FASE 5 Winner | PF=1.38 (60d backtest)")
         result = xom_30m_strategy.analyze(market_data, "XOM")
         _exec(result, "XOM_30M")
+
+    # ═══════════════════════════════════════════════════════════
+    #  FASE 4 Winner: Bollinger + RSI Sensitive (daily)
+    #  PF 38.52 SPY | 14.78 AAPL | 14.02 QQQ (backtest 252d real)
+    # ═══════════════════════════════════════════════════════════
+    if strategies.get("bollinger_rsi_sensitive"):
+        bb_rsi_tickers = ["SPY", "AAPL", "QQQ"]
+        print(f"\n  [BOLLINGER_RSI_SENSITIVE] FASE 4 Winner | Tickers: {bb_rsi_tickers}")
+        for ticker in bb_rsi_tickers:
+            result = bb_rsi_sens_strategy.analyze(market_data, ticker)
+            _exec(result, "BOLLINGER_RSI_SENSITIVE")
+
+    # ═══════════════════════════════════════════════════════════
+    #  FASE 7a Winners: MACD Confluence (30m intraday)
+    #  PF 4.58 QQQ | 3.14 SPY (backtest 2016-2026 real)
+    # ═══════════════════════════════════════════════════════════
+    if strategies.get("macd_confluence_fase7a"):
+        macd_tickers = ["QQQ", "SPY"]
+        print(f"\n  [MACD_CONFLUENCE] FASE 7a Winner | Tickers: {macd_tickers}")
+        for ticker in macd_tickers:
+            result = macd_conf_strategy.analyze(market_data, ticker)
+            _exec(result, "MACD_CONFLUENCE")
+
+    # ═══════════════════════════════════════════════════════════
+    #  FASE 7a Winners: Momentum Score (30m intraday)
+    #  PF 4.58 QQQ | 3.14 SPY (backtest 2016-2026 real)
+    # ═══════════════════════════════════════════════════════════
+    if strategies.get("momentum_score_fase7a"):
+        momentum_tickers = ["SPY"]
+        print(f"\n  [MOMENTUM_SCORE] FASE 7a Winner | Tickers: {momentum_tickers}")
+        for ticker in momentum_tickers:
+            result = momentum_strategy.analyze(market_data, ticker)
+            _exec(result, "MOMENTUM_SCORE")
 
     # Note: wait display is informational — actual sleep happens in main()
     print(f"\n{'='*76}")

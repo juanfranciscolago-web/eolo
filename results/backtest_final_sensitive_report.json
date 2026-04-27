@@ -1,0 +1,437 @@
+{
+  "timestamp": "2026-04-22T13:39:42.464543",
+  "type": "SENSITIVE_THRESHOLDS",
+  "summary": {
+    "total_strategies": 6,
+    "total_symbols": 5,
+    "total_tests": 30
+  },
+  "strategies": {
+    "FASE4_Confluence_TS_79": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 92,
+          "pnl": 28468.49414145015,
+          "win_rate": 44.565217391304344,
+          "pf": 1.725055800989971,
+          "max_dd": -8.760893905878511
+        },
+        "QQQ": {
+          "num_trades": 86,
+          "pnl": 25550.814281887284,
+          "win_rate": 47.674418604651166,
+          "pf": 1.4920429777533784,
+          "max_dd": -12.23703055013997
+        },
+        "AAPL": {
+          "num_trades": 77,
+          "pnl": 58996.34871823649,
+          "win_rate": 61.038961038961034,
+          "pf": 2.5102275182321696,
+          "max_dd": -9.117469397335979
+        },
+        "MSFT": {
+          "num_trades": 74,
+          "pnl": -24165.100166116477,
+          "win_rate": 41.891891891891895,
+          "pf": 0.6514018796079232,
+          "max_dd": -35.16101764309904
+        },
+        "TSLA": {
+          "num_trades": 64,
+          "pnl": -21206.972270422062,
+          "win_rate": 53.125,
+          "pf": 0.8601703330513149,
+          "max_dd": -51.82861689055888
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 75.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.725055800989971,
+          "num_trades": 92
+        },
+        "QQQ": {
+          "score": 60.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.4920429777533784,
+          "num_trades": 86
+        },
+        "AAPL": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 2.5102275182321696,
+          "num_trades": 77
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 0.6514018796079232,
+          "num_trades": 74
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 0.8601703330513149,
+          "num_trades": 64
+        }
+      }
+    },
+    "FASE4_Confluence_ATR_68": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 42,
+          "pnl": 28271.08889021726,
+          "win_rate": 47.61904761904761,
+          "pf": 2.0848120430396495,
+          "max_dd": -7.325240086445888
+        },
+        "QQQ": {
+          "num_trades": 54,
+          "pnl": 26336.84387912441,
+          "win_rate": 44.44444444444444,
+          "pf": 1.5439574696692349,
+          "max_dd": -17.09099991656955
+        },
+        "AAPL": {
+          "num_trades": 86,
+          "pnl": -4604.4353570572275,
+          "win_rate": 41.86046511627907,
+          "pf": 0.9448936901703069,
+          "max_dd": -27.01528724965171
+        },
+        "MSFT": {
+          "num_trades": 129,
+          "pnl": 39642.7902068588,
+          "win_rate": 48.06201550387597,
+          "pf": 1.4161874297108341,
+          "max_dd": -14.066872471098238
+        },
+        "TSLA": {
+          "num_trades": 143,
+          "pnl": -32110.88173755644,
+          "win_rate": 48.25174825174825,
+          "pf": 0.900344826326078,
+          "max_dd": -63.394206220164214
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 2.0848120430396495,
+          "num_trades": 42
+        },
+        "QQQ": {
+          "score": 75.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.5439574696692349,
+          "num_trades": 54
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 0.9448936901703069,
+          "num_trades": 86
+        },
+        "MSFT": {
+          "score": 60.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.4161874297108341,
+          "num_trades": 129
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 0.900344826326078,
+          "num_trades": 143
+        }
+      }
+    },
+    "FASE4_Confluence_TS_64": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 17,
+          "pnl": 44401.09513579265,
+          "win_rate": 70.58823529411765,
+          "pf": 30.72809486829525,
+          "max_dd": -8.282419229540249
+        },
+        "QQQ": {
+          "num_trades": 20,
+          "pnl": 45320.31473737105,
+          "win_rate": 70.0,
+          "pf": 11.6769731888768,
+          "max_dd": -11.54907905977015
+        },
+        "AAPL": {
+          "num_trades": 31,
+          "pnl": 51559.46493052242,
+          "win_rate": 70.96774193548387,
+          "pf": 3.6786794351277035,
+          "max_dd": -9.592060240893348
+        },
+        "MSFT": {
+          "num_trades": 18,
+          "pnl": 16501.98872489948,
+          "win_rate": 72.22222222222221,
+          "pf": 1.4995013956520862,
+          "max_dd": -25.18009236097672
+        },
+        "TSLA": {
+          "num_trades": 25,
+          "pnl": 4656.587325828979,
+          "win_rate": 52.0,
+          "pf": 1.0595926443085022,
+          "max_dd": -31.106134007849345
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 30.72809486829525,
+          "num_trades": 17
+        },
+        "QQQ": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 11.6769731888768,
+          "num_trades": 20
+        },
+        "AAPL": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 3.6786794351277035,
+          "num_trades": 31
+        },
+        "MSFT": {
+          "score": 60.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.4995013956520862,
+          "num_trades": 18
+        },
+        "TSLA": {
+          "score": 40.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0595926443085022,
+          "num_trades": 25
+        }
+      }
+    },
+    "Bot_RSI_SMA100": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 116,
+          "pnl": 46713.55696658051,
+          "win_rate": 46.55172413793103,
+          "pf": 1.8557893501915592,
+          "max_dd": -7.013693399628658
+        },
+        "QQQ": {
+          "num_trades": 129,
+          "pnl": 38312.67844154782,
+          "win_rate": 44.96124031007752,
+          "pf": 1.3873187557173194,
+          "max_dd": -10.83589286540024
+        },
+        "AAPL": {
+          "num_trades": 122,
+          "pnl": 58673.40085659011,
+          "win_rate": 52.459016393442624,
+          "pf": 1.7986822131892435,
+          "max_dd": -8.554025701526768
+        },
+        "MSFT": {
+          "num_trades": 178,
+          "pnl": 31271.801858062277,
+          "win_rate": 46.62921348314607,
+          "pf": 1.2146587943152607,
+          "max_dd": -18.990644930984597
+        },
+        "TSLA": {
+          "num_trades": 113,
+          "pnl": 15471.239987199428,
+          "win_rate": 46.902654867256636,
+          "pf": 1.0420546906383918,
+          "max_dd": -28.659348324687254
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 75.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.8557893501915592,
+          "num_trades": 116
+        },
+        "QQQ": {
+          "score": 60.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.3873187557173194,
+          "num_trades": 129
+        },
+        "AAPL": {
+          "score": 75.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.7986822131892435,
+          "num_trades": 122
+        },
+        "MSFT": {
+          "score": 60.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.2146587943152607,
+          "num_trades": 178
+        },
+        "TSLA": {
+          "score": 40.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0420546906383918,
+          "num_trades": 113
+        }
+      }
+    },
+    "Bot_ORB_Sensitive": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 92,
+          "pnl": 42107.26421783297,
+          "win_rate": 44.565217391304344,
+          "pf": 2.058748710223549,
+          "max_dd": -8.027562448808222
+        },
+        "QQQ": {
+          "num_trades": 86,
+          "pnl": 37538.68587983842,
+          "win_rate": 47.674418604651166,
+          "pf": 1.7203374729496705,
+          "max_dd": -11.365333993648772
+        },
+        "AAPL": {
+          "num_trades": 76,
+          "pnl": 102903.73602956036,
+          "win_rate": 63.1578947368421,
+          "pf": 5.484645038316488,
+          "max_dd": -7.853306444862603
+        },
+        "MSFT": {
+          "num_trades": 72,
+          "pnl": -12054.950743047564,
+          "win_rate": 43.05555555555556,
+          "pf": 0.7839449086462296,
+          "max_dd": -32.92871111742931
+        },
+        "TSLA": {
+          "num_trades": 57,
+          "pnl": 7688.1564542102415,
+          "win_rate": 54.385964912280706,
+          "pf": 1.0558600195026677,
+          "max_dd": -39.34987763108915
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 2.058748710223549,
+          "num_trades": 92
+        },
+        "QQQ": {
+          "score": 75.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.7203374729496705,
+          "num_trades": 86
+        },
+        "AAPL": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 5.484645038316488,
+          "num_trades": 76
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 0.7839449086462296,
+          "num_trades": 72
+        },
+        "TSLA": {
+          "score": 40.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0558600195026677,
+          "num_trades": 57
+        }
+      }
+    },
+    "Bot_Bollinger_RSI_Sensitive": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 17,
+          "pnl": 55459.94415257837,
+          "win_rate": 70.58823529411765,
+          "pf": 38.51917890558205,
+          "max_dd": -7.752270577773943
+        },
+        "QQQ": {
+          "num_trades": 20,
+          "pnl": 54688.35653064633,
+          "win_rate": 70.0,
+          "pf": 14.018190081419126,
+          "max_dd": -10.951229524307495
+        },
+        "AAPL": {
+          "num_trades": 30,
+          "pnl": 82997.57264206873,
+          "win_rate": 76.66666666666667,
+          "pf": 14.782041341042797,
+          "max_dd": -8.632830597747617
+        },
+        "MSFT": {
+          "num_trades": 16,
+          "pnl": 36187.67134060609,
+          "win_rate": 81.25,
+          "pf": 2.346131731516551,
+          "max_dd": -25.932595103553975
+        },
+        "TSLA": {
+          "num_trades": 17,
+          "pnl": 37170.20389228116,
+          "win_rate": 58.82352941176471,
+          "pf": 1.55062622371398,
+          "max_dd": -26.753504250167286
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 38.51917890558205,
+          "num_trades": 17
+        },
+        "QQQ": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 14.018190081419126,
+          "num_trades": 20
+        },
+        "AAPL": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 14.782041341042797,
+          "num_trades": 30
+        },
+        "MSFT": {
+          "score": 90.0,
+          "verdict": "ACTIVAR",
+          "pf": 2.346131731516551,
+          "num_trades": 16
+        },
+        "TSLA": {
+          "score": 75.0,
+          "verdict": "CONSIDERAR",
+          "pf": 1.55062622371398,
+          "num_trades": 17
+        }
+      }
+    }
+  }
+}

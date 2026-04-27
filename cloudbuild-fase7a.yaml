@@ -1,0 +1,84 @@
+steps:
+  # Step 1: Build Docker image with GPU support
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-fase7a:latest'
+      - '-f'
+      - 'Dockerfile.fase7a'
+      - '.'
+    id: 'build-image'
+
+  # Step 2: Push image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-fase7a:latest'
+    id: 'push-image'
+    waitFor: ['build-image']
+
+  # Step 3: Deploy to Cloud Run with GPU
+  - name: 'gcr.io/cloud-builders/gke-deploy'
+    args:
+      - 'run'
+      - '-f=.'
+      - '-L=gcr.io/$PROJECT_ID/eolo-fase7a:latest'
+      - '-n=default'
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=us-central1'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=eolo-gpu-cluster'
+    id: 'deploy-gpu'
+    waitFor: ['push-image']
+
+  # Step 4: Execute backtests in parallel
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args:
+      - 'create'
+      - 'job'
+      - 'fase7a-backtests-${BUILD_ID}'
+      - '--from=cronjob/fase7a-backtests'
+      - '-n=default'
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=us-central1'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=eolo-gpu-cluster'
+    id: 'submit-job'
+    waitFor: ['deploy-gpu']
+
+  # Step 5: Monitor job completion
+  - name: 'gcr.io/cloud-builders/kubectl'
+    args:
+      - 'wait'
+      - '--for=condition=complete'
+      - 'job/fase7a-backtests-${BUILD_ID}'
+      - '--timeout=7200s'
+      - '-n=default'
+    env:
+      - 'CLOUDSDK_COMPUTE_REGION=us-central1'
+      - 'CLOUDSDK_CONTAINER_CLUSTER=eolo-gpu-cluster'
+    id: 'wait-job'
+    waitFor: ['submit-job']
+
+  # Step 6: Upload results to GCS
+  - name: 'gcr.io/cloud-builders/gcs-fetcher'
+    args:
+      - 'gs://eolo-backtests/fase7a/${BUILD_ID}/results.json'
+    id: 'upload-results'
+    waitFor: ['wait-job']
+
+timeout: '7200s'
+machineType: 'N1_HIGHCPU_8'
+
+options:
+  machineType: 'N1_HIGHCPU_8'
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-fase7a:latest'
+
+artifacts:
+  objects:
+    location: 'gs://eolo-backtests/fase7a/${BUILD_ID}/'
+    paths:
+      - 'results/**/*'
+      - 'logs/**/*'

@@ -1,0 +1,27 @@
+{
+  "SPY": {
+    "source": "synthetic",
+    "bars": 365,
+    "file": "/Users/JUAN/PycharmProjects/eolo/data/SPY_synthetic.csv"
+  },
+  "QQQ": {
+    "source": "synthetic",
+    "bars": 365,
+    "file": "/Users/JUAN/PycharmProjects/eolo/data/QQQ_synthetic.csv"
+  },
+  "AAPL": {
+    "source": "synthetic",
+    "bars": 365,
+    "file": "/Users/JUAN/PycharmProjects/eolo/data/AAPL_synthetic.csv"
+  },
+  "MSFT": {
+    "source": "synthetic",
+    "bars": 365,
+    "file": "/Users/JUAN/PycharmProjects/eolo/data/MSFT_synthetic.csv"
+  },
+  "TSLA": {
+    "source": "synthetic",
+    "bars": 365,
+    "file": "/Users/JUAN/PycharmProjects/eolo/data/TSLA_synthetic.csv"
+  }
+}

@@ -19,6 +19,8 @@ COPY eolo-sheets-sync/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY eolo-sheets-sync/ /app/
+# Phase 5 (2026-04-21): strategies + indicators puros para Strategy_Diagnostics.
+COPY eolo_common/ /app/eolo_common/
 
 # gunicorn sirve Flask en `main:app`. No hace falta watchdog ni estado en memoria:
 # el servicio es stateless (todo vive en Firestore/Sheets).

@@ -1,0 +1,722 @@
+{
+  "SPY": {
+    "bollinger": {
+      "pf_test_mean": 0.010195340321236035,
+      "pf_test_std": 0.006029111997837969,
+      "sharpe_test_mean": -0.03461967012714858,
+      "avg_degradation": 0.3173014768552835,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20"
+      ]
+    },
+    "obv": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "opening_drive": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "rvol_breakout": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "stop_run": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "supertrend": {
+      "pf_test_mean": 0.005842767571465206,
+      "pf_test_std": 0.0038696658294144846,
+      "sharpe_test_mean": 0.33180153176941285,
+      "avg_degradation": 0.4683242672126187,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20"
+      ]
+    },
+    "tick_trin_fade": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "tsv": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_correlation": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_mean_reversion": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_squeeze": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "volume_reversal_bar": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vrp": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vw_macd": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vwap_rsi": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vwap_zscore": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    }
+  },
+  "QQQ": {
+    "bollinger": {
+      "pf_test_mean": 0.02428627125723628,
+      "pf_test_std": 0.018773846722757472,
+      "sharpe_test_mean": 0.22631509141141817,
+      "avg_degradation": 0.3692225703272708,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20"
+      ]
+    },
+    "obv": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "opening_drive": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "rvol_breakout": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "stop_run": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "supertrend": {
+      "pf_test_mean": 0.013962569063244808,
+      "pf_test_std": 0.006097505824356913,
+      "sharpe_test_mean": -0.33863039276899304,
+      "avg_degradation": 0.17073009837713496,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20"
+      ]
+    },
+    "tick_trin_fade": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "tsv": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_correlation": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_mean_reversion": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_squeeze": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "volume_reversal_bar": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vrp": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vw_macd": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vwap_rsi": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vwap_zscore": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    }
+  },
+  "AAPL": {
+    "bollinger": {
+      "pf_test_mean": 0.031323042102575936,
+      "pf_test_std": 0.032254937091792515,
+      "sharpe_test_mean": -0.06028736290339466,
+      "avg_degradation": 0.4168162088637107,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20"
+      ]
+    },
+    "obv": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "opening_drive": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "rvol_breakout": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "stop_run": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "supertrend": {
+      "pf_test_mean": 0.014079496293568286,
+      "pf_test_std": 0.009989664678815523,
+      "sharpe_test_mean": 0.05981549020855681,
+      "avg_degradation": 0.30061400248103165,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20"
+      ]
+    },
+    "tick_trin_fade": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "tsv": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_correlation": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_mean_reversion": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vix_squeeze": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "volume_reversal_bar": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vrp": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vw_macd": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vwap_rsi": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    },
+    "vwap_zscore": {
+      "pf_test_mean": 0.0,
+      "pf_test_std": 0.0,
+      "sharpe_test_mean": 0.0,
+      "avg_degradation": 1.0,
+      "num_windows": 14,
+      "verdict": "RECHAZAR",
+      "score": 0,
+      "rule_scores": {},
+      "vetos_triggered": [
+        "PF < 1.0",
+        "Trades < 20",
+        "Degradaci\u00f3n > 50%"
+      ]
+    }
+  }
+}

@@ -58,6 +58,9 @@ KNOWN_STRATEGIES = {
     "ema_3_8", "ema_8_21", "macd_accel", "volume_breakout",
     "buy_pressure", "sell_pressure", "vwap_momentum",
     "donchian_turtle", "bulls_bsp", "net_bsv",
+    # Combos Ganadores (2026-04) — 6 en crypto (combo2_rubber_band es equity-only).
+    "combo1_ema_scalper", "combo3_nino_squeeze", "combo4_slimribbon",
+    "combo5_btd", "combo6_fractalccix", "combo7_campbell",
 }
 
 
@@ -347,7 +350,7 @@ def api_strategy_stats():
                 continue
             if str(t.get("side", "")).upper() != "SELL":
                 continue
-            strat = str(t.get("strategy", "")).strip()
+            strat = str(t.get("strategy", "")).strip().lower()
             if strat not in stats:
                 continue
             ts = float(t.get("ts", 0) or 0)

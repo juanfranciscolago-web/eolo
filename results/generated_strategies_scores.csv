@@ -1,0 +1,16 @@
+strategy,score,verdict,confluence,entry_rule,exit_rule
+gen_bollinger_x_atr_00,39.132649611598666,RECHAZAR,0.55,Bollinger mean reversion (multiplier: 1.0),ATR-based stop loss (threshold: 2.00)
+gen_confluence_x_atr_01,64.32440379071568,CONSIDERAR,0.6790550473839461,NN Confluency score > 0.68,ATR-based stop loss (threshold: 1.50)
+gen_bollinger_x_trailing_stop_02,48.42201755684853,RECHAZAR,0.55,Bollinger mean reversion (multiplier: 1.0),Trailing stop at 0.5% ATR
+gen_bollinger_x_atr_03,44.63288217845539,RECHAZAR,0.55,Bollinger mean reversion (multiplier: 1.5),ATR-based stop loss (threshold: 2.50)
+gen_confluence_x_trailing_stop_04,50.49402786309926,RECHAZAR,0.5061753482887408,NN Confluency score > 0.51,Trailing stop at 0.5% ATR
+gen_macd_x_fixed_tp_05,46.85416502539916,RECHAZAR,0.6,MACD bullish crossover (threshold: 0.100),"Fixed TP at 2% gain, SL at 1% loss"
+gen_macd_x_atr_06,43.15966252220214,RECHAZAR,0.6,MACD bullish crossover (threshold: 0.050),ATR-based stop loss (threshold: 2.50)
+gen_macd_x_fixed_tp_07,45.30893825622149,RECHAZAR,0.6,MACD bullish crossover (threshold: 0.050),"Fixed TP at 2% gain, SL at 1% loss"
+gen_confluence_x_atr_08,56.98949936475301,RECHAZAR,0.5873687420594126,NN Confluency score > 0.59,ATR-based stop loss (threshold: 2.00)
+gen_bollinger_x_fixed_tp_09,41.410254660260115,RECHAZAR,0.55,Bollinger mean reversion (multiplier: 1.5),"Fixed TP at 2% gain, SL at 1% loss"
+gen_confluence_x_trailing_stop_10,60.94567962120887,CONSIDERAR,0.6368209952651108,NN Confluency score > 0.64,Trailing stop at 0.5% ATR
+gen_bollinger_x_fixed_tp_11,45.832635188254585,RECHAZAR,0.55,Bollinger mean reversion (multiplier: 1.0),"Fixed TP at 2% gain, SL at 1% loss"
+gen_confluence_x_trailing_stop_12,73.59754125936291,CONSIDERAR,0.7949692657420365,NN Confluency score > 0.79,Trailing stop at 0.5% ATR
+gen_rsi_x_trailing_stop_13,41.09996657782621,RECHAZAR,0.5,RSI < 30 (sobreventa),Trailing stop at 0.5% ATR
+gen_bollinger_x_atr_14,47.331949117361646,RECHAZAR,0.55,Bollinger mean reversion (multiplier: 0.5),ATR-based stop loss (threshold: 2.00)

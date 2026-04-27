@@ -2,5 +2,10 @@ Flask==3.0.3
 gunicorn==22.0.0
 loguru==0.7.2
 google-cloud-firestore==2.16.1
+google-cloud-secret-manager==2.20.2
 google-auth==2.32.0
 google-api-python-client==2.138.0
+requests==2.32.3
+# Plan B 2026-04-21: el cómputo de Strategy Diagnostics se movió al Bot v1
+# (yfinance quedó bloqueado por rate-limit de Yahoo desde IPs GCP). Sheets-sync
+# ahora solo LEE el doc de Firestore, no corre pandas/numpy/yfinance.

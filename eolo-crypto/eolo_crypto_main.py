@@ -336,6 +336,44 @@ class EoloCryptoOrchestrator:
                 self.state.inc_errors()
             await asyncio.sleep(30)
 
+    # ── Reconcile balance real vs _eolo_positions (loop) ──
+
+    async def _reconcile_loop(self):
+        """
+        Cada 5 min lee /api/v3/account y ajusta _eolo_positions al balance real:
+        si Eolo tiene qty > real → elimina (si real≈0) o ajusta (si 0<real<eolo).
+        Complemento proactivo al auto-cleanup reactivo de _market_sell (-2010).
+
+        Corre también en TESTNET (donde los desyncs por reset son frecuentes).
+        En PAPER mode el método del executor skipea solo.
+        """
+        # Pequeño delay inicial para que el bot termine de arrancar
+        await asyncio.sleep(60)
+
+        while not self._stopping:
+            try:
+                result = await asyncio.get_event_loop().run_in_executor(
+                    None, self.executor.reconcile_positions_with_binance
+                )
+                n_rm   = len(result.get("removed", []))
+                n_adj  = len(result.get("adjusted", []))
+                n_uc   = len(result.get("unchanged", []))
+                skipped = result.get("skipped") or result.get("error")
+                if skipped:
+                    logger.info(f"[RECONCILE] ciclo skipped: {skipped}")
+                else:
+                    logger.info(
+                        f"[RECONCILE] ciclo OK — removed={n_rm} "
+                        f"adjusted={n_adj} unchanged={n_uc}"
+                    )
+                    if n_rm or n_adj:
+                        # Refrescar state snapshot para dashboard
+                        self.state.set_positions(self.executor.get_open_positions())
+            except Exception as e:
+                logger.warning(f"[ORCH] reconcile_loop: {e}")
+                self.state.inc_errors()
+            await asyncio.sleep(300)  # 5 min
+
     # ── Config refresher (loop) ───────────────────────────
 
     async def _config_refresher(self):
@@ -392,6 +430,7 @@ class EoloCryptoOrchestrator:
             asyncio.create_task(self._state_refresher(),  name="state-refresh"),
             asyncio.create_task(self._config_refresher(), name="config-refresh"),
             asyncio.create_task(self._auto_close_loop(),  name="auto-close"),
+            asyncio.create_task(self._reconcile_loop(),   name="reconcile"),
         ]
 
         logger.info(

@@ -1,9 +1,15 @@
+import base64
 import os
 import pandas
 import requests
 from loguru import logger
 
-from helpers import retrieve_firestore_value, _invalidate_firestore_cache
+from helpers import (
+    retrieve_firestore_value,
+    store_firestore_value,
+    retrieve_google_secret_dict,
+    _invalidate_firestore_cache,
+)
 
 from secret_stuff import (
     project_id,
@@ -15,6 +21,68 @@ from secret_stuff import (
 
 project_id = project_id
 os.environ["GCLOUD_PROJECT"] = gcloud_project
+
+
+# ── OAuth refresh real contra Schwab ───────────────────────────────
+# BUG HISTÓRICO (pre-2026-04-24): MarketData.refresh_access_token() solo
+# RE-LEÍA el token de Firestore, nunca llamaba al endpoint OAuth. Como
+# consecuencia, el refresh_token de Schwab se quedaba sin usar y expiraba
+# cada 7 días, requiriendo `python3 init_auth.py` manual para repoblar.
+#
+# Este helper sí hace el refresh real: intercambia refresh_token por un
+# access_token + refresh_token NUEVOS (Schwab rota ambos) y los persiste
+# en Firestore. Callers lo invocan en el retry-on-401 o cuando detectan
+# el token stale.
+#
+# Returns:
+#   access_token (str) en éxito — también queda persistido en Firestore.
+#   None si el refresh_token también expiró (requiere init_auth.py manual).
+def schwab_oauth_refresh() -> str | None:
+    try:
+        rt = retrieve_firestore_value(
+            collection_id=collection_id, document_id=document_id,
+            key="refresh_token",
+        )
+        if not rt:
+            logger.error("[OAUTH] refresh_token ausente en Firestore — correr init_auth.py")
+            return None
+
+        sec = retrieve_google_secret_dict(gcp_id=project_id, secret_id="cs-app-key")
+        cred = base64.b64encode(f"{sec['app-key']}:{sec['app-secret']}".encode()).decode()
+
+        resp = requests.post(
+            "https://api.schwabapi.com/v1/oauth/token",
+            headers={"Authorization": f"Basic {cred}",
+                     "Content-Type":  "application/x-www-form-urlencoded"},
+            data={"grant_type": "refresh_token", "refresh_token": rt},
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            logger.error(
+                f"[OAUTH] refresh falló HTTP {resp.status_code}: {resp.text[:200]} "
+                f"— refresh_token probablemente expirado. Correr `python3 init_auth.py`"
+            )
+            return None
+
+        tokens = resp.json()
+        if "access_token" not in tokens:
+            logger.error(f"[OAUTH] respuesta sin access_token: {tokens}")
+            return None
+
+        # Schwab rota AMBOS tokens. Persistir todo el dict para que la próxima
+        # sesión use el refresh_token nuevo (bug histórico: solo se guardaba
+        # access_token y el refresh_token viejo expiraba a los 7 días).
+        store_firestore_value(
+            project_id=project_id, collection_id=collection_id,
+            document_id=document_id, value=tokens,
+        )
+        _invalidate_firestore_cache(collection_id, document_id, "access_token")
+        _invalidate_firestore_cache(collection_id, document_id, "refresh_token")
+        logger.info("🔄 [OAUTH] Schwab tokens refrescados (access + refresh)")
+        return tokens["access_token"]
+    except Exception as e:
+        logger.exception(f"[OAUTH] excepción durante refresh: {e}")
+        return None
 
 
 class MarketData:
@@ -148,11 +216,17 @@ class MarketData:
 
             elif response.status_code == 401:
                 if attempt == 0:
-                    logger.warning(f"401 for {symbol} — token expirado, invalidando cache y reintentando...")
+                    logger.warning(f"401 for {symbol} — token expirado, llamando OAuth refresh...")
                     _invalidate_firestore_cache(collection_id, document_id, key)
+                    # Hacer el OAuth refresh REAL (no solo re-leer Firestore).
+                    # Si falla (refresh_token también expirado), el siguiente
+                    # attempt va a 401 de nuevo y caemos al else: return None.
+                    new_tok = schwab_oauth_refresh()
+                    if new_tok:
+                        self.access_token = new_tok
                 else:
-                    logger.error(f"401 persiste para {symbol}. Token Schwab expirado.\n"
-                                 f"  ➡ gcloud functions call refresh_tokens --region=us-east1")
+                    logger.error(f"401 persiste para {symbol}. Refresh_token probablemente expirado.\n"
+                                 f"  ➡ Correr `python3 init_auth.py` para re-autenticar OAuth")
                     return None
             else:
                 logger.error(f"Error fetching {symbol}: {response.status_code} {response.text}")
@@ -189,8 +263,13 @@ class MarketData:
             elif response.status_code == 401:
                 if attempt == 0:
                     _invalidate_firestore_cache(collection_id, document_id, key)
-                    self.refresh_access_token()
+                    # OAuth refresh REAL (no solo re-lectura Firestore).
+                    new_tok = schwab_oauth_refresh()
+                    if new_tok:
+                        self.access_token = new_tok
                 else:
+                    logger.error(f"401 persiste en daily history para {symbol}. "
+                                 f"Correr `python3 init_auth.py`.")
                     return None
             else:
                 return None

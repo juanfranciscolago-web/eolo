@@ -1,0 +1,121 @@
+{
+  "timestamp": "2026-04-27T17:03:25.918057",
+  "phase": "FASE 7a",
+  "total_backtests": 180,
+  "passed": 180,
+  "failed": 0,
+  "errors": 0,
+  "winners": 180,
+  "winner_percentage": "100.0%",
+  "average_pf": 2.6886318508284064,
+  "max_pf": 4.584210945345146,
+  "winners_by_asset": {
+    "SPY": 36,
+    "QQQ": 36,
+    "AAPL": 36,
+    "MSFT": 36,
+    "TSLA": 36
+  },
+  "top_performers": [
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_MACD_Confluence",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.112655"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_BollingerRSI",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.112852"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Momentum_Score",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.121265"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Support_Resistance",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.125851"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Trend_Following",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.169357"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Mean_Reversion",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.169890"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Volume_Profile",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.178101"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Ichimoku",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.182446"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Divergence",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.224650"
+    },
+    {
+      "asset": "QQQ",
+      "timeframe": "30m",
+      "strategy": "Bot_Pattern_Breakout",
+      "status": "PASS",
+      "pf": 4.584210945345146,
+      "wr": 0.6666666666666666,
+      "trades": 21,
+      "timestamp": "2026-04-27T17:03:24.224963"
+    }
+  ]
+}

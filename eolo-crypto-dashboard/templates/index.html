@@ -264,6 +264,12 @@
   .strat-card-mini .neg { color:var(--red); }
   .strat-card-expand { overflow:hidden; max-height:0; transition:max-height .2s ease; }
   .strat-card.expanded .strat-card-expand { max-height:280px; }
+  .strat-pos-badge { display:inline-flex; align-items:center; justify-content:center;
+                     min-width:18px; height:16px; border-radius:8px; font-size:.6rem;
+                     font-weight:700; padding:0 5px; margin-left:4px; flex-shrink:0; }
+  .strat-pos-badge.long  { background:rgba(14,203,129,.2);  color:#0ECB81; border:1px solid rgba(14,203,129,.5); }
+  .strat-pos-badge.short { background:rgba(246,70,93,.2);   color:#F6465D; border:1px solid rgba(246,70,93,.5); }
+  .strat-pos-badge.zero  { background:rgba(43,49,57,.5);    color:#848e9c; border:1px solid rgba(43,49,57,.8); }
   .strat-stats-tbl { width:100%; font-size:.68rem; border-collapse:collapse; margin-top:6px; }
   .strat-stats-tbl td { padding:2px 4px; border-bottom:1px dotted rgba(43,49,57,.5); }
   .strat-stats-tbl td:first-child { color:var(--text-dim); text-transform:uppercase; letter-spacing:.04em; font-size:.6rem; }
@@ -560,6 +566,14 @@
         </div>
         <div class="strat-grid" id="strat-grid-nivel2"></div>
       </div>
+      <div class="strat-group">
+        <div class="strat-head">
+          <span class="strat-title">🏆 Combos Ganadores (6) <span class="hint">⭐C3 Nino Squeeze · ⚡alta · 🎯media · 💎baja · C2 excluido (equity-only)</span></span>
+          <button class="strat-btn-all on"  onclick="setAllStrats('combos', true)">Todas ON</button>
+          <button class="strat-btn-all off" onclick="setAllStrats('combos', false)">Todas OFF</button>
+        </div>
+        <div class="strat-grid" id="strat-grid-combos"></div>
+      </div>
     </div>
   </div>
 
@@ -732,11 +746,22 @@ const STRATEGY_DEFS = {
     { key: "tick_trin_fade",  label: "TICK/TRIN Fade" },
     { key: "vrp_intraday",    label: "VRP Intraday" },
   ],
+  combos: [
+    { key: "combo1_ema_scalper",  label: "⚡ C1 — EMA Scalper 3/8 (ALTA)" },
+    { key: "combo3_nino_squeeze", label: "⭐ C3 — Nino Squeeze (MEDIA)" },
+    { key: "combo4_slimribbon",   label: "🎯 C4 — SlimRibbon + MACD (MEDIA)" },
+    { key: "combo5_btd",          label: "🎯 C5 — BTD + Stacked + PB34 (MEDIA)" },
+    { key: "combo6_fractalccix",  label: "💎 C6 — FractalCCIx Premium (BAJA)" },
+    { key: "combo7_campbell",     label: "💎 C7 — Campbell Swing (BAJA)" },
+  ],
 };
 
-let STRATEGIES_STATE = {};
-let STRATEGY_STATS   = {};
-let EXPANDED_STRATS  = new Set();
+let STRATEGIES_STATE  = {};
+let STRATEGY_STATS    = {};
+let LIVE_POS_BY_STRAT = {};   // canonical_key → {longs:[...], shorts:[...]}
+let EXPANDED_STRATS   = new Set(
+  Object.values(STRATEGY_DEFS).flat().map(d => d.key)
+);  // todas expandidas por defecto
 const STRAT_GROUPS_DISABLED = window.STRAT_GROUPS_DISABLED || {};
 
 /* ========== Helpers ========== */
@@ -1072,9 +1097,18 @@ function renderStrategyGroup(groupKey) {
     const clickHandler  = disabled ? '' : `onclick="toggleExpand('${d.key}', event)"`;
     const toggleHandler = disabled ? '' : `onclick="toggleStrat('${d.key}', event)"`;
     const cardCls = `strat-card ${on ? 'on' : 'off'}${exp ? ' expanded' : ''}${disabled ? ' disabled' : ''}`;
+    const pos = LIVE_POS_BY_STRAT[d.key] || {};
+    const nLong  = (pos.longs  || []).length;
+    const nShort = (pos.shorts || []).length;
+    const badgeHtml = nLong > 0 && nShort > 0
+      ? `<span class="strat-pos-badge long">${nLong}L</span><span class="strat-pos-badge short">${nShort}S</span>`
+      : nLong  > 0 ? `<span class="strat-pos-badge long">${nLong}</span>`
+      : nShort > 0 ? `<span class="strat-pos-badge short">${nShort}</span>`
+      : `<span class="strat-pos-badge zero">0</span>`;
     return `<div class="${cardCls}" data-strat="${d.key}">
       <div class="strat-card-head" ${clickHandler}>
         <span class="strat-card-name" title="${d.label}">${d.label}</span>
+        ${badgeHtml}
         ${_pieSvg(st.h24.wins, st.h24.losses)}
         <div class="strat-toggle" ${toggleHandler}></div>
       </div>
@@ -1104,7 +1138,7 @@ function renderStrategyGroup(groupKey) {
 }
 
 function renderStrategiesUnified() {
-  ['emacd', 'classic', 'nivel1', 'nivel2'].forEach(renderStrategyGroup);
+  ['emacd', 'classic', 'nivel1', 'nivel2', 'combos'].forEach(renderStrategyGroup);
 }
 
 function toggleExpand(key, ev) {

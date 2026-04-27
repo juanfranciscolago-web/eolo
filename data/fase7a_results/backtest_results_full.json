@@ -1,0 +1,1802 @@
+[
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.679014"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.679944"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.685891"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.686097"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.718845"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.719395"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.725288"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.725368"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.758709"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.759842"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.766216"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "30m",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.766496"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.800705"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.802200"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.809732"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.810249"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.846917"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.847006"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.854081"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.856002"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.895217"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.895327"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.901480"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "1h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.905055"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.945789"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.946291"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.953550"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.956799"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.998270"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:23.999081"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:24.007537"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:24.012965"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:24.055451"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:24.056145"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:24.064410"
+  },
+  {
+    "asset": "SPY",
+    "timeframe": "4h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 3.1421346638978185,
+    "wr": 0.65,
+    "trades": 20,
+    "timestamp": "2026-04-27T17:03:24.069344"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.112655"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.112852"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.121265"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.125851"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.169357"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.169890"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.178101"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.182446"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.224650"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.224963"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.233509"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "30m",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.237895"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.280974"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.281028"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.289775"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.292560"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.331075"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.331480"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.340853"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.343089"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.382504"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.384418"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.393619"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "1h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.395819"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.433818"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.435217"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.442878"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.445722"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.484153"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.485417"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.495436"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.497524"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.536778"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.539975"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.549411"
+  },
+  {
+    "asset": "QQQ",
+    "timeframe": "4h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 4.584210945345146,
+    "wr": 0.6666666666666666,
+    "trades": 21,
+    "timestamp": "2026-04-27T17:03:24.549716"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.591484"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.594201"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.604317"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.606628"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.646488"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.647962"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.656958"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.659153"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.698213"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.699147"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.710749"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "30m",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.712046"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.750068"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.750160"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.762630"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.763632"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.801562"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.802156"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.814157"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.815975"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.853311"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.853491"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.865788"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "1h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.867572"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.910162"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.910807"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.921973"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.924788"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.962633"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.964470"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.975587"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:24.978992"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:25.014102"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:25.016183"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:25.027722"
+  },
+  {
+    "asset": "AAPL",
+    "timeframe": "4h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 2.123732514970624,
+    "wr": 0.5185185185185185,
+    "trades": 27,
+    "timestamp": "2026-04-27T17:03:25.030327"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.062154"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.064031"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.074953"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.076312"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.108734"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.110897"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.122423"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.122748"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.155372"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.157821"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.169989"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "30m",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.170157"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.201823"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.203353"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.213933"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.214322"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.246712"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.247668"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.257912"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.258292"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.292017"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.294760"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.304181"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "1h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.304688"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.339810"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.341822"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.349808"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.351062"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.384560"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.386287"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.393228"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.395000"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.428221"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.430345"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.437085"
+  },
+  {
+    "asset": "MSFT",
+    "timeframe": "4h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 1.8751546509701027,
+    "wr": 0.52,
+    "trades": 25,
+    "timestamp": "2026-04-27T17:03:25.439799"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.475837"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.478936"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.486141"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.489428"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.526907"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.529849"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.537021"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.540326"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.579292"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.583031"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.588506"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "30m",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.593806"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.632851"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.641836"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.642849"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.648168"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.688246"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.696686"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.696717"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.703626"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.741953"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.750549"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.751169"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "1h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.758107"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_BollingerRSI",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.796086"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_MACD_Confluence",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.804781"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Momentum_Score",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.806012"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Support_Resistance",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.812772"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Trend_Following",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.849383"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Mean_Reversion",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.857725"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Volume_Profile",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.857775"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Ichimoku",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.864671"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Divergence",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.899477"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Volatility_Adaptive",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.908205"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Pattern_Breakout",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.908962"
+  },
+  {
+    "asset": "TSLA",
+    "timeframe": "4h",
+    "strategy": "Bot_Regime_Detection",
+    "status": "PASS",
+    "pf": 1.7179264789583404,
+    "wr": 0.5172413793103449,
+    "trades": 29,
+    "timestamp": "2026-04-27T17:03:25.915522"
+  }
+]

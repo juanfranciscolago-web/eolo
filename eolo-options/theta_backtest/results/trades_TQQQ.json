@@ -1,0 +1,53 @@
+[
+  {
+    "ticker": "TQQQ",
+    "spread_type": "put_credit_spread",
+    "dte_at_entry": 0,
+    "entry_date": "2024-10-29T00:00:00",
+    "expiry_date": "2024-10-29T00:00:00",
+    "exit_date": "2024-10-30T00:00:00",
+    "short_strike": 36.0,
+    "long_strike": 31.0,
+    "entry_credit": 0.1966,
+    "entry_spot": 36.97,
+    "exit_price": 0.0,
+    "exit_reason": "VVIX_PANIC",
+    "pnl": 19.66,
+    "risk_zone": "LOW",
+    "payoff_score": 38.4
+  },
+  {
+    "ticker": "TQQQ",
+    "spread_type": "call_credit_spread",
+    "dte_at_entry": 2,
+    "entry_date": "2025-01-30T00:00:00",
+    "expiry_date": "2025-02-03T00:00:00",
+    "exit_date": "2025-02-03T00:00:00",
+    "short_strike": 42.5,
+    "long_strike": 47.5,
+    "entry_credit": 0.2027,
+    "entry_spot": 41.32,
+    "exit_price": 0.0,
+    "exit_reason": "EXPIRY",
+    "pnl": 20.27,
+    "risk_zone": "LOW",
+    "payoff_score": 32.7
+  },
+  {
+    "ticker": "TQQQ",
+    "spread_type": "put_credit_spread",
+    "dte_at_entry": 3,
+    "entry_date": "2025-02-24T00:00:00",
+    "expiry_date": "2025-02-27T00:00:00",
+    "exit_date": "2025-02-25T00:00:00",
+    "short_strike": 40.0,
+    "long_strike": 35.0,
+    "entry_credit": 0.1483,
+    "entry_spot": 41.83,
+    "exit_price": 1.6715,
+    "exit_reason": "STOP_LOSS",
+    "pnl": -152.32,
+    "risk_zone": "VERY_LOW",
+    "payoff_score": 42.2
+  }
+]

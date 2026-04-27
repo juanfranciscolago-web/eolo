@@ -57,6 +57,10 @@ COPY Bot/bot_vix_correlation_strategy.py      /app/Bot/
 COPY Bot/bot_vix_squeeze_strategy.py          /app/Bot/
 COPY Bot/bot_tick_trin_fade_strategy.py       /app/Bot/
 COPY Bot/bot_vrp_strategy.py                  /app/Bot/
+# ── Suite v3 (EMA 3/8 + MACD) — dispatcher compartido con V1 ──
+# Phase A (2026-04-21, Opción C): incluye DIRECTIONAL_ENTRY_POINTS para
+# habilitar toggles _LONG / _SHORT también en v2 opciones.
+COPY Bot/bot_strategies_v3_dispatcher.py      /app/Bot/
 
 # ── Paquete compartido eolo_common (multi-TF + confluencia) ─
 COPY eolo_common /app/eolo_common

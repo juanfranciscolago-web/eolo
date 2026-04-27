@@ -104,6 +104,14 @@ TRADE_STRAT_MAP = {
     "DONCHIAN_TURTLE":   "donchian_turtle",
     "BULLS_BSP":         "bulls_bsp",
     "NET_BSV":           "net_bsv",
+    # Combos Ganadores (2026-04)
+    "COMBO1_EMA_SCALPER":  "combo1_ema_scalper",
+    "COMBO2_RUBBER_BAND":  "combo2_rubber_band",
+    "COMBO3_NINO_SQUEEZE": "combo3_nino_squeeze",
+    "COMBO4_SLIMRIBBON":   "combo4_slimribbon",
+    "COMBO5_BTD":          "combo5_btd",
+    "COMBO6_FRACTALCCIX":  "combo6_fractalccix",
+    "COMBO7_CAMPBELL":     "combo7_campbell",
 }
 
 # Set canónico (mismo que v2/crypto). Usado por /api/strategy-stats
@@ -119,6 +127,9 @@ KNOWN_STRATEGIES = {
     "ema_3_8", "ema_8_21", "macd_accel", "volume_breakout",
     "buy_pressure", "sell_pressure", "vwap_momentum",
     "orb_v3", "donchian_turtle", "bulls_bsp", "net_bsv",
+    # Combos Ganadores (2026-04) — 7 estrategias
+    "combo1_ema_scalper", "combo2_rubber_band", "combo3_nino_squeeze",
+    "combo4_slimribbon", "combo5_btd", "combo6_fractalccix", "combo7_campbell",
 }
 
 
@@ -165,11 +176,10 @@ def get_settings() -> dict:
 def get_live_positions() -> dict:
     """
     Lee las posiciones reales del bot desde eolo-config/positions.
-    Más confiable que inferirlas de los trades del día (sobrevive reinicios).
     Retorna dict con:
-      - open_tickers: {ticker: entry_price}  (solo los LONG)
-      - by_strategy:  {strat_key: [ticker, ...]}
-      - updated_at:   timestamp
+      - open_tickers:  {ticker: entry_price}  (LONGs)
+      - short_tickers: {ticker: entry_price}  (SHORTs)
+      - updated_at:    timestamp
     """
     try:
         db  = get_db()
@@ -179,42 +189,51 @@ def get_live_positions() -> dict:
             positions    = data.get("positions",    {})
             entry_prices = data.get("entry_prices", {})
             updated_at   = data.get("updated_at",   "")
-            open_tickers = {
-                t: entry_prices.get(t)
-                for t, v in positions.items()
-                if v == "LONG"
-            }
-            return {"open_tickers": open_tickers, "updated_at": updated_at}
+            open_tickers  = {t: entry_prices.get(t) for t, v in positions.items() if v == "LONG"}
+            short_tickers = {t: entry_prices.get(t) for t, v in positions.items() if v == "SHORT"}
+            return {"open_tickers": open_tickers, "short_tickers": short_tickers, "updated_at": updated_at}
     except Exception:
         pass
-    return {"open_tickers": {}, "updated_at": ""}
+    return {"open_tickers": {}, "short_tickers": {}, "updated_at": ""}
 
 
-def build_strat_positions(open_tickers: dict, today_trades: list) -> dict:
+def build_strat_positions(open_tickers: dict, short_tickers: dict, today_trades: list) -> dict:
     """
-    Para cada ticker abierto, determina qué estrategia lo abrió
-    buscando el último BUY de hoy. Agrupa por clave de estrategia.
+    Para cada ticker abierto (LONG o SHORT), determina qué estrategia lo abrió
+    buscando el último BUY (para LONGs) o SELL_SHORT (para SHORTs) de hoy.
+    Retorna {strat_key: {longs: [ticker,...], shorts: [ticker,...]}}
     """
-    # Último BUY por ticker
-    last_buy_strat = {}
+    last_open_strat = {}  # ticker → strat_key (último trade de apertura)
     for t in today_trades:
-        if t.get("action") == "BUY":
+        action = t.get("action", "")
+        if action in ("BUY", "SELL_SHORT"):
             ticker = t.get("ticker", "")
             strat  = t.get("strategy", "")
             if ticker:
-                last_buy_strat[ticker] = TRADE_STRAT_MAP.get(strat, "")
+                last_open_strat[ticker] = TRADE_STRAT_MAP.get(strat, "")
 
-    by_strategy = {k: [] for k in STRATEGY_TICKERS}
+    by_strategy = {k: {"longs": [], "shorts": []} for k in STRATEGY_TICKERS}
+
     for ticker in open_tickers:
-        strat_key = last_buy_strat.get(ticker, "")
+        strat_key = last_open_strat.get(ticker, "")
         if strat_key and strat_key in by_strategy:
-            by_strategy[strat_key].append(ticker)
+            by_strategy[strat_key]["longs"].append(ticker)
         else:
-            # Fallback: asignar por grupo de tickers
             for key, tlist in STRATEGY_TICKERS.items():
                 if ticker in tlist:
-                    by_strategy[key].append(ticker)
+                    by_strategy[key]["longs"].append(ticker)
                     break
+
+    for ticker in short_tickers:
+        strat_key = last_open_strat.get(ticker, "")
+        if strat_key and strat_key in by_strategy:
+            by_strategy[strat_key]["shorts"].append(ticker)
+        else:
+            for key, tlist in STRATEGY_TICKERS.items():
+                if ticker in tlist:
+                    by_strategy[key]["shorts"].append(ticker)
+                    break
+
     return by_strategy
 
 
@@ -288,7 +307,7 @@ def api_data():
     now_et    = datetime.now(EASTERN).strftime("%Y-%m-%d %H:%M:%S ET")
 
     # Posiciones por estrategia para el panel semáforo
-    strat_pos = build_strat_positions(live_pos["open_tickers"], trades)
+    strat_pos = build_strat_positions(live_pos["open_tickers"], live_pos["short_tickers"], trades)
 
     return jsonify({
         "trades":           trades[-50:],
@@ -300,9 +319,10 @@ def api_data():
         "updated_at":       now_et,
         "trade_count":      len(trades),
         "live_positions":   {
-            "open":       live_pos["open_tickers"],
-            "by_strategy": strat_pos,
-            "updated_at": live_pos["updated_at"],
+            "open":        live_pos["open_tickers"],
+            "shorts":      live_pos["short_tickers"],
+            "by_strategy": strat_pos,   # {strat_key: {longs:[...], shorts:[...]}}
+            "updated_at":  live_pos["updated_at"],
         },
     })
 

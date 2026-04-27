@@ -5,16 +5,20 @@
 # vía sus respectivos adapters locales.
 from .strategies import (
     STRATEGY_REGISTRY_V3,
+    STRATEGY_REGISTRY_V3_DIRECTIONAL,
     StrategyConfig,
     EQUITY_ONLY,
     BREADTH_GATED,
     list_strategies_for_bot,
+    list_directional_strategies_for_bot,
 )
 
 __all__ = [
     "STRATEGY_REGISTRY_V3",
+    "STRATEGY_REGISTRY_V3_DIRECTIONAL",
     "StrategyConfig",
     "EQUITY_ONLY",
     "BREADTH_GATED",
     "list_strategies_for_bot",
+    "list_directional_strategies_for_bot",
 ]

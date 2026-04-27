@@ -1,0 +1,90 @@
+{
+  "SPY": {
+    "bollinger": {
+      "pf_test_mean": 0.011407327806263096,
+      "pf_test_std": 0.007922151962297154,
+      "sharpe_test_mean": 0.2164282875176697,
+      "avg_degradation": 0.32621982810486577,
+      "num_windows": 28,
+      "num_overfitted": 12,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "QQQ": {
+    "bollinger": {
+      "pf_test_mean": 0.021029181701988132,
+      "pf_test_std": 0.018177189768000847,
+      "sharpe_test_mean": -0.08984349546177486,
+      "avg_degradation": 0.4153404934561675,
+      "num_windows": 28,
+      "num_overfitted": 13,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "AAPL": {
+    "bollinger": {
+      "pf_test_mean": 0.025805175431271265,
+      "pf_test_std": 0.02581223899975098,
+      "sharpe_test_mean": -0.34426925758954463,
+      "avg_degradation": 0.4433017288725827,
+      "num_windows": 28,
+      "num_overfitted": 17,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "MSFT": {
+    "bollinger": {
+      "pf_test_mean": 0.018102021738072432,
+      "pf_test_std": 0.01940634761950625,
+      "sharpe_test_mean": 0.014260831397758971,
+      "avg_degradation": 0.49635758213065523,
+      "num_windows": 28,
+      "num_overfitted": 15,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "TSLA": {
+    "bollinger": {
+      "pf_test_mean": 0.030832485380052396,
+      "pf_test_std": 0.026958911867804594,
+      "sharpe_test_mean": -0.2902113474232006,
+      "avg_degradation": 0.41276725815205684,
+      "num_windows": 28,
+      "num_overfitted": 13,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "BTCUSDT": {
+    "bollinger": {
+      "pf_test_mean": 0.02198761024204895,
+      "pf_test_std": 0.04247427822005591,
+      "sharpe_test_mean": -0.22356824489032254,
+      "avg_degradation": 0.7704578446777264,
+      "num_windows": 28,
+      "num_overfitted": 22,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "ETHUSDT": {
+    "bollinger": {
+      "pf_test_mean": 0.06267309718851813,
+      "pf_test_std": 0.06986419936649255,
+      "sharpe_test_mean": -0.23936090740012952,
+      "avg_degradation": 0.5477023587630051,
+      "num_windows": 28,
+      "num_overfitted": 17,
+      "verdict": "RECHAZAR"
+    }
+  },
+  "BNBUSDT": {
+    "bollinger": {
+      "pf_test_mean": 0.06821664406910355,
+      "pf_test_std": 0.11040891441471007,
+      "sharpe_test_mean": -0.46375208132138646,
+      "avg_degradation": 0.5505855592963667,
+      "num_windows": 28,
+      "num_overfitted": 16,
+      "verdict": "RECHAZAR"
+    }
+  }
+}

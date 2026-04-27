@@ -1,0 +1,406 @@
+{
+  "timestamp": "2026-04-22T13:11:51.239031",
+  "summary": {
+    "total_strategies": 6,
+    "total_symbols": 5,
+    "total_tests": 30
+  },
+  "strategies": {
+    "FASE4_Confluence_TS_79": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "QQQ": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "AAPL": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "MSFT": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "TSLA": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "QQQ": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        }
+      }
+    },
+    "FASE4_Confluence_ATR_68": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "QQQ": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "AAPL": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "MSFT": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "TSLA": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "QQQ": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        }
+      }
+    },
+    "FASE4_Confluence_TS_64": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "QQQ": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "AAPL": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "MSFT": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "TSLA": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "QQQ": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        }
+      }
+    },
+    "Bot_RSI_SMA200": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "QQQ": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "AAPL": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "MSFT": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "TSLA": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "QQQ": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        }
+      }
+    },
+    "Bot_ORB": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "QQQ": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "AAPL": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "MSFT": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "TSLA": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "QQQ": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        }
+      }
+    },
+    "Bot_Bollinger_RSI": {
+      "results_by_symbol": {
+        "SPY": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "QQQ": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "AAPL": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "MSFT": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        },
+        "TSLA": {
+          "num_trades": 0,
+          "pnl": 0,
+          "win_rate": 0,
+          "pf": 1.0,
+          "max_dd": 0
+        }
+      },
+      "scores_by_symbol": {
+        "SPY": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "QQQ": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "AAPL": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "MSFT": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        },
+        "TSLA": {
+          "score": 0.0,
+          "verdict": "RECHAZAR",
+          "pf": 1.0
+        }
+      }
+    }
+  }
+}

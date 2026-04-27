@@ -1,0 +1,680 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Eolo - Dashboard de Backtesting | FASE 3</title>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: linear-gradient(135deg, #1e1e2e 0%, #2d2d44 100%);
+            color: #eee;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1, h2 {
+            color: #4ade80;
+            margin-top: 30px;
+        }
+        h1 {
+            text-align: center;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #999;
+            margin-bottom: 30px;
+        }
+        .metrics {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 20px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #4ade80;
+        }
+        .metric-label {
+            color: #999;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        .chart {
+            background: rgba(255,255,255,0.02);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: rgba(255,255,255,0.05);
+            border-radius: 8px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        th {
+            background: rgba(255,255,255,0.1);
+            color: #4ade80;
+            font-weight: bold;
+        }
+        tr:hover {
+            background: rgba(255,255,255,0.05);
+        }
+        .verdict-activar {
+            color: #4ade80;
+            font-weight: bold;
+        }
+        .verdict-considerar {
+            color: #fbbf24;
+            font-weight: bold;
+        }
+        .verdict-rechazar {
+            color: #ef4444;
+            font-weight: bold;
+        }
+        .footer {
+            text-align: center;
+            color: #666;
+            margin-top: 50px;
+            padding: 20px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Eolo Backtesting Dashboard</h1>
+        <div class="subtitle">FASE 3: Scoring 0-100 y Matriz de Decisión</div>
+
+        <!-- MÉTRICAS CLAVE -->
+        <div class="metrics">
+            <div class="metric-card">
+                <div class="metric-value" style="color: #4ade80;">0</div>
+                <div class="metric-label">✅ ACTIVAR</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color: #fbbf24;">0</div>
+                <div class="metric-label">⚠️ CONSIDERAR</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value" style="color: #ef4444;">48</div>
+                <div class="metric-label">❌ RECHAZAR</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">48</div>
+                <div class="metric-label">Total Evaluadas</div>
+            </div>
+        </div>
+
+        <!-- GRÁFICOS -->
+        <h2>📊 Análisis de Scores</h2>
+
+        <div class="chart">
+            <h3>Scatter: Score vs Profit Factor</h3>
+            <html>
+<head><meta charset="utf-8" /></head>
+<body>
+    <div>                            <div id="scatter" class="plotly-graph-div" style="height:500px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("scatter")) {                    Plotly.newPlot(                        "scatter",                        [{"customdata":[["SPY","bollinger",-0.0346196701271485],["SPY","obv",0.0],["SPY","opening_drive",0.0],["SPY","rvol_breakout",0.0],["SPY","stop_run",0.0],["SPY","supertrend",0.3318015317694128],["SPY","tick_trin_fade",0.0],["SPY","tsv",0.0],["SPY","vix_correlation",0.0],["SPY","vix_mean_reversion",0.0],["SPY","vix_squeeze",0.0],["SPY","volume_reversal_bar",0.0],["SPY","vrp",0.0],["SPY","vw_macd",0.0],["SPY","vwap_rsi",0.0],["SPY","vwap_zscore",0.0],["QQQ","bollinger",0.2263150914114181],["QQQ","obv",0.0],["QQQ","opening_drive",0.0],["QQQ","rvol_breakout",0.0],["QQQ","stop_run",0.0],["QQQ","supertrend",-0.338630392768993],["QQQ","tick_trin_fade",0.0],["QQQ","tsv",0.0],["QQQ","vix_correlation",0.0],["QQQ","vix_mean_reversion",0.0],["QQQ","vix_squeeze",0.0],["QQQ","volume_reversal_bar",0.0],["QQQ","vrp",0.0],["QQQ","vw_macd",0.0],["QQQ","vwap_rsi",0.0],["QQQ","vwap_zscore",0.0],["AAPL","bollinger",-0.0602873629033946],["AAPL","obv",0.0],["AAPL","opening_drive",0.0],["AAPL","rvol_breakout",0.0],["AAPL","stop_run",0.0],["AAPL","supertrend",0.0598154902085568],["AAPL","tick_trin_fade",0.0],["AAPL","tsv",0.0],["AAPL","vix_correlation",0.0],["AAPL","vix_mean_reversion",0.0],["AAPL","vix_squeeze",0.0],["AAPL","volume_reversal_bar",0.0],["AAPL","vrp",0.0],["AAPL","vw_macd",0.0],["AAPL","vwap_rsi",0.0],["AAPL","vwap_zscore",0.0]],"hovertemplate":"verdict=RECHAZAR\u003cbr\u003ePF OOS=%{x}\u003cbr\u003eScore (0-100)=%{y}\u003cbr\u003esize=%{marker.size}\u003cbr\u003esymbol=%{customdata[0]}\u003cbr\u003estrategy=%{customdata[1]}\u003cbr\u003esharpe=%{customdata[2]}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"RECHAZAR","marker":{"color":"red","size":{"dtype":"f8","bdata":"FEy3enXdNEAAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQHERdPWMajxAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0DPCLmEDHY3QAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtABUTRxbASK0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQP2da1o\u002f1zlAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0DgyJz22wc0QAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtAAAAAAACAS0AAAAAAAIBLQAAAAAAAgEtA"},"sizemode":"area","sizeref":0.1375,"symbol":"circle"},"mode":"markers","name":"RECHAZAR","orientation":"v","showlegend":true,"x":{"dtype":"f8","bdata":"7KgCakvhhD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABh\u002fM\u002fqV7nc\u002fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADvnCoTgN6YPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADE71S2iYjD8AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAOYy4uKSCaA\u002fAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAADDwABttWMPwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"xaxis":"x","y":{"dtype":"i1","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"},"yaxis":"y","type":"scatter"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"PF OOS"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"Score (0-100)"}},"legend":{"title":{"text":"verdict"},"tracegroupgap":0,"itemsizing":"constant"},"title":{"text":"Score vs Profit Factor (OOS)"},"height":500},                        {"responsive": true}                    )                };            </script>        </div>
+</body>
+</html>
+        </div>
+
+        <div class="chart">
+            <h3>Heatmap: Estrategia × Símbolo</h3>
+            <html>
+<head><meta charset="utf-8" /></head>
+<body>
+    <div>                            <div id="heatmap" class="plotly-graph-div" style="height:600px; width:800px;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("heatmap")) {                    Plotly.newPlot(                        "heatmap",                        [{"colorbar":{"title":{"text":"Score"}},"colorscale":[[0.0,"rgb(165,0,38)"],[0.1,"rgb(215,48,39)"],[0.2,"rgb(244,109,67)"],[0.3,"rgb(253,174,97)"],[0.4,"rgb(254,224,139)"],[0.5,"rgb(255,255,191)"],[0.6,"rgb(217,239,139)"],[0.7,"rgb(166,217,106)"],[0.8,"rgb(102,189,99)"],[0.9,"rgb(26,152,80)"],[1.0,"rgb(0,104,55)"]],"text":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","shape":"16, 3"},"texttemplate":"%{text}","x":["AAPL","QQQ","SPY"],"y":["bollinger","obv","opening_drive","rvol_breakout","stop_run","supertrend","tick_trin_fade","tsv","vix_correlation","vix_mean_reversion","vix_squeeze","volume_reversal_bar","vrp","vw_macd","vwap_rsi","vwap_zscore"],"z":{"dtype":"f8","bdata":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA","shape":"16, 3"},"type":"heatmap"}],                        {"height":600,"title":{"text":"Heatmap: Estrategia \u00d7 S\u00edmbolo (Score 0-100)"},"width":800,"xaxis":{"title":{"text":"S\u00edmbolo"}},"yaxis":{"title":{"text":"Estrategia"}},"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}}},                        {"responsive": true}                    )                };            </script>        </div>
+</body>
+</html>
+        </div>
+
+        <div class="chart">
+            <h3>Top Estrategias por Símbolo</h3>
+            <html>
+<head><meta charset="utf-8" /></head>
+<body>
+    <div>                            <div id="bars" class="plotly-graph-div" style="height:400px; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("bars")) {                    Plotly.newPlot(                        "bars",                        [{"hovertemplate":"verdict=RECHAZAR\u003cbr\u003esymbol=SPY\u003cbr\u003estrategy=%{x}\u003cbr\u003escore=%{y}\u003cextra\u003e\u003c\u002fextra\u003e","legendgroup":"RECHAZAR","marker":{"color":"red","pattern":{"shape":""}},"name":"RECHAZAR","orientation":"v","showlegend":true,"textposition":"auto","x":["bollinger","obv","opening_drive","rvol_breakout","stop_run"],"xaxis":"x","y":{"dtype":"i1","bdata":"AAAAAAA="},"yaxis":"y","type":"bar"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"xaxis":{"anchor":"y","domain":[0.0,1.0],"title":{"text":"strategy"}},"yaxis":{"anchor":"x","domain":[0.0,1.0],"title":{"text":"score"}},"annotations":[{"font":{},"showarrow":false,"text":"symbol=SPY","x":0.5,"xanchor":"center","xref":"paper","y":1.0,"yanchor":"bottom","yref":"paper"}],"legend":{"title":{"text":"verdict"},"tracegroupgap":0},"title":{"text":"Top 5 Estrategias por S\u00edmbolo"},"barmode":"relative","height":400},                        {"responsive": true}                    )                };            </script>        </div>
+</body>
+</html>
+        </div>
+
+        <div class="chart">
+            <h3>Distribución de Verdicts</h3>
+            <html>
+<head><meta charset="utf-8" /></head>
+<body>
+    <div>                            <div id="verdict" class="plotly-graph-div" style="height:100%; width:100%;"></div>            <script>                window.PLOTLYENV=window.PLOTLYENV || {};                                if (document.getElementById("verdict")) {                    Plotly.newPlot(                        "verdict",                        [{"customdata":[["RECHAZAR"]],"domain":{"x":[0.0,1.0],"y":[0.0,1.0]},"hovertemplate":"label=%{label}\u003cbr\u003evalue=%{value}\u003cbr\u003ecolor=%{customdata[0]}\u003cextra\u003e\u003c\u002fextra\u003e","labels":["RECHAZAR"],"legendgroup":"","marker":{"colors":["red"]},"name":"","showlegend":true,"values":{"dtype":"i1","bdata":"MA=="},"type":"pie"}],                        {"template":{"data":{"histogram2dcontour":[{"type":"histogram2dcontour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"choropleth":[{"type":"choropleth","colorbar":{"outlinewidth":0,"ticks":""}}],"histogram2d":[{"type":"histogram2d","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"heatmap":[{"type":"heatmap","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"contourcarpet":[{"type":"contourcarpet","colorbar":{"outlinewidth":0,"ticks":""}}],"contour":[{"type":"contour","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"surface":[{"type":"surface","colorbar":{"outlinewidth":0,"ticks":""},"colorscale":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]]}],"mesh3d":[{"type":"mesh3d","colorbar":{"outlinewidth":0,"ticks":""}}],"scatter":[{"fillpattern":{"fillmode":"overlay","size":10,"solidity":0.2},"type":"scatter"}],"parcoords":[{"type":"parcoords","line":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolargl":[{"type":"scatterpolargl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"bar":[{"error_x":{"color":"#2a3f5f"},"error_y":{"color":"#2a3f5f"},"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"bar"}],"scattergeo":[{"type":"scattergeo","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterpolar":[{"type":"scatterpolar","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"histogram":[{"marker":{"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"histogram"}],"scattergl":[{"type":"scattergl","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatter3d":[{"type":"scatter3d","line":{"colorbar":{"outlinewidth":0,"ticks":""}},"marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermap":[{"type":"scattermap","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattermapbox":[{"type":"scattermapbox","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scatterternary":[{"type":"scatterternary","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"scattercarpet":[{"type":"scattercarpet","marker":{"colorbar":{"outlinewidth":0,"ticks":""}}}],"carpet":[{"aaxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"baxis":{"endlinecolor":"#2a3f5f","gridcolor":"white","linecolor":"white","minorgridcolor":"white","startlinecolor":"#2a3f5f"},"type":"carpet"}],"table":[{"cells":{"fill":{"color":"#EBF0F8"},"line":{"color":"white"}},"header":{"fill":{"color":"#C8D4E3"},"line":{"color":"white"}},"type":"table"}],"barpolar":[{"marker":{"line":{"color":"#E5ECF6","width":0.5},"pattern":{"fillmode":"overlay","size":10,"solidity":0.2}},"type":"barpolar"}],"pie":[{"automargin":true,"type":"pie"}]},"layout":{"autotypenumbers":"strict","colorway":["#636efa","#EF553B","#00cc96","#ab63fa","#FFA15A","#19d3f3","#FF6692","#B6E880","#FF97FF","#FECB52"],"font":{"color":"#2a3f5f"},"hovermode":"closest","hoverlabel":{"align":"left"},"paper_bgcolor":"white","plot_bgcolor":"#E5ECF6","polar":{"bgcolor":"#E5ECF6","angularaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"radialaxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"ternary":{"bgcolor":"#E5ECF6","aaxis":{"gridcolor":"white","linecolor":"white","ticks":""},"baxis":{"gridcolor":"white","linecolor":"white","ticks":""},"caxis":{"gridcolor":"white","linecolor":"white","ticks":""}},"coloraxis":{"colorbar":{"outlinewidth":0,"ticks":""}},"colorscale":{"sequential":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"sequentialminus":[[0.0,"#0d0887"],[0.1111111111111111,"#46039f"],[0.2222222222222222,"#7201a8"],[0.3333333333333333,"#9c179e"],[0.4444444444444444,"#bd3786"],[0.5555555555555556,"#d8576b"],[0.6666666666666666,"#ed7953"],[0.7777777777777778,"#fb9f3a"],[0.8888888888888888,"#fdca26"],[1.0,"#f0f921"]],"diverging":[[0,"#8e0152"],[0.1,"#c51b7d"],[0.2,"#de77ae"],[0.3,"#f1b6da"],[0.4,"#fde0ef"],[0.5,"#f7f7f7"],[0.6,"#e6f5d0"],[0.7,"#b8e186"],[0.8,"#7fbc41"],[0.9,"#4d9221"],[1,"#276419"]]},"xaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"yaxis":{"gridcolor":"white","linecolor":"white","ticks":"","title":{"standoff":15},"zerolinecolor":"white","automargin":true,"zerolinewidth":2},"scene":{"xaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"yaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2},"zaxis":{"backgroundcolor":"#E5ECF6","gridcolor":"white","linecolor":"white","showbackground":true,"ticks":"","zerolinecolor":"white","gridwidth":2}},"shapedefaults":{"line":{"color":"#2a3f5f"}},"annotationdefaults":{"arrowcolor":"#2a3f5f","arrowhead":0,"arrowwidth":1},"geo":{"bgcolor":"white","landcolor":"#E5ECF6","subunitcolor":"white","showland":true,"showlakes":true,"lakecolor":"white"},"title":{"x":0.05},"mapbox":{"style":"light"}}},"legend":{"tracegroupgap":0},"title":{"text":"Distribuci\u00f3n de Verdicts"}},                        {"responsive": true}                    )                };            </script>        </div>
+</body>
+</html>
+        </div>
+
+        <!-- TABLA INTERACTIVA -->
+        <h2>📋 Resultados Detallados</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Símbolo</th>
+                    <th>Estrategia</th>
+                    <th>Score</th>
+                    <th>Veredicto</th>
+                    <th>PF OOS</th>
+                    <th>Sharpe</th>
+                    <th>Degradación</th>
+                </tr>
+            </thead>
+            <tbody>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>bollinger</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.010</td>
+                    <td>-0.03</td>
+                    <td>31.7%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>obv</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vix_squeeze</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>volume_reversal_bar</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vrp</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vw_macd</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vwap_rsi</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vwap_zscore</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>bollinger</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.031</td>
+                    <td>-0.06</td>
+                    <td>41.7%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>obv</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>opening_drive</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>rvol_breakout</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>stop_run</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>supertrend</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.014</td>
+                    <td>0.06</td>
+                    <td>30.1%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>tick_trin_fade</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>tsv</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vix_correlation</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vix_mean_reversion</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vix_squeeze</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>volume_reversal_bar</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vrp</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vw_macd</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vwap_rsi</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vix_mean_reversion</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>vix_correlation</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>tsv</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>volume_reversal_bar</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>opening_drive</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>rvol_breakout</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>stop_run</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>supertrend</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.006</td>
+                    <td>0.33</td>
+                    <td>46.8%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>tick_trin_fade</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>tsv</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vix_correlation</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vix_mean_reversion</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vix_squeeze</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vrp</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>tick_trin_fade</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vw_macd</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vwap_rsi</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>SPY</td>
+                    <td>vwap_zscore</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>bollinger</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.024</td>
+                    <td>0.23</td>
+                    <td>36.9%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>obv</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>opening_drive</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>rvol_breakout</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>stop_run</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+                <tr>
+                    <td>QQQ</td>
+                    <td>supertrend</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.014</td>
+                    <td>-0.34</td>
+                    <td>17.1%</td>
+                </tr>
+
+                <tr>
+                    <td>AAPL</td>
+                    <td>vwap_zscore</td>
+                    <td><strong>0.0</strong></td>
+                    <td><span class="verdict-rechazar">RECHAZAR</span></td>
+                    <td>0.000</td>
+                    <td>0.00</td>
+                    <td>100.0%</td>
+                </tr>
+
+            </tbody>
+        </table>
+
+        <div class="footer">
+            <p>📊 Dashboard generado automáticamente por Eolo FASE 3</p>
+            <p>Datos sintéticos (yfinance fallback): todos los verdicts RECHAZAR por PF < 1.0</p>
+            <p>Con datos reales, los scores y verdicts serán significativos ✅</p>
+        </div>
+    </div>
+</body>
+</html>

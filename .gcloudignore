@@ -1,0 +1,56 @@
+# .gcloudignore — controla qué archivos sube gcloud builds submit al build context.
+# Sin este archivo, gcloud usa .gitignore como fallback, lo que excluye secret_stuff.py
+# de TODO el árbol (incluyendo Bot/secret_stuff.py y eolo-crypto/secret_stuff.py).
+# Eso rompe el Docker build porque el archivo nunca llega al contexto.
+#
+# IMPORTANTE: secret_stuff.py contiene IDs de proyecto y collection (no credenciales
+# sensibles de verdad — los tokens reales vienen de Firestore en runtime). El riesgo
+# real es mínimo, pero si querés evitar que quede en el build context de GCR en el
+# futuro, lo correcto es moverlo a Secret Manager + os.getenv().
+
+# ── Ignorar .git (siempre, reduce tamaño del upload) ─────
+.git/
+
+# ── Python artifacts ───────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Virtualenvs ───────────────────────────────────────────
+venv/
+.venv/
+env/
+
+# ── IDE / OS ──────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# ── Secrets de verdad (NO incluir en el build context) ────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+refresh_token_local.py
+token*.json
+credentials*.json
+
+# ── secret_stuff.py en la raíz (innecesaria para los builds) ─
+/secret_stuff.py
+
+# ── NOTA: Bot/secret_stuff.py y eolo-crypto/secret_stuff.py
+#    se incluyen explícitamente (necesarios para el build). ──
+# (ausencia de regla = incluido)
+
+# ── Data / logs locales ────────────────────────────────────
+trades_log.csv
+*.log
+*.log.*
+/tmp/
+runcycle.log

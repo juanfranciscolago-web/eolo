@@ -25,6 +25,14 @@ import settings
 from helpers import binance_get, binance_post, binance_delete, firestore_write, firestore_read
 from runtime_config import config as runtime_config
 
+# Shared trade-enrichment helper (Phase 1 — 2026-04-21).
+# Para crypto no hay VIX/SPY (macro_feeds=None), pero sí session_bucket,
+# slippage simulado (paper), hold_seconds, trade_number_today, entry/exit_reason.
+try:
+    from eolo_common.trade_enrichment import build_enrichment  # type: ignore
+except Exception:
+    build_enrichment = None
+
 
 # ── Exchange info cache ───────────────────────────────────
 
@@ -200,6 +208,100 @@ class BinanceExecutor:
         """
         return dict(self._eolo_positions)
 
+    # ── Reconcile balance real vs state ───────────────────
+
+    @staticmethod
+    def _base_asset_from_symbol(symbol: str) -> str | None:
+        """Extrae el base asset (ETHUSDT → ETH). None si no reconoce el quote."""
+        for quote in ("USDT", "USDC", "BUSD", "BTC", "ETH"):
+            if symbol.endswith(quote):
+                return symbol[: -len(quote)]
+        return None
+
+    def reconcile_positions_with_binance(self) -> dict:
+        """
+        Lee /api/v3/account y ajusta _eolo_positions al balance real.
+        Caso 1: Eolo tiene qty > real free (desync por testnet reset o fill parcial).
+           • real ≈ 0        → eliminar la posición (fantasma total).
+           • 0 < real < eolo → ajustar qty al real.
+        Caso 2: Eolo tiene qty ≤ real free → nada que hacer (balance sobrante
+                es del user / airdrop / compra externa, Eolo lo ignora).
+
+        Complemento proactivo del auto-cleanup reactivo de _market_sell (-2010).
+
+        Retorna dict con summary para logging / tests.
+        """
+        if self.mode == "PAPER":
+            return {"skipped": "paper mode"}
+
+        try:
+            data = binance_get("/api/v3/account", signed=True, timeout=10)
+        except Exception as e:
+            logger.warning(f"[RECONCILE] No pude leer /account: {e}")
+            return {"error": str(e)}
+
+        real_free: dict[str, float] = {}
+        for b in data.get("balances", []):
+            try:
+                real_free[b["asset"]] = float(b["free"])
+            except (TypeError, ValueError):
+                pass
+
+        removed, adjusted, unchanged = [], [], []
+
+        for symbol in list(self._eolo_positions.keys()):
+            base = self._base_asset_from_symbol(symbol)
+            if base is None:
+                logger.debug(f"[RECONCILE] {symbol} — quote no reconocido, skip")
+                continue
+
+            eolo_qty = float(self._eolo_positions[symbol].get("qty", 0) or 0)
+            real_qty = real_free.get(base, 0.0)
+
+            # Tolerancia para evitar ruido por dust (0.1% o 1e-8, el mayor)
+            tol = max(eolo_qty * 0.001, 1e-8)
+
+            if real_qty >= eolo_qty - tol:
+                unchanged.append(symbol)
+                continue
+
+            # Desync: Eolo cree que tiene más de lo que hay en wallet
+            if real_qty <= tol:
+                ghost = self._eolo_positions.pop(symbol, None)
+                removed.append({
+                    "symbol":   symbol,
+                    "eolo_qty": eolo_qty,
+                    "real_qty": real_qty,
+                    "entry":    (ghost or {}).get("entry_price"),
+                })
+            else:
+                self._eolo_positions[symbol]["qty"] = real_qty
+                adjusted.append({
+                    "symbol":  symbol,
+                    "old_qty": eolo_qty,
+                    "new_qty": real_qty,
+                })
+
+        if removed or adjusted:
+            self._persist_positions_to_firestore()
+            for r in removed:
+                logger.warning(
+                    f"[RECONCILE] {r['symbol']} ELIMINADA — "
+                    f"eolo_qty={r['eolo_qty']:g}, real={r['real_qty']:g}, "
+                    f"entry=${r.get('entry')}"
+                )
+            for a in adjusted:
+                logger.warning(
+                    f"[RECONCILE] {a['symbol']} ajustada: "
+                    f"{a['old_qty']:g} → {a['new_qty']:g}"
+                )
+
+        return {
+            "removed":   removed,
+            "adjusted":  adjusted,
+            "unchanged": unchanged,
+        }
+
     # ── Sizing ────────────────────────────────────────────
 
     def _size_notional(self, current_price: float, balance_usdt: float) -> float:
@@ -326,7 +428,11 @@ class BinanceExecutor:
         pnl = notional - (position["qty"] * position["entry_price"])
         self._paper_balance_usdt += notional
         self._persist_positions_to_firestore()
-        self._log_paper(symbol, "SELL", qty, price, notional, strategy, pnl, reason)
+        self._log_paper(
+            symbol, "SELL", qty, price, notional, strategy, pnl, reason,
+            entry_price = float(position.get("entry_price") or 0) or None,
+            opened_at_ts = float(position.get("ts") or 0) or None,
+        )
         logger.info(
             f"[PAPER] 🔴 SELL {symbol} qty={qty} @ ${price:.4f} "
             f"(${notional:.2f}) pnl={pnl:+.2f} strategy={strategy} — {reason}"
@@ -334,7 +440,14 @@ class BinanceExecutor:
         return {"symbol": symbol, "side": "SELL", "qty": qty, "price": price,
                 "pnl": pnl, "paper": True}
 
-    def _log_paper(self, symbol, side, qty, price, notional, strategy, pnl, reason):
+    def _log_paper(self, symbol, side, qty, price, notional, strategy, pnl, reason,
+                   entry_price: float | None = None,
+                   opened_at_ts: float | None = None):
+        """
+        Loggea trade en CSV + Firestore. Enriquece con session_bucket, slippage,
+        hold_seconds, etc. via eolo_common.trade_enrichment (Phase 1 — 2026-04-21).
+        `entry_price` + `opened_at_ts` solo se pasan en SELL para calcular hold.
+        """
         row = [
             datetime.now(timezone.utc).isoformat(),
             symbol, side, qty, price, notional, strategy, pnl, reason,
@@ -343,23 +456,49 @@ class BinanceExecutor:
             writer = csv.writer(f)
             writer.writerow(row)
 
+        # Enrichment (Phase 1). Crypto no tiene MacroFeeds → vix/spy quedan vacíos.
+        # El session_bucket se calcula en UTC (asia/europe/us_overlap/late_us).
+        enrich: dict = {}
+        if build_enrichment is not None:
+            try:
+                side_u = "BUY" if side.upper() == "BUY" else "SELL"
+                enrich = build_enrichment(
+                    ts_utc          = datetime.now(timezone.utc),
+                    asset_class     = "crypto",
+                    side            = side_u,
+                    mode            = self.mode,            # PAPER / TESTNET / LIVE
+                    expected_price  = price,
+                    fill_price      = price,
+                    macro_feeds     = None,
+                    spy_ret_5d_fn   = None,
+                    entry_price     = entry_price,
+                    opened_at_ts    = opened_at_ts,
+                    reason          = reason or "",
+                    counter_key     = "eolo_crypto",
+                ) or {}
+            except Exception as e:
+                logger.debug(f"[EXEC] build_enrichment falló: {e}")
+
         # También a Firestore para dashboard
+        payload = {
+            "ts":        time.time(),
+            "symbol":    symbol,
+            "side":      side,
+            "qty":       qty,
+            "price":     price,
+            "notional":  notional,
+            "strategy":  strategy,
+            "pnl_usdt":  pnl,
+            "reason":    reason,
+            "mode":      self.mode,
+        }
+        if enrich:
+            payload.update(enrich)
         try:
             firestore_write(
                 settings.FIRESTORE_TRADES_COLLECTION,
                 f"{symbol}-{int(time.time() * 1000)}",
-                {
-                    "ts":        time.time(),
-                    "symbol":    symbol,
-                    "side":      side,
-                    "qty":       qty,
-                    "price":     price,
-                    "notional":  notional,
-                    "strategy":  strategy,
-                    "pnl_usdt":  pnl,
-                    "reason":    reason,
-                    "mode":      self.mode,
-                },
+                payload,
             )
         except Exception as e:
             logger.warning(f"[EXEC] Firestore trade log falló: {e}")
@@ -407,6 +546,18 @@ class BinanceExecutor:
     def _market_sell(self, symbol, qty, price, strategy, reason):
         # Capturar posición antes del sell para poder calcular PnL
         position_pre = self._eolo_positions.get(symbol)
+
+        # ── Dedup: si ya falló un SELL del mismo symbol en los últimos 30s, skip
+        #    Evita retry storm cuando Binance rechaza por balance desync o filter.
+        now = time.time()
+        last_fail = getattr(self, "_last_sell_fail", {}).get(symbol, 0)
+        if now - last_fail < 30:
+            logger.debug(
+                f"[EXEC] SELL {symbol} skipped — último fallo hace {now-last_fail:.1f}s "
+                f"(cooldown 30s)"
+            )
+            return None
+
         try:
             order = binance_post(
                 "/api/v3/order",
@@ -434,9 +585,44 @@ class BinanceExecutor:
                 f"filled@${filled_price:.4f} pnl={pnl:+.2f} "
                 f"strategy={strategy} — {reason}"
             )
-            self._log_paper(symbol, "SELL", qty, filled_price, qty * filled_price,
-                            strategy, pnl, reason)
+            self._log_paper(
+                symbol, "SELL", qty, filled_price, qty * filled_price,
+                strategy, pnl, reason,
+                entry_price = float((position_pre or {}).get("entry_price") or 0) or None,
+                opened_at_ts = float((position_pre or {}).get("ts") or 0) or None,
+            )
             return order
         except Exception as e:
-            logger.error(f"[EXEC] MARKET SELL {symbol} falló: {e}")
+            # Logear el body real de Binance (code + msg) si está disponible
+            body_info = ""
+            binance_code = None
+            resp = getattr(e, "response", None)
+            if resp is not None:
+                try:
+                    j = resp.json()
+                    binance_code = j.get("code")
+                    body_info = f" | binance_code={binance_code} msg={j.get('msg')!r}"
+                except Exception:
+                    body_info = f" | body={resp.text[:200]!r}"
+
+            logger.error(
+                f"[EXEC] MARKET SELL {symbol} qty={qty} falló: {e}{body_info}"
+            )
+
+            # Auto-cleanup en desync: code -2010 = "insufficient balance".
+            # Eolo cree que tiene la posición pero Binance dice que no.
+            # El único camino razonable es borrar la posición fantasma del state
+            # (sino el bot queda atascado intentando vender qty que no tiene).
+            if binance_code == -2010 and symbol in self._eolo_positions:
+                ghost = self._eolo_positions.pop(symbol, None)
+                self._persist_positions_to_firestore()
+                logger.warning(
+                    f"[EXEC] {symbol} DESYNC detectado (Binance sin balance) — "
+                    f"posición fantasma eliminada del state de Eolo: {ghost}"
+                )
+
+            # Registrar fallo para que dedup skipee retries en los próximos 30s
+            if not hasattr(self, "_last_sell_fail"):
+                self._last_sell_fail = {}
+            self._last_sell_fail[symbol] = time.time()
             return None
