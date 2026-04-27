@@ -1,38 +1,23 @@
-# ============================================================
-#  EOLO Crypto — Adapters de estrategias Eolo v1 a 24/7
-#
-#  Las 13 estrategias de ../../Bot/ fueron escritas para el
-#  mercado de acciones (sesión 9:30-16:00 ET). Para crypto
-#  (24/7 UTC) hay que ajustar:
-#    ORB          → "opening range" = primera hora UTC del día
-#    Gap          → vela 00:00 UTC vs close 23:59 día anterior
-#    VWAP (daily) → reset a las 00:00 UTC
-#    market_hours → siempre True
-#
-#  El StrategyRunner intenta importar cada estrategia del
-#  módulo Bot/ y manejarla con una signature uniforme:
-#      evaluate(df) → {"signal": "BUY"|"SELL"|"HOLD", "reason": str}
-#
-#  Si la firma de la estrategia Bot/ no matchea, se usa un
-#  wrapper que intenta múltiples nombres de función conocidos
-#  (check_signal, evaluate, run, should_buy/should_sell).
-# ============================================================
 import importlib
 import os
 import sys
 from datetime import datetime, timezone
-
 import pandas as pd
 from loguru import logger
-
 import settings
 from runtime_config import config as runtime_config
 
-# eolo_common is at repo root
+# ── Agregar directorio actual al sys.path para importar módulos locales ──
+_script_dir = os.path.dirname(os.path.abspath(__file__))
+if _script_dir not in sys.path:
+    sys.path.insert(0, _script_dir)
 _THIS_DIR = os.path.dirname(os.path.abspath(__file__))
 _PARENT   = os.path.dirname(os.path.dirname(_THIS_DIR))
 if _PARENT not in sys.path:
     sys.path.insert(0, _PARENT)
+# Agregar strategies/ al path para que importlib encuentre módulos nativos
+if _THIS_DIR not in sys.path:
+    sys.path.insert(0, _THIS_DIR)
 
 try:
     from eolo_common.strategies_v3 import (
@@ -74,6 +59,9 @@ STRATEGY_MODULES = {
     "obv_mtf":             "bot_obv_strategy",
     "tsv":                 "bot_tsv_strategy",
     "vw_macd":             "bot_vw_macd_strategy",
+    # ── Crypto-native (2026-04-27) ────────────────────────
+    # Módulo propio en strategies/ — sys.path incluye _THIS_DIR
+    "liquidation_cascade": "bot_liquidation_cascade_crypto",
     # ── FASE 4/5/7a winners (2026-04-27) ──────────────────
     # FASE 4: Bollinger_RSI_Sensitive (PF 38.52 SPY, 14.78 AAPL, 14.02 QQQ)
     "bollinger_rsi_sensitive": "bot_bollinger_rsi_sensitive_strategy",
