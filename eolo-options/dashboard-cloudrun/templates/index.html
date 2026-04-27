@@ -402,47 +402,48 @@
   /* ══════════════════════════════════════════
      ESTRATEGIAS — PANEL DE CONTROL
   ══════════════════════════════════════════ */
-  .strat-group-block {
-    margin-bottom: 16px;
-  }
-  .strat-group-title {
-    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.08em; color: var(--muted);
-    margin-bottom: 8px; padding-bottom: 4px;
-    border-bottom: 1px solid var(--border);
-  }
-  .strat-chips {
-    display: flex; flex-wrap: wrap; gap: 6px;
-  }
-  .strat-chip {
-    display: inline-flex; align-items: center; gap: 5px;
-    padding: 4px 11px; border-radius: 5px; cursor: pointer;
-    font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
-    font-size: 0.72rem; font-weight: 600;
-    border: 1px solid var(--border);
-    background: rgba(48,54,61,0.3);
-    color: var(--muted);
-    transition: all 0.12s ease;
-    user-select: none;
-  }
-  .strat-chip:hover { transform: translateY(-1px); opacity: .9; }
-  .strat-chip .s-dot {
-    width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
-    flex-shrink: 0;
-  }
-  .strat-chip.on {
-    border-color: rgba(63,185,80,.45);
-    background: rgba(63,185,80,.10);
-    color: var(--green);
-  }
-  .strat-chip.on .s-dot {
-    background: var(--green);
-    box-shadow: 0 0 5px rgba(63,185,80,.6);
-  }
-  .strat-chip.off {
-    border-color: var(--border); background: transparent; color: var(--dim);
-  }
-  .strat-chip.off .s-dot { background: var(--dim); }
+  /* ── Strategy cards (igual que V1) ── */
+  .strat-group { margin-bottom:14px; }
+  .strat-head  { display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap; }
+  .strat-title { font-size:.78rem; font-weight:700; letter-spacing:.04em; color:#58a6ff; text-transform:uppercase; flex:1; }
+  .strat-title .hint { color:#8b949e; font-weight:500; text-transform:none; letter-spacing:0; margin-left:6px; font-size:.68rem; }
+  .strat-btn-all { font:inherit; font-size:.68rem; font-weight:700; padding:4px 10px; border-radius:5px; cursor:pointer; letter-spacing:.03em; text-transform:uppercase; transition:all .15s; }
+  .strat-btn-all.on  { background:#3fb950; color:#0d1117; border:1px solid #3fb950; }
+  .strat-btn-all.off { background:#30363d; color:#8b949e; border:1px solid #30363d; }
+  .strat-btn-all:hover { transform:translateY(-1px); }
+  .strat-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px; }
+  .strat-card { display:flex; flex-direction:column; gap:8px; padding:10px 12px; border-radius:8px; border:1px solid #30363d; background:rgba(48,54,61,.3); transition:all .12s ease; user-select:none; }
+  .strat-card:hover { border-color:#58a6ff; }
+  .strat-card.on  { background:rgba(35,134,54,.12); border-color:#238636; }
+  .strat-card.off { background:rgba(48,54,61,.3); }
+  .strat-card.disabled { opacity:.45; cursor:not-allowed; background:rgba(48,54,61,.2); filter:grayscale(.3); }
+  .strat-card-head { display:flex; align-items:center; justify-content:space-between; gap:8px; cursor:pointer; }
+  .strat-card-name { font-family:'SF Mono','JetBrains Mono',Menlo,monospace; font-size:.76rem; font-weight:700; flex:1; min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .strat-card.on  .strat-card-name { color:#3fb950; }
+  .strat-card.off .strat-card-name { color:#8b949e; }
+  .strat-card-pie { width:22px; height:22px; flex-shrink:0; }
+  .strat-toggle { width:28px; height:16px; border-radius:8px; background:#30363d; position:relative; cursor:pointer; transition:background .15s; flex-shrink:0; }
+  .strat-toggle::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:50%; background:#8b949e; transition:all .15s; }
+  .strat-card.on  .strat-toggle { background:rgba(35,134,54,.5); }
+  .strat-card.on  .strat-toggle::after { left:14px; background:#3fb950; box-shadow:0 0 4px #3fb950; }
+  .strat-card-mini { display:flex; align-items:center; justify-content:space-between; gap:6px; font-size:.66rem; color:#8b949e; padding-top:4px; border-top:1px dashed #30363d; }
+  .strat-card-mini .mv { font-weight:700; color:#e6edf3; }
+  .strat-card-mini .pos { color:#3fb950; }
+  .strat-card-mini .neg { color:#f85149; }
+  .strat-card-expand { overflow:hidden; max-height:0; transition:max-height .2s ease; }
+  .strat-card.expanded .strat-card-expand { max-height:280px; }
+  .strat-pos-badge { display:inline-flex; align-items:center; justify-content:center;
+    min-width:18px; height:16px; border-radius:8px; font-size:.6rem;
+    font-weight:700; padding:0 5px; margin-left:4px; flex-shrink:0; }
+  .strat-pos-badge.long  { background:rgba(35,134,54,.25); color:#3fb950; border:1px solid #238636; }
+  .strat-pos-badge.short { background:rgba(248,81,73,.2);  color:#f85149; border:1px solid #da3633; }
+  .strat-pos-badge.zero  { background:rgba(48,54,61,.4);   color:#8b949e; border:1px solid #30363d; }
+  .strat-stats-tbl { width:100%; font-size:.68rem; border-collapse:collapse; margin-top:6px; }
+  .strat-stats-tbl td { padding:2px 4px; border-bottom:1px dotted rgba(48,54,61,.5); }
+  .strat-stats-tbl td:first-child { color:#8b949e; text-transform:uppercase; letter-spacing:.04em; font-size:.6rem; }
+  .strat-stats-tbl .tnum { text-align:right; font-family:'SF Mono',Menlo,monospace; }
+  .strat-spark { width:100%; height:44px; margin-top:6px; }
+  .strat-empty { color:#8b949e; font-size:.66rem; text-align:center; padding:8px 0; font-style:italic; }
 
   /* ══════════════════════════════════════════
      SEÑALES v1 — MATRIX
@@ -1113,8 +1114,10 @@
      ESTRATEGIAS — PANEL DE CONTROL
 ══════════════════════════════════════════ -->
 <div class="section" id="strat-control-section">
-  <h2>🎛️ Estrategias Activas <span class="hint">Click para activar/desactivar. Cambios en vivo sin reinicio.</span></h2>
-  <div id="strat-groups-wrap"></div>
+  <h2>🎛️ Estrategias Activas <span class="hint">Click para expandir · Toggle para activar/desactivar</span></h2>
+  <div id="strat-groups-wrap">
+    <!-- grupos generados por JS -->
+  </div>
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -1876,6 +1879,8 @@ function render() {
   populateFilters();
   updateTrades();
   updateThetaHarvest();
+  // Sync strategies_enabled from state (sin pisar optimistic updates locales)
+  if (state.strategies_enabled) Object.assign(STRATEGIES_STATE, state.strategies_enabled);
   renderStratPanel();
   updateStatusbar();
 }
@@ -2827,62 +2832,239 @@ async function setAllTickers(group, value) {
 // ══════════════════════════════════════════
 // ESTRATEGIAS — PANEL DE CONTROL
 // ══════════════════════════════════════════
-const STRAT_GROUPS = [
-  { label: '⚡ Clásicas',    keys: ['ema_crossover','gap_fade','rsi_sma200','hh_ll','ema_tsi','vwap_rsi','bollinger','orb','supertrend','ha_cloud','squeeze','macd_bb','vela_pivot'] },
-  { label: '📊 Nivel 1',     keys: ['rvol_breakout','stop_run','vwap_zscore','volume_reversal_bar','anchor_vwap','obv_mtf','tsv','vw_macd','opening_drive'] },
-  { label: '🌐 Nivel 2 (Macro)', keys: ['vix_mean_rev','vix_correlation','vix_squeeze','tick_trin_fade','vrp_intraday'] },
-  { label: '🔷 Suite v3',    keys: ['ema_3_8','ema_8_21','macd_accel','volume_breakout','buy_pressure','sell_pressure','vwap_momentum','orb_v3','donchian_turtle','bulls_bsp','net_bsv'] },
-  { label: '🏆 Combos',      keys: ['combo1_ema_scalper','combo2_rubber_band','combo3_nino_squeeze','combo4_slimribbon','combo5_btd','combo6_fractalccix','combo7_campbell'] },
-  { label: '🌾 Theta Harvest', keys: ['theta_harvest'] },
+// ── Strategy card system (igual que V1/Crypto) ────────────
+const STRATEGY_DEFS = {
+  clasicas: [
+    { key: 'ema_crossover',       label: 'EMA Crossover' },
+    { key: 'gap_fade',            label: 'Gap Fade' },
+    { key: 'rsi_sma200',          label: 'RSI + SMA200' },
+    { key: 'hh_ll',               label: 'HH / LL' },
+    { key: 'ema_tsi',             label: 'EMA + TSI' },
+    { key: 'vwap_rsi',            label: 'VWAP + RSI' },
+    { key: 'bollinger',           label: 'Bollinger' },
+    { key: 'orb',                 label: 'ORB' },
+    { key: 'supertrend',          label: 'Supertrend' },
+    { key: 'ha_cloud',            label: 'Heikin-Ashi Cloud' },
+    { key: 'squeeze',             label: 'BB/KC Squeeze' },
+    { key: 'macd_bb',             label: 'MACD + BB' },
+    { key: 'vela_pivot',          label: 'Vela + Pivot' },
+  ],
+  nivel1: [
+    { key: 'rvol_breakout',       label: 'RVOL Breakout' },
+    { key: 'stop_run',            label: 'Stop Run Reversal' },
+    { key: 'vwap_zscore',         label: 'VWAP Z-Score' },
+    { key: 'volume_reversal_bar', label: 'Volume Reversal Bar' },
+    { key: 'anchor_vwap',         label: 'Anchor VWAP' },
+    { key: 'obv_mtf',             label: 'OBV Multi-TF' },
+    { key: 'tsv',                 label: 'TSV' },
+    { key: 'vw_macd',             label: 'Volume-Weighted MACD' },
+    { key: 'opening_drive',       label: 'Opening Drive' },
+  ],
+  nivel2: [
+    { key: 'vix_mean_rev',        label: 'VIX Mean Reversion' },
+    { key: 'vix_correlation',     label: 'VIX Correlation' },
+    { key: 'vix_squeeze',         label: 'VIX Squeeze' },
+    { key: 'tick_trin_fade',      label: 'TICK/TRIN Fade' },
+    { key: 'vrp_intraday',        label: 'VRP Intraday' },
+  ],
+  suitav3: [
+    { key: 'ema_3_8',             label: 'EMA 3/8' },
+    { key: 'ema_8_21',            label: 'EMA 8/21' },
+    { key: 'macd_accel',          label: 'MACD Accel' },
+    { key: 'volume_breakout',     label: 'Volume Breakout' },
+    { key: 'buy_pressure',        label: 'Buy Pressure' },
+    { key: 'sell_pressure',       label: 'Sell Pressure' },
+    { key: 'vwap_momentum',       label: 'VWAP Momentum' },
+    { key: 'orb_v3',              label: 'ORB v3 (equity-only)' },
+    { key: 'donchian_turtle',     label: 'Donchian Turtle' },
+    { key: 'bulls_bsp',           label: 'Bulls BSP (breadth)' },
+    { key: 'net_bsv',             label: 'Net BSV (breadth)' },
+  ],
+  combos: [
+    { key: 'combo1_ema_scalper',  label: '⚡ C1 — EMA Scalper 3/8' },
+    { key: 'combo2_rubber_band',  label: '⚡ C2 — Rubber Band VWAP' },
+    { key: 'combo3_nino_squeeze', label: '⭐ C3 — Nino Squeeze' },
+    { key: 'combo4_slimribbon',   label: '🎯 C4 — SlimRibbon + MACD' },
+    { key: 'combo5_btd',          label: '🎯 C5 — BTD + Stacked + PB34' },
+    { key: 'combo6_fractalccix',  label: '💎 C6 — FractalCCIx Premium' },
+    { key: 'combo7_campbell',     label: '💎 C7 — Campbell Swing' },
+  ],
+  theta: [
+    { key: 'theta_harvest',       label: '🌾 Theta Harvest (Always-In)' },
+  ],
+};
+
+const STRAT_GROUP_META = [
+  { key: 'clasicas', label: 'Clasicas' },
+  { key: 'nivel1',   label: 'Nivel 1' },
+  { key: 'nivel2',   label: 'Nivel 2 (Macro)' },
+  { key: 'suitav3',  label: 'Suite v3' },
+  { key: 'combos',   label: 'Combos' },
+  { key: 'theta',    label: 'Theta Harvest' },
 ];
 
-let stratEnabled = {};   // copia local del estado
+let STRATEGIES_STATE  = {};   // key -> bool
+let STRATEGY_STATS    = {};   // key -> {h24:{trades,wins,losses,net_pnl,series}, week:...}
+let EXPANDED_STRATS   = new Set(Object.values(STRATEGY_DEFS).flat().map(d => d.key));
 
-function renderStratPanel() {
-  const wrap = document.getElementById('strat-groups-wrap');
-  if (!wrap) return;
-  const enabled = state.strategies_enabled || {};
-  // actualizar copia local solo si viene del state (para no sobreescribir optimistic updates)
-  Object.assign(stratEnabled, enabled);
+function _fmt(n)      { return n == null ? '--' : (n >= 0 ? '+' : '') + n.toFixed(2); }
+function _fmtPct(w,t) { return t > 0 ? (100*w/t).toFixed(0) + '%' : '--'; }
 
-  wrap.innerHTML = STRAT_GROUPS.map(g => `
-    <div class="strat-group-block">
-      <div class="strat-group-title">${g.label}</div>
-      <div class="strat-chips">
-        ${g.keys.map(k => {
-          const on = stratEnabled[k] !== false;   // default true si no está en el dict
-          return `<div class="strat-chip ${on ? 'on' : 'off'}" onclick="toggleStrategy('${k}')">
-            <div class="s-dot"></div>${k.replace(/_/g,' ')}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
-  `).join('');
+function _pieSvg(wins, losses) {
+  const total = wins + losses;
+  if (!total) return `<svg class="strat-card-pie" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="#30363d" stroke-width="4"/></svg>`;
+  const r = 10, c = 2*Math.PI*r, wl = (wins/total)*c;
+  return `<svg class="strat-card-pie" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="${r}" fill="none" stroke="#da3633" stroke-width="4"/>
+    <circle cx="12" cy="12" r="${r}" fill="none" stroke="#3fb950" stroke-width="4"
+            stroke-dasharray="${wl} ${c}" transform="rotate(-90 12 12)"/>
+  </svg>`;
 }
 
-async function toggleStrategy(key) {
-  const cur = stratEnabled[key] !== false;
-  const next = !cur;
-  stratEnabled[key] = next;
-  renderStratPanel();   // optimistic update
+function _sparkSvg(series) {
+  if (!series || !series.length) return `<div class="strat-empty">sin trades ultimas 24h</div>`;
+  const vals = series.map(p => p.cum_pnl ?? p.pnl ?? 0);
+  const n=vals.length, min=Math.min(0,...vals), max=Math.max(0,...vals), span=(max-min)||1;
+  const W=200, H=40, pad=2;
+  const pts = vals.map((v,i) => {
+    const x = pad + (i/Math.max(1,n-1))*(W-2*pad);
+    const y = H-pad-((v-min)/span)*(H-2*pad);
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  });
+  const zeroY = H-pad-((0-min)/span)*(H-2*pad);
+  const color = vals[vals.length-1] >= 0 ? '#3fb950' : '#f85149';
+  return `<svg class="strat-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">
+    <path d="M${pts[0]} L${pts.join(' L')} L${W-pad},${zeroY} L${pad},${zeroY} Z" fill="${color}" fill-opacity="0.12"/>
+    <line x1="0" y1="${zeroY.toFixed(1)}" x2="${W}" y2="${zeroY.toFixed(1)}" stroke="#30363d" stroke-dasharray="2 2" stroke-width="1"/>
+    <polyline fill="none" stroke="${color}" stroke-width="1.5" points="${pts.join(' ')}"/>
+  </svg>`;
+}
+
+function renderStrategies() {
+  const wrap = document.getElementById('strat-groups-wrap');
+  if (!wrap) return;
+  wrap.innerHTML = STRAT_GROUP_META.map(gm => {
+    const defs = STRATEGY_DEFS[gm.key] || [];
+    const allOn = defs.every(d => STRATEGIES_STATE[d.key] !== false);
+    return `
+    <div class="strat-group" id="strat-group-${gm.key}">
+      <div class="strat-head">
+        <span class="strat-title">${gm.label}</span>
+        <button class="strat-btn-all ${allOn ? 'on' : 'off'}"
+          onclick="setAllStrats('${gm.key}',${!allOn})">
+          ${allOn ? 'Desactivar todo' : 'Activar todo'}
+        </button>
+      </div>
+      <div class="strat-grid" id="strat-grid-${gm.key}"></div>
+    </div>`;
+  }).join('');
+  STRAT_GROUP_META.forEach(gm => renderStrategyGroup(gm.key));
+}
+
+function renderStrategyGroup(groupKey) {
+  const defs = STRATEGY_DEFS[groupKey] || [];
+  const grid = document.getElementById(`strat-grid-${groupKey}`);
+  if (!grid) return;
+  grid.innerHTML = defs.map(d => {
+    const on  = STRATEGIES_STATE[d.key] !== false;
+    const st  = STRATEGY_STATS[d.key] || {
+      h24:  { trades:0, wins:0, losses:0, net_pnl:0, series:[] },
+      week: { trades:0, wins:0, losses:0, net_pnl:0 },
+    };
+    const exp      = EXPANDED_STRATS.has(d.key);
+    const pnl24    = st.h24.net_pnl || 0;
+    const pnlCls   = pnl24 > 0 ? 'pos' : pnl24 < 0 ? 'neg' : '';
+    const cardCls  = `strat-card ${on ? 'on' : 'off'}${exp ? ' expanded' : ''}`;
+    return `<div class="${cardCls}" data-strat="${d.key}">
+      <div class="strat-card-head" onclick="toggleExpand('${d.key}',event)">
+        <span class="strat-card-name" title="${d.label}">${d.label}</span>
+        <span class="strat-pos-badge zero">0</span>
+        ${_pieSvg(st.h24.wins, st.h24.losses)}
+        <div class="strat-toggle" onclick="toggleStrat('${d.key}',event)"></div>
+      </div>
+      <div class="strat-card-mini">
+        <span>24h: <span class="mv">${st.h24.trades}</span> &middot; <span class="mv">${_fmtPct(st.h24.wins, st.h24.trades)}</span></span>
+        <span class="${pnlCls}">${_fmt(pnl24)}</span>
+      </div>
+      <div class="strat-card-expand">
+        ${_sparkSvg(st.h24.series)}
+        <table class="strat-stats-tbl">
+          <tr>
+            <td>24H</td>
+            <td class="tnum">${st.h24.trades} trades</td>
+            <td class="tnum">${_fmtPct(st.h24.wins, st.h24.trades)} win</td>
+            <td class="tnum" style="color:${pnl24>0?'#3fb950':pnl24<0?'#f85149':'#8b949e'}">${_fmt(pnl24)}</td>
+          </tr>
+          <tr>
+            <td>WEEK</td>
+            <td class="tnum">${st.week.trades} trades</td>
+            <td class="tnum">${_fmtPct(st.week.wins, st.week.trades)} win</td>
+            <td class="tnum" style="color:${st.week.net_pnl>0?'#3fb950':st.week.net_pnl<0?'#f85149':'#8b949e'}">${_fmt(st.week.net_pnl)}</td>
+          </tr>
+        </table>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderStratPanel() { renderStrategies(); }   // alias llamado desde render()
+
+function toggleExpand(key, ev) {
+  if (ev) ev.stopPropagation();
+  if (EXPANDED_STRATS.has(key)) EXPANDED_STRATS.delete(key);
+  else EXPANDED_STRATS.add(key);
+  // solo re-render el grupo que contiene este key
+  for (const gm of STRAT_GROUP_META) {
+    if ((STRATEGY_DEFS[gm.key]||[]).some(d => d.key === key)) { renderStrategyGroup(gm.key); break; }
+  }
+}
+
+async function toggleStrat(key, ev) {
+  if (ev) ev.stopPropagation();
+  const newVal = !(STRATEGIES_STATE[key] !== false);
+  STRATEGIES_STATE[key] = newVal;
+  renderStrategies();
   try {
     const r = await fetch('/api/toggle-strategy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ strategy: key, enabled: next }),
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy: key, enabled: newVal }),
     });
-    if (r.ok) {
-      toast(`${next ? '🟢' : '⚫'} ${key.replace(/_/g,' ')} ${next ? 'activada' : 'desactivada'}`, 'info');
-    } else {
-      stratEnabled[key] = cur;   // revertir
-      renderStratPanel();
-      toast('Error guardando estrategia', 'error');
-    }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    toast(`${newVal ? 'ON' : 'OFF'}: ${key.replace(/_/g,' ')}`, 'info');
   } catch (e) {
-    stratEnabled[key] = cur;
-    renderStratPanel();
-    toast('Error de red: ' + e.message, 'error');
+    STRATEGIES_STATE[key] = !newVal;
+    renderStrategies();
+    toast('Toggle fallo: ' + e.message, 'error');
   }
+}
+
+async function setAllStrats(groupKey, enabled) {
+  const defs = STRATEGY_DEFS[groupKey] || [];
+  const updates = defs.filter(d => (STRATEGIES_STATE[d.key] !== false) !== enabled);
+  updates.forEach(d => { STRATEGIES_STATE[d.key] = enabled; });
+  renderStrategies();
+  await Promise.all(updates.map(d => fetch('/api/toggle-strategy', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ strategy: d.key, enabled }),
+  })));
+}
+
+async function fetchStrategies() {
+  try {
+    const r = await fetch('/api/strategies');
+    const data = await r.json();
+    STRATEGIES_STATE = data.strategies_enabled || {};
+  } catch (e) { STRATEGIES_STATE = {}; }
+  renderStrategies();
+}
+
+async function fetchStrategyStats() {
+  try {
+    const r = await fetch('/api/strategy-stats');
+    const data = await r.json();
+    STRATEGY_STATS = data.stats || {};
+  } catch (e) { STRATEGY_STATS = {}; }
+  renderStrategies();
 }
 
 // ══════════════════════════════════════════
@@ -3407,7 +3589,10 @@ renderTickerSelector();
 setInterval(tickClock, 1000);
 tickClock();
 fetchState();
+fetchStrategies();
+fetchStrategyStats();
 setInterval(fetchState, REFRESH_MS);
+setInterval(fetchStrategyStats, 60000);  // stats cada 60s
 </script>
 
 </body>
