@@ -133,10 +133,10 @@ except ImportError as e:
 # La selección real se lee en caliente desde Firestore
 # (eolo-options-config/settings.ticker_selection) y se cachea en
 # self._ticker_selection / self._active_tickers.
-TICKERS = ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA", "TSLA", "TQQQ"]
+TICKERS = ["SPY", "QQQ", "IWM", "MSFT", "AAPL", "NVDA", "TSLA", "TQQQ"]
 
 # Tickers habilitados para Theta Harvest (credit spreads 0-5 DTE)
-THETA_HARVEST_TICKERS = ["SPY", "TQQQ"]
+THETA_HARVEST_TICKERS = ["SPY", "QQQ", "IWM", "TQQQ"]
 
 # ⚠️  PAPER TRADING — cambiar a False para ir live
 # En paper mode: órdenes simuladas, CSV log, sin llamadas reales a Schwab

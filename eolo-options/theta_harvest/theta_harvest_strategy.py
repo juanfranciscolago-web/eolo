@@ -29,7 +29,7 @@
 #    7. Time stop EOD diferenciado por DTE:
 #         0DTE  → 14:30 ET | 1–2 DTE → 15:15 ET
 #
-#  Spread widths: SPY $5 | TQQQ $5
+#  Spread widths: SPY $5 | QQQ $5 | IWM $3 | TQQQ $5
 # ============================================================
 from __future__ import annotations
 
@@ -42,11 +42,25 @@ from loguru import logger
 
 TICKER_CONFIG: dict[str, dict] = {
     "SPY": {
-        "spread_width":  5.0,   # $5 entre strikes (era $2)
-        "delta_min_abs": 0.15,  # piso absoluto (VERY_LOW risk)
-        "delta_max_abs": 0.30,  # techo absoluto (MID risk)
-        "min_credit":    0.40,  # crédito mínimo neto (más ancho = más crédito esperado)
-        "max_dte":       4,     # máximo DTE a abrir
+        "spread_width":  5.0,   # $5 entre strikes
+        "delta_min_abs": 0.15,
+        "delta_max_abs": 0.30,
+        "min_credit":    0.40,  # SPY ~$560 → crédito alto con $5 ancho
+        "max_dte":       4,
+    },
+    "QQQ": {
+        "spread_width":  5.0,   # QQQ ~$460 → $5 ancho viable, liquidez excelente
+        "delta_min_abs": 0.15,
+        "delta_max_abs": 0.30,
+        "min_credit":    0.35,  # algo menos que SPY por precio subyacente
+        "max_dte":       4,
+    },
+    "IWM": {
+        "spread_width":  3.0,   # IWM ~$200 → $3 ancho (más ajustado por precio)
+        "delta_min_abs": 0.15,
+        "delta_max_abs": 0.30,
+        "min_credit":    0.20,  # menor crédito esperado por precio más bajo
+        "max_dte":       4,
     },
     "TQQQ": {
         "spread_width":  5.0,
