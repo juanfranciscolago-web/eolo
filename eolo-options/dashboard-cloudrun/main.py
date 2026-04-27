@@ -44,6 +44,11 @@ KNOWN_STRATEGIES = {
     "ema_3_8", "ema_8_21", "macd_accel", "volume_breakout",
     "buy_pressure", "sell_pressure", "vwap_momentum",
     "orb_v3", "donchian_turtle", "bulls_bsp", "net_bsv",
+    # Combos Ganadores (2026-04) — 7 estrategias
+    "combo1_ema_scalper", "combo2_rubber_band", "combo3_nino_squeeze",
+    "combo4_slimribbon", "combo5_btd", "combo6_fractalccix", "combo7_campbell",
+    # Theta Harvest — credit spreads 0-5 DTE
+    "theta_harvest",
 }
 
 
@@ -424,9 +429,12 @@ def api_strategy_stats():
                 if not isinstance(trade, dict):
                     continue
                 action = str(trade.get("action", ""))
-                if "SELL_TO_CLOSE" not in action:
+                # Contar tanto SELL_TO_CLOSE (cierre de long) como
+                # BUY_TO_CLOSE_SPREAD (cierre de credit spread theta harvest)
+                is_close = "SELL_TO_CLOSE" in action or "BUY_TO_CLOSE_SPREAD" in action
+                if not is_close:
                     continue
-                strat = str(trade.get("strategy", "")).strip()
+                strat = str(trade.get("strategy", "")).strip().lower()
                 if strat not in stats:
                     continue
                 pnl = float(trade.get("pnl_usd") or 0.0)
