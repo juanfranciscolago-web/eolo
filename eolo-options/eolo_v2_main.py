@@ -1071,10 +1071,12 @@ class EoloV2:
         try:
             tick_ctx = fetch_tick_ad(self._schwab.access_token)
             if tick_ctx is not None:
-                # Guardar para dashboard pill
+                # Guardar para dashboard pill + flow gate
+                _tick_conf = tick_ctx.evaluate(spread_type) if spread_type else "neutral"
                 self._theta_tick_ad = {
-                    "tick": getattr(tick_ctx, "tick", None),
-                    "ad":   getattr(tick_ctx, "ad",   None),
+                    "tick":         getattr(tick_ctx, "tick", None),
+                    "ad":           getattr(tick_ctx, "ad",   None),
+                    "confirmation": _tick_conf,
                 }
         except Exception as e:
             logger.debug(f"[ThetaHarvest] {ticker} Tick/AD fetch error: {e} — omitido")
@@ -2551,6 +2553,9 @@ class EoloV2:
             from eolo_common.trading_hours import format_schedule_for_api
             schedule_status = format_schedule_for_api(self._schedule, now_et())
 
+            # VIX / VVIX — para KPIs de Theta Harvest en el dashboard
+            _vix_snap, _vvix_snap = self._theta_get_macro_context()
+
             state = {
                 "updated_at":   et_now.strftime("%Y-%m-%d %H:%M:%S ET"),
                 "updated_ts":   time.time(),
@@ -2558,6 +2563,8 @@ class EoloV2:
                 "tickers":      TICKERS,
                 "market_open":  self._is_within_trading_window(),
                 "schedule":     schedule_status,
+                "vix":          _vix_snap,
+                "vvix":         _vvix_snap,
 
                 # Control state (leído desde Firestore eolo-options-config)
                 "active":       self._active,
@@ -2680,6 +2687,11 @@ class EoloV2:
                             "delta_max":      getattr(r, "delta_max", None),
                             "atr_gate_hit":   getattr(r, "atr_gate_hit", None),
                             "price":          getattr(r, "price", None),
+                            # Para el pivot gauge del dashboard
+                            "avg_pp":         (getattr(r, "details", None) or {}).get("avg_pp"),
+                            "dist_pp_pct":    (getattr(r, "details", None) or {}).get("dist_pp_pct"),
+                            "delta_range":    f"{getattr(r,'delta_min',0):.2f}–{getattr(r,'delta_max',0):.2f}"
+                                              if getattr(r, "delta_min", None) else "",
                         }
                         for t, r in self._theta_pivot_cache.items()
                     },

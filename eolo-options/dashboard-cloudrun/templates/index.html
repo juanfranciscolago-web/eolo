@@ -3484,7 +3484,7 @@ function updateThetaHarvest() {
   // ── Sector bars ───────────────────────────────────────────
   const sectorBarsEl = $th('th-sector-bars');
   if (sectorBarsEl) {
-    const movers = sector.top_movers || Object.entries(SECTOR_WEIGHTS).slice(0,7).map(([s,w])=>({symbol:s,change_pct:0,weight:w}));
+    const movers = sectorRef.top_movers || Object.entries(SECTOR_WEIGHTS).slice(0,7).map(([s,w])=>({symbol:s,change_pct:0,weight:w}));
     const maxAbs  = Math.max(...movers.map(m => Math.abs(m.change_pct || 0)), 1);
     sectorBarsEl.innerHTML = movers.slice(0,8).map(m => {
       const pct  = m.change_pct || 0;
@@ -3546,7 +3546,7 @@ function updateThetaHarvest() {
         </div>
         <div class="th-gauge-labels"><span style="color:var(--red)">NO_TRADE</span><span style="color:var(--yellow)">MID</span><span style="color:var(--blue)">LOW</span><span style="color:var(--green)">VERY_LOW</span></div>
         <div style="font-size:.62rem;color:var(--dim);margin-top:2px">
-          dist PP: ${distPct.toFixed(2)}% · δ ${delta} · ATR ${pv.atr_gate ? '⚠️ GATE' : 'ok'}
+          dist PP: ${distPct.toFixed(2)}% · δ ${delta} · ATR ${pv.atr_gate_hit ? '⚠️ GATE' : 'ok'}
         </div>
       </div>`;
     }).join('');
@@ -3575,7 +3575,7 @@ function updateThetaHarvest() {
 
   // ── Flow nodes ────────────────────────────────────────────
   const isNewsDay = macro.is_news_day || false;
-  const atrGate   = (pivots.SPY?.atr_gate || pivots.TQQQ?.atr_gate) || false;
+  const atrGate   = (pivots.SPY?.atr_gate_hit || pivots.TQQQ?.atr_gate_hit) || false;
   const noTrade   = (pivots.SPY?.consensus_risk === 'NO_TRADE' || pivots.TQQQ?.consensus_risk === 'NO_TRADE');
   const tickConf  = tick_ad.confirmation || 'neutral';
   const openSlots = (10 - pos.length);
