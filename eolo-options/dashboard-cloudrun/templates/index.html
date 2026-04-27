@@ -430,8 +430,7 @@
   .strat-card-mini .mv { font-weight:700; color:#e6edf3; }
   .strat-card-mini .pos { color:#3fb950; }
   .strat-card-mini .neg { color:#f85149; }
-  .strat-card-expand { overflow:hidden; max-height:0; transition:max-height .2s ease; }
-  .strat-card.expanded .strat-card-expand { max-height:280px; }
+  .strat-card-expand { overflow:visible; }
   .strat-pos-badge { display:inline-flex; align-items:center; justify-content:center;
     min-width:18px; height:16px; border-radius:8px; font-size:.6rem;
     font-weight:700; padding:0 5px; margin-left:4px; flex-shrink:0; }
@@ -2974,9 +2973,9 @@ function renderStrategyGroup(groupKey) {
     const exp      = EXPANDED_STRATS.has(d.key);
     const pnl24    = st.h24.net_pnl || 0;
     const pnlCls   = pnl24 > 0 ? 'pos' : pnl24 < 0 ? 'neg' : '';
-    const cardCls  = `strat-card ${on ? 'on' : 'off'}${exp ? ' expanded' : ''}`;
+    const cardCls  = `strat-card ${on ? 'on' : 'off'} expanded`;
     return `<div class="${cardCls}" data-strat="${d.key}">
-      <div class="strat-card-head" onclick="toggleExpand('${d.key}',event)">
+      <div class="strat-card-head">
         <span class="strat-card-name" title="${d.label}">${d.label}</span>
         <span class="strat-pos-badge zero">0</span>
         ${_pieSvg(st.h24.wins, st.h24.losses)}
@@ -3271,12 +3270,26 @@ function updateThetaHarvest() {
     })();
     labels = DAY_GRID;
 
+    // Helper: snap any "HH:MM" to the nearest DAY_GRID slot (numeric distance)
+    function snapGrid(hhmm) {
+      if (!hhmm || hhmm.length < 5) return DAY_GRID[0];
+      const [rh, rm] = hhmm.slice(-5).split(':').map(Number);
+      const rawMins  = rh * 60 + rm;
+      let best = DAY_GRID[0], bestDist = Infinity;
+      for (const g of DAY_GRID) {
+        const [gh, gm] = g.split(':').map(Number);
+        const d = Math.abs(gh * 60 + gm - rawMins);
+        if (d < bestDist) { bestDist = d; best = g; }
+      }
+      return best;
+    }
+
     if (hist.length > 0) {
-      // Real data — align each snapshot to its HH:MM slot in the full-day grid
+      // Real data — snap each snapshot time to nearest 5-min grid slot
       const snapMap = {};
       hist.forEach(h => {
-        const t = (h.time || '').slice(-5);  // "HH:MM"
-        if (t) snapMap[t] = h;
+        const slot = snapGrid((h.time || '').slice(-5));
+        snapMap[slot] = h;   // last writer wins if two snaps collide
       });
       vixData = DAY_GRID.map(t => { const h = snapMap[t]; return h ? (h.vix ?? null) : null; });
 
@@ -3310,10 +3323,7 @@ function updateThetaHarvest() {
       // No history yet — plot entry + current on full-day axis
       const now  = new Date();
       const nowT = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-      const snapToGrid = t => DAY_GRID.reduce((best, g) =>
-        Math.abs(parseInt(g.replace(':','')) - parseInt(t.replace(':',''))) <
-        Math.abs(parseInt(best.replace(':','')) - parseInt(t.replace(':',''))) ? g : best, DAY_GRID[0]);
-      const nowSlot = snapToGrid(nowT);
+      const nowSlot = snapGrid(nowT);
       vixData = DAY_GRID.map(t => t === nowSlot ? (vix_cur ?? null) : null);
 
       const sortedPos = [...pos].sort((a, b) => {
@@ -3331,7 +3341,7 @@ function updateThetaHarvest() {
         const tid      = p.tranche_id ?? 0;
         const label    = `${p.ticker} ${isPut ? 'PUT' : 'CALL'} ${dteSlot}DTE T${tid}`;
         const rawEntry = p.entry_time ? (p.entry_time+'').slice(-5) : '09:45';
-        const entrySlot = snapToGrid(rawEntry);
+        const entrySlot = snapGrid(rawEntry);
         const entryVal  = mode === 'price' ? (p.net_credit || 0) : 0;
         const curVal    = mode === 'price'
           ? (p.current_value ?? p.net_credit ?? 0)
