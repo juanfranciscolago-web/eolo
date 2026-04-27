@@ -53,6 +53,20 @@ from analysis.iv_surface   import IVSurface
 from claude.options_brain  import OptionsBrain
 from claude.claude_bot     import ClaudeBotEngine
 from execution.options_trader import OptionsTrader, _send_telegram
+from theta_harvest import scan_theta_harvest_tranches, ThetaHarvestSignal
+from theta_harvest.theta_harvest_strategy import (
+    evaluate_open_position,
+    should_close_for_eod,
+    TARGET_DTES,
+    FORCE_CLOSE_HOUR_0DTE,
+    FORCE_CLOSE_HOUR_1TO4DTE,
+    _determine_spread_type,
+)
+from theta_harvest.pivot_analysis import (
+    analyze_pivots, format_pivot_summary,
+    fetch_tick_ad, TickADContext,
+)
+from theta_harvest.macro_news_filter import is_news_day, log_calendar_status
 # ── Multi-TF compartido (paquete común eolo_common) ───────
 # Vive en /eolo_common/ del repo root. Dockerfile lo copia a /app/eolo_common.
 import sys as _sys, os as _os
@@ -119,7 +133,10 @@ except ImportError as e:
 # La selección real se lee en caliente desde Firestore
 # (eolo-options-config/settings.ticker_selection) y se cachea en
 # self._ticker_selection / self._active_tickers.
-TICKERS = ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA", "TSLA"]
+TICKERS = ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA", "TSLA", "TQQQ"]
+
+# Tickers habilitados para Theta Harvest (credit spreads 0-5 DTE)
+THETA_HARVEST_TICKERS = ["SPY", "TQQQ"]
 
 # ⚠️  PAPER TRADING — cambiar a False para ir live
 # En paper mode: órdenes simuladas, CSV log, sin llamadas reales a Schwab
@@ -156,17 +173,39 @@ CANDLE_BUFFER_SIZE = 100
 _FS_PRIMITIVES = (type(None), bool, int, float, str, bytes)
 
 
-def _sanitize_for_firestore(obj):
-    """Convierte recursivamente un objeto a tipos que Firestore acepta."""
-    # Primitivos nativos OK (pero excluimos bool-as-int inadvertido)
-    if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
-        # numpy bools heredan de int — filtramos
+def _sanitize_for_firestore(obj, _depth=0):
+    """Convierte recursivamente un objeto a tipos que Firestore acepta.
+    CRITICAL: Firestore rechaza valores NaN/Infinity y dicts muy anidados (>20 niveles).
+    """
+    import math
+
+    # Límite de profundidad (Firestore tiene ~20 niveles max)
+    if _depth > 15:
+        return None
+
+    # None y primitivos
+    if obj is None:
+        return None
+
+    if isinstance(obj, bool):
+        return obj
+
+    # float/int: detecta NaN e Infinity
+    if isinstance(obj, (int, float)):
         try:
             import numpy as _np
             if isinstance(obj, _np.generic):
-                return obj.item()
+                obj = obj.item()
         except ImportError:
             pass
+
+        # Convierte NaN/Infinity a None (Firestore los rechaza)
+        if isinstance(obj, float):
+            if math.isnan(obj) or math.isinf(obj):
+                return None
+        return obj
+
+    if isinstance(obj, (str, bytes)):
         return obj
 
     # datetime OK
@@ -174,46 +213,51 @@ def _sanitize_for_firestore(obj):
     if isinstance(obj, (_dt, _date)):
         return obj
 
-    # numpy scalars → item()
+    # numpy arrays → list (recurse)
     try:
         import numpy as _np
-        if isinstance(obj, _np.generic):
-            return obj.item()
         if isinstance(obj, _np.ndarray):
-            return [_sanitize_for_firestore(x) for x in obj.tolist()]
+            return [_sanitize_for_firestore(x, _depth+1) for x in obj.tolist()]
     except ImportError:
         pass
 
-    # Decimal → float
+    # Decimal → float (pero chequea NaN)
     try:
         from decimal import Decimal as _Dec
         if isinstance(obj, _Dec):
-            return float(obj)
+            f = float(obj)
+            if math.isnan(f) or math.isinf(f):
+                return None
+            return f
     except ImportError:
         pass
 
     # set / frozenset → list
     if isinstance(obj, (set, frozenset)):
-        return [_sanitize_for_firestore(x) for x in obj]
+        return [_sanitize_for_firestore(x, _depth+1) for x in obj]
 
     # tuple → list
     if isinstance(obj, tuple):
-        return [_sanitize_for_firestore(x) for x in obj]
+        return [_sanitize_for_firestore(x, _depth+1) for x in obj]
 
-    # list
+    # list → recurse
     if isinstance(obj, list):
-        return [_sanitize_for_firestore(x) for x in obj]
+        return [_sanitize_for_firestore(x, _depth+1) for x in obj]
 
-    # dict — las keys deben ser strings
+    # dict — las keys deben ser strings + elimina campos vacíos
     if isinstance(obj, dict):
         out = {}
         for k, v in obj.items():
             key = k if isinstance(k, str) else str(k)
-            out[key] = _sanitize_for_firestore(v)
-        return out
+            sanitized = _sanitize_for_firestore(v, _depth+1)
+            # Solo agrega si no es None y no es dict vacío
+            if sanitized is not None and not (isinstance(sanitized, dict) and not sanitized):
+                out[key] = sanitized
+        return out if out else None  # Retorna None si dict queda vacío
 
-    # Fallback: stringify lo que no sepamos serializar
-    return str(obj)
+    # Fallback: para objetos desconocidos, retorna None (no stringify)
+    # Esto evita que stats con objetos raros cause problemas
+    return None
 
 
 def _is_firestore_native(obj) -> bool:
@@ -304,6 +348,12 @@ class EoloV2:
         except Exception as e:
             logger.warning(f"[MACRO-v2] no se pudo crear MacroFeeds: {e} — Nivel 2 quedará en HOLD")
             self._macro_feeds = None
+        # Inyectar MacroFeeds al trader para enrichment (VIX snapshot en cada trade).
+        try:
+            if hasattr(self.trader, "set_macro_feeds"):
+                self.trader.set_macro_feeds(self._macro_feeds)
+        except Exception as e:
+            logger.debug(f"[MACRO-v2] trader.set_macro_feeds falló: {e}")
         # Gate de costos Claude — no llamar a OptionsBrain/ClaudeBotEngine si
         # no hay nada accionable (señales técnicas, mispricing, posiciones).
         # Reduce ~80-90% el consumo Anthropic en mercados laterales.
@@ -312,6 +362,39 @@ class EoloV2:
         self._open_positions: list[dict] = []
         self._auto_close_done_date: str | None = None
         self._running = False
+
+        # ── Theta Harvest state (v2 — Always-In Multi-DTE) ──
+        # Lista de credit spreads abiertos por el theta harvest strategy.
+        # Monitoreados independientemente del ciclo de análisis principal.
+        self._theta_positions: list[dict] = []
+        # Tracking multi-DTE: ticker → dte → fecha YYYY-MM-DD (o None si slot libre)
+        # Permite tener 1 spread por cada DTE (0,1,2,3,4) por ticker simultáneamente.
+        # Ejemplo: {"SPY": {0: "2026-04-27", 1: "2026-04-27", 2: None, ...}}
+        self._theta_slots: dict[str, dict[int, str | None]] = {}
+        # Caché de pivot analysis por ticker (se actualiza 1 vez por día al abrir)
+        self._theta_pivot_cache: dict[str, object] = {}    # ticker → PivotAnalysisResult
+        self._theta_pivot_date:  dict[str, str]    = {}    # ticker → fecha del cache
+        # SPY price history para calcular caída 30 min
+        self._spy_price_history: list[tuple[float, float]] = []  # (timestamp, price)
+        # Habilitado/deshabilitado desde Firestore (toggle en dashboard)
+        self._theta_harvest_enabled: bool = True
+        # Flag force_entry (set por comando Firestore, permite saltear ventana horaria)
+        self._theta_force_entry: bool = False
+        # Último chain recibido por ticker (para force_theta_entry)
+        self._last_chain: dict[str, dict] = {}
+        # Dashboard: historial intraday de P&L [{time, datasets:[{label,pnl}], vix}]
+        self._theta_pnl_history: list[dict] = []
+        self._theta_last_history_ts: float = 0.0   # último snapshot (cada 5 min)
+        # Stats acumuladas del día
+        self._theta_stats: dict = {
+            "pnl_today": 0.0, "win_rate": 0.0,
+            "credit_total": 0.0, "trades_closed": 0,
+            "_wins": 0, "_losses": 0,
+        }
+        # Estado macro para dashboard (is_news_day, events)
+        self._theta_macro_status: dict = {}
+        # Último Tick/A-D leído (para dashboard pill)
+        self._theta_tick_ad: dict = {}
 
         # ── Dashboard state ───────────────────────────────
         self._quotes:          dict[str, dict] = {}
@@ -339,6 +422,13 @@ class EoloV2:
         self._default_stop_loss_pct:   float = 25.0   # % por debajo del precio de entrada
         self._default_take_profit_pct: float = 50.0   # % por encima del precio de entrada
         self._daily_loss_cap_pct:      float = -5.0   # cap diario (negativo, % sobre equity)
+        # Snapshot del último cálculo del daily loss cap — lo publicamos en el
+        # state doc para que el dashboard muestre pnl real vs cap. Poblado por
+        # _is_daily_loss_cap_hit() en cada ticker (cheap: solo suma trades del
+        # día del CSV + open positions). Log dedup: una línea por cycle.
+        self._daily_loss_cap_status: dict = {}
+        self._daily_loss_cap_log_ts: float = 0.0      # last WARN emit (epoch s)
+        self._daily_loss_cap_log_dedup_s: float = 60.0
         # Schedule de trading — editable desde el dashboard. Defaults equity
         # (09:30-15:27 ET con auto-close 15:27). Se refresca en _poll_settings().
         self._schedule: TradingSchedule = DEFAULTS_EQUITY
@@ -400,6 +490,11 @@ class EoloV2:
             "sell_pressure": True, "vwap_momentum": True,
             "orb_v3": True, "donchian_turtle": True,
             "bulls_bsp": True, "net_bsv": True,
+            # Combos Ganadores (2026-04)
+            "combo1_ema_scalper": True, "combo2_rubber_band": True,
+            "combo3_nino_squeeze": True, "combo4_slimribbon": True,
+            "combo5_btd": True, "combo6_fractalccix": True,
+            "combo7_campbell": True,
         }
 
         # ── Circuit breaker: Anthropic billing ──────────────
@@ -422,6 +517,14 @@ class EoloV2:
         self._running = True
         self._loop = asyncio.get_running_loop()   # ref para schedular desde threads
         logger.info("🚀 EOLO v2 iniciando...")
+
+        # ── Theta Harvest v2: log macro calendar al inicio ─
+        try:
+            cal_status = log_calendar_status()
+            logger.info(f"[ThetaHarvest] {cal_status}")
+            _send_telegram(f"[ThetaHarvest] {cal_status}")
+        except Exception as _e:
+            logger.debug(f"[ThetaHarvest] log_calendar_status error: {_e}")
 
         # Registrar handlers de eventos
         self.stream.add_handler(self._on_market_event)
@@ -448,6 +551,7 @@ class EoloV2:
             self._state_writer_loop(),
             self._command_watcher_loop(),
             self._claude_bot_loop(),
+            self._theta_monitor_loop(),
         ]
         if macro_task is not None:
             gather_tasks.append(macro_task)
@@ -613,6 +717,9 @@ class EoloV2:
         Se llama cada vez que llega una nueva cadena de opciones.
         Aquí se dispara el ciclo de análisis completo.
         """
+        # Guardar último chain para comandos force_theta_entry
+        self._last_chain[ticker] = chain
+
         now = time.time()
         last = self._last_analysis.get(ticker, 0)
 
@@ -697,11 +804,22 @@ class EoloV2:
         # Daily loss cap — freezea nuevas aperturas cuando el P&L del día
         # cruza el umbral. El cap se configura desde el modal Config del
         # dashboard (valor negativo, % sobre capital nocional desplegable).
+        # El log rico se emite UNA sola vez cada _daily_loss_cap_log_dedup_s;
+        # el skip por-ticker queda silencioso para no spamear.
         if self._is_daily_loss_cap_hit():
-            logger.warning(
-                f"[EOLO v2] {ticker} — Daily loss cap alcanzado "
-                f"({self._daily_loss_cap_pct}%), no se abren nuevas posiciones"
-            )
+            st = self._daily_loss_cap_status or {}
+            now_ts = time.time()
+            if (now_ts - self._daily_loss_cap_log_ts) >= self._daily_loss_cap_log_dedup_s:
+                self._daily_loss_cap_log_ts = now_ts
+                logger.warning(
+                    f"[EOLO v2] 🛑 Daily loss cap HIT — "
+                    f"pnl_pct={st.get('pnl_pct', 0):+.2f}% <= cap={st.get('cap', 0):.2f}% "
+                    f"(realized=${st.get('realized', 0):+.2f}, "
+                    f"unrealized=${st.get('unrealized', 0):+.2f}, "
+                    f"nominal=${st.get('nominal_equity', 0):.0f}, "
+                    f"open={st.get('n_open', 0)}, trades_today={st.get('n_trades_today', 0)}). "
+                    f"Skipeo aperturas hasta próximo cycle / reset 8am."
+                )
             return
 
         # 5b. Gate de costos Claude — solo llamar a OptionsBrain si hay algo
@@ -789,6 +907,434 @@ class EoloV2:
 
         # 9. Escribir estado al disco para el dashboard
         self._write_state()
+
+        # 10. Theta Harvest scan — independiente de Claude
+        if ticker in THETA_HARVEST_TICKERS and self._theta_harvest_enabled:
+            await self._run_theta_harvest(ticker, chain)
+
+    # ── Theta Harvest v2 — Always-In Multi-DTE ────────────
+
+    def _theta_get_macro_context(self) -> tuple[float | None, float | None]:
+        """Retorna (vix, vvix) desde macro_feeds si están disponibles."""
+        vix = vvix = None
+        try:
+            macro = getattr(self, "_macro_feeds", None)
+            if macro:
+                if hasattr(macro, "latest"):      # MacroFeeds object
+                    vix  = macro.latest("VIX")
+                    vvix = macro.latest("VVIX")
+                elif isinstance(macro, dict):     # fallback dict
+                    vix  = macro.get("vix")  or macro.get("VIX")
+                    vvix = macro.get("vvix") or macro.get("VVIX")
+        except Exception:
+            pass
+        return vix, vvix
+
+    def _theta_spy_drop_30m(self) -> float:
+        """
+        Calcula la caída de SPY en los últimos 30 minutos como %.
+        Retorna 0.0 si no hay datos suficientes.
+        Positivo = caída (ej. 0.9 = cayó 0.9%).
+        """
+        import time as _time
+        now_ts  = _time.time()
+        cutoff  = now_ts - 30 * 60  # últimos 30 min
+        # Mantener solo los últimos 60 min de history
+        self._spy_price_history = [
+            (ts, px) for ts, px in self._spy_price_history
+            if ts >= now_ts - 3600
+        ]
+        # Actualizar con precio actual de SPY
+        spy_quote = self._quotes.get("SPY", {})
+        spy_price = spy_quote.get("mark") or spy_quote.get("last") or 0.0
+        if spy_price > 0:
+            self._spy_price_history.append((now_ts, spy_price))
+
+        # Buscar precio hace 30 min
+        older = [(ts, px) for ts, px in self._spy_price_history if ts <= cutoff]
+        if not older or spy_price <= 0:
+            return 0.0
+        price_30m_ago = older[-1][1]
+        if price_30m_ago <= 0:
+            return 0.0
+        drop_pct = (price_30m_ago - spy_price) / price_30m_ago * 100
+        return max(0.0, drop_pct)  # positivo = caída, negativo no nos interesa
+
+    def _theta_init_slots(self, ticker: str, today: str):
+        """Inicializa o resetea los slots del ticker para el día de hoy."""
+        slots = self._theta_slots.get(ticker, {})
+        # Si algún slot tiene fecha de ayer (o antes), liberarlo
+        new_slots = {}
+        for dte in TARGET_DTES:
+            slot_date = slots.get(dte)
+            if slot_date == today:
+                new_slots[dte] = today      # spread de hoy sigue activo
+            else:
+                new_slots[dte] = None       # slot libre para hoy
+        self._theta_slots[ticker] = new_slots
+
+    def _theta_free_slot(self, ticker: str, dte: int):
+        """Libera un slot DTE para re-entry."""
+        if ticker in self._theta_slots:
+            self._theta_slots[ticker][dte] = None
+
+    def _theta_get_pivot(self, ticker: str, current_price: float, today: str):
+        """
+        Retorna (cached) PivotAnalysisResult para el ticker.
+        Actualiza el cache si es un día nuevo o si no existe.
+        """
+        if (self._theta_pivot_date.get(ticker) != today or
+                ticker not in self._theta_pivot_cache):
+            try:
+                result = analyze_pivots(ticker=ticker, current_price=current_price)
+                if result:
+                    self._theta_pivot_cache[ticker] = result
+                    self._theta_pivot_date[ticker]  = today
+                    logger.info(format_pivot_summary(result))
+            except Exception as e:
+                logger.warning(f"[ThetaHarvest] pivot_analysis falló {ticker}: {e}")
+        return self._theta_pivot_cache.get(ticker)
+
+    async def _run_theta_harvest(self, ticker: str, chain: dict):
+        """
+        Always-In Multi-DTE: intenta abrir spreads en todos los DTEs libres.
+        Por cada DTE en TARGET_DTES (0,1,2,3,4) que no tenga spread hoy:
+          1. Chequea macro news day → skip todo si hay noticias
+          2. Obtiene pivot analysis → determina risk level y delta range
+          3. Determina dirección (PUT/CALL) desde señales técnicas
+          4. Llama a scan_theta_harvest para ese DTE específico
+          5. Si hay señal válida → abre el spread y ocupa el slot
+        Solo corre en la ventana de entrada (ENTRY_HOUR_ET ± ENTRY_WINDOW_MINUTES).
+        """
+        from datetime import date as _date
+        today = _date.today().isoformat()
+
+        # ── 0. Inicializar / resetear slots ────────────────
+        self._theta_init_slots(ticker, today)
+
+        # ── 1. Macro news filter ───────────────────────────
+        news_day = is_news_day()
+        # Actualizar estado macro para dashboard
+        try:
+            from theta_harvest.macro_news_filter import get_today_events
+            events_today = get_today_events()
+        except Exception:
+            events_today = []
+        self._theta_macro_status = {"is_news_day": news_day, "events": events_today}
+        if news_day:
+            logger.info(f"[ThetaHarvest] {ticker} — día de noticias macro, skip")
+            return
+
+        # ── 2. Macro context ───────────────────────────────
+        vix, vvix = self._theta_get_macro_context()
+
+        # ── 3. Pivot analysis (1 vez por día por ticker) ───
+        underlying_price = (chain.get("underlying") or {}).get("mark") or 0.0
+        pivot_result = None
+        if underlying_price > 0:
+            pivot_result = self._theta_get_pivot(ticker, underlying_price, today)
+
+        # ── 4. Dirección (prioridad: sector analysis > señales internas) ─
+        # 1° opción: dirección del sector analysis del pivot_result
+        #   (feed de 11 ETFs sectoriales ponderados, exacto al spreadsheet de Juan)
+        # 2° fallback: señales técnicas internas Eolo v1
+        if pivot_result and getattr(pivot_result, "sector", None):
+            spread_type = pivot_result.sector.spread_type
+            logger.info(
+                f"[ThetaHarvest] {ticker} dirección via sector analysis: "
+                f"{spread_type} ({pivot_result.sector.direction} "
+                f"{pivot_result.sector.weighted_change_pct:+.2f}%)"
+            )
+        else:
+            signals     = self._signals_data.get(ticker, {})
+            macro_feeds = getattr(self, "_macro_feeds", None)
+            spread_type = _determine_spread_type(signals, macro_feeds)
+            logger.debug(f"[ThetaHarvest] {ticker} dirección via señales internas: {spread_type}")
+
+        # ── 4b. Tick / A-D — confirmación intraday de dirección ──
+        # Se fetcha en tiempo real en cada intento de entrada.
+        # block  → no entrar ningún spread este ciclo (TICK extremo)
+        # skip   → Tick contradice la dirección → esperar próximo ciclo
+        # neutral/confirm → proceder
+        tick_ctx: Optional[TickADContext] = None
+        try:
+            tick_ctx = fetch_tick_ad(self._schwab.access_token)
+            if tick_ctx is not None:
+                # Guardar para dashboard pill
+                self._theta_tick_ad = {
+                    "tick": getattr(tick_ctx, "tick", None),
+                    "ad":   getattr(tick_ctx, "ad",   None),
+                }
+        except Exception as e:
+            logger.debug(f"[ThetaHarvest] {ticker} Tick/AD fetch error: {e} — omitido")
+
+        if tick_ctx is not None:
+            tick_confirmation = tick_ctx.evaluate(spread_type)
+            if tick_confirmation == "block":
+                logger.warning(
+                    f"[ThetaHarvest] {ticker} — Tick/AD BLOCK "
+                    f"(TICK={tick_ctx.tick:+.0f} extremo), skip todas las entradas"
+                )
+                return
+            if tick_confirmation == "skip":
+                logger.info(
+                    f"[ThetaHarvest] {ticker} — Tick/AD SKIP "
+                    f"(TICK={tick_ctx.tick:+.0f} AD={tick_ctx.ad:+.0f} contradicen {spread_type})"
+                )
+                return
+            logger.debug(
+                f"[ThetaHarvest] {ticker} Tick/AD → {tick_confirmation} "
+                f"(TICK={tick_ctx.tick:+.0f} AD={tick_ctx.ad:+.0f})"
+            )
+
+        # ── 5. Intentar abrir cada DTE libre ──────────────
+        slots = self._theta_slots.get(ticker, {})
+        for dte in TARGET_DTES:
+            if slots.get(dte) == today:
+                continue    # ya tenemos spread para este DTE hoy
+
+            # Verificar que no haya ya una posición activa para este DTE
+            already_open = any(
+                p.get("ticker") == ticker and p.get("dte") == dte
+                for p in self._theta_positions
+            )
+            if already_open:
+                self._theta_slots.setdefault(ticker, {})[dte] = today
+                continue
+
+            # ── Tranche entry: 3 contratos, mismo strike, distintos targets ──
+            try:
+                signals = scan_theta_harvest_tranches(
+                    ticker         = ticker,
+                    chain          = chain,
+                    vix            = vix,
+                    vvix           = vvix,
+                    spread_type    = spread_type,
+                    dte_preference = dte,
+                    pivot_result   = pivot_result,
+                    force_entry    = getattr(self, "_theta_force_entry", False),
+                )
+            except Exception as e:
+                logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
+                continue
+
+            if not signals:
+                continue
+
+            # Abrir un contrato por cada tranche (T0=35%, T1=65%, T2=EXPIRY)
+            opened_any = False
+            for signal in signals:
+                decision = signal.to_decision(contracts=1)
+                try:
+                    order_id = await self.trader.execute_decision(decision)
+                    if order_id:
+                        pos = {
+                            **decision,
+                            "order_id":  order_id,
+                            "opened_at": time.time(),
+                            "dte_slot":  dte,
+                        }
+                        self._theta_positions.append(pos)
+                        opened_any = True
+                        # Sumar crédito total del día
+                        self._theta_stats["credit_total"] = round(
+                            self._theta_stats.get("credit_total", 0)
+                            + signal.net_credit * pos.get("contracts", 1) * 100, 2
+                        )
+                        t_label = (
+                            f"T{signal.tranche_id}={int(signal.tranche_target*100)}%"
+                            if signal.tranche_target is not None
+                            else f"T{signal.tranche_id}=EXPIRY"
+                        )
+                        logger.info(
+                            f"[ThetaHarvest] ✅ {ticker} DTE={dte} [{t_label}] "
+                            f"K={signal.short_strike}/{signal.long_strike} "
+                            f"credit=${signal.net_credit:.2f} target=${signal.profit_target:.2f} | "
+                            f"order_id={order_id}"
+                        )
+                except Exception as e:
+                    logger.error(
+                        f"[ThetaHarvest] Error abriendo T{signal.tranche_id} "
+                        f"{ticker} DTE={dte}: {e}"
+                    )
+
+            if opened_any:
+                self._theta_slots.setdefault(ticker, {})[dte] = today
+                s0 = signals[0]  # datos del spread (todos los tranches tienen el mismo strike)
+                targets_str = " / ".join(
+                    f"T{s.tranche_id}→${s.profit_target:.2f}" for s in signals
+                )
+                _send_telegram(
+                    f"🎯 ThetaHarvest {ticker} {'PUT' if 'put' in spread_type else 'CALL'} "
+                    f"{dte}DTE K={s0.short_strike}/{s0.long_strike} ($5) | "
+                    f"Δ={s0.short_delta:.2f} [{s0.risk_level}] | "
+                    f"credit=${s0.net_credit:.2f} SL=${s0.stop_loss:.2f} | "
+                    f"targets: {targets_str} | "
+                    f"exp={s0.expiration}"
+                )
+
+    async def _theta_monitor_loop(self):
+        """
+        Loop de monitoreo de posiciones theta harvest v2 (Always-In).
+        Corre cada 60 segundos.
+
+        Evalúa cada posición con exits inteligentes (per-tranche):
+          1. VVIX_PANIC  → cerrar todos los tranches
+          2. STOP_LOSS   → spread ≥ 125% crédito (aplica a todos los tranches)
+          3. VIX_SPIKE   → VIX subió > 3 pts desde entrada
+          4. DELTA_DRIFT → short delta > 0.35
+          5. SPY_DROP    → SPY cayó > 0.8% en 30 min (PUT spreads)
+          6. PROFIT      → per-tranche: T0≤65%crédito / T1≤35%crédito / T2=sin target
+          7. TIME_STOP   → 14:30 ET (0DTE) | 15:15 ET (1-2 DTE)
+
+        Al cerrar un spread, libera el DTE slot para re-entry.
+        EOD 15:30 ET: cierra TODOS los spreads sin excepción.
+        """
+        logger.info("[ThetaHarvest] Monitor loop v2 iniciado (Always-In)")
+        while self._running:
+            await asyncio.sleep(60)    # chequear cada 60 segundos (era 120)
+
+            if not self._theta_positions:
+                continue
+
+            # Obtener contexto de mercado actual
+            vix, vvix      = self._theta_get_macro_context()
+            spy_drop_30m   = self._theta_spy_drop_30m()
+
+            to_close = []
+            for pos in list(self._theta_positions):
+                pos_ticker = pos.get("ticker", "")
+                try:
+                    chain = self.chain_fetcher._chains.get(pos_ticker, {})
+                    if not chain:
+                        continue
+
+                    # ── Actualizar unrealized_pnl en el dict de posición ──
+                    try:
+                        opt_side  = "puts" if "put" in pos.get("spread_type","") else "calls"
+                        exp       = pos.get("expiration", "")
+                        strikes   = chain.get(opt_side, {}).get(exp, {})
+                        short_c   = strikes.get(str(pos.get("short_strike", ""))) or {}
+                        long_c    = strikes.get(str(pos.get("long_strike",  ""))) or {}
+                        s_mark    = short_c.get("mark") or short_c.get("ask") or 0
+                        l_mark    = long_c.get("mark")  or long_c.get("bid")  or 0
+                        cur_val   = round(abs(s_mark - l_mark), 2)
+                        net_credit = pos.get("net_credit", 0)
+                        contracts  = pos.get("contracts", 1)
+                        pos["unrealized_pnl"] = round(
+                            (net_credit - cur_val) * contracts * 100, 2
+                        )
+                        pos["current_value"] = cur_val
+                    except Exception:
+                        pass
+
+                    exit_reason = evaluate_open_position(
+                        position      = pos,
+                        current_chain = chain,
+                        vix_current   = vix,
+                        vvix_current  = vvix,
+                        spy_drop_30m  = spy_drop_30m,
+                    )
+                    if exit_reason:
+                        to_close.append((pos, exit_reason))
+                except Exception as e:
+                    logger.warning(f"[ThetaHarvest] Error evaluando posición {pos_ticker}: {e}")
+
+            # ── Snapshot intraday de P&L cada 5 min ──────────────
+            now_ts = time.time()
+            if now_ts - self._theta_last_history_ts >= 300 and self._theta_positions:
+                try:
+                    from zoneinfo import ZoneInfo
+                    hhmm = datetime.now(ZoneInfo("America/New_York")).strftime("%H:%M")
+                    datasets = []
+                    # Agrupar por ticker+spread_type+dte_slot como label único
+                    for p in self._theta_positions:
+                        isPut  = "put" in p.get("spread_type", "")
+                        label  = f"{p.get('ticker','?')} {'PUT' if isPut else 'CALL'} {p.get('dte_slot', p.get('dte','?'))}DTE T{p.get('tranche_id',0)}"
+                        pnl    = p.get("unrealized_pnl", 0) or 0
+                        price  = p.get("current_value",  p.get("net_credit", 0)) or 0
+                        datasets.append({"label": label, "pnl": pnl, "price": price})
+                    self._theta_pnl_history.append({
+                        "time":     hhmm,
+                        "datasets": datasets,
+                        "vix":      vix,
+                    })
+                    # Mantener solo últimos 80 puntos (6h+ a 5min)
+                    if len(self._theta_pnl_history) > 80:
+                        self._theta_pnl_history = self._theta_pnl_history[-80:]
+                    self._theta_last_history_ts = now_ts
+                except Exception:
+                    pass
+
+            for pos, exit_reason in to_close:
+                pos_ticker  = pos.get("ticker", "?")
+                dte_slot    = pos.get("dte_slot", pos.get("dte"))
+                spread_type = pos.get("spread_type", "")
+                try:
+                    close_decision = {
+                        "action":       "CLOSE_SPREAD",
+                        "ticker":       pos_ticker,
+                        "expiration":   pos.get("expiration"),
+                        "spread_type":  spread_type,
+                        "short_strike": pos.get("short_strike"),
+                        "long_strike":  pos.get("long_strike"),
+                        "contracts":    pos.get("contracts", 1),
+                        "reason":       f"ThetaHarvest {exit_reason}",
+                    }
+                    order_id = await self.trader.execute_decision(close_decision)
+                    if order_id:
+                        self._theta_positions.remove(pos)
+
+                        # Liberar el DTE slot solo cuando TODOS los tranches del
+                        # mismo DTE están cerrados. T0 cierra antes (35% target)
+                        # pero T1 y T2 siguen abiertos — no re-abrir hasta que cierren.
+                        remaining_tranches = [
+                            p for p in self._theta_positions
+                            if p.get("ticker") == pos_ticker
+                            and p.get("dte_slot") == dte_slot
+                        ]
+                        if not remaining_tranches and dte_slot is not None:
+                            self._theta_free_slot(pos_ticker, dte_slot)
+
+                        tranche_id  = pos.get("tranche_id", "?")
+                        t_target    = pos.get("tranche_target")
+                        t_label     = (
+                            f"T{tranche_id}={int(t_target*100)}%"
+                            if t_target is not None else f"T{tranche_id}=EXPIRY"
+                        )
+                        is_win = exit_reason in ("PROFIT", "EXPIRY")
+                        emoji  = "✅" if is_win else ("⏱️" if "TIME" in exit_reason else "🛑")
+                        still_open = len(remaining_tranches)
+
+                        # ── Actualizar stats del día ──────────────────────
+                        realized = pos.get("unrealized_pnl", 0) or 0
+                        self._theta_stats["pnl_today"]    = round(
+                            self._theta_stats.get("pnl_today", 0) + realized, 2
+                        )
+                        self._theta_stats["trades_closed"] = (
+                            self._theta_stats.get("trades_closed", 0) + 1
+                        )
+                        if is_win:
+                            self._theta_stats["_wins"] = self._theta_stats.get("_wins", 0) + 1
+                        else:
+                            self._theta_stats["_losses"] = self._theta_stats.get("_losses", 0) + 1
+                        total = self._theta_stats.get("_wins", 0) + self._theta_stats.get("_losses", 0)
+                        self._theta_stats["win_rate"] = round(
+                            (self._theta_stats.get("_wins", 0) / total * 100) if total > 0 else 0, 1
+                        )
+                        logger.info(
+                            f"[ThetaHarvest] Spread cerrado {pos_ticker} DTE={dte_slot} "
+                            f"[{t_label}] — motivo: {exit_reason} | "
+                            f"tranches restantes: {still_open} | order_id={order_id}"
+                        )
+                        _send_telegram(
+                            f"{emoji} ThetaHarvest {pos_ticker} DTE={dte_slot} [{t_label}] "
+                            f"cerrado ({exit_reason}) "
+                            f"K={pos.get('short_strike')}/{pos.get('long_strike')}"
+                            + (f" | {still_open} tranches aún abiertos" if still_open else " | DTE slot libre")
+                        )
+                except Exception as e:
+                    logger.error(f"[ThetaHarvest] Error cerrando spread {pos_ticker}: {e}")
 
     # ── Ejecución de orden ─────────────────────────────────
 
@@ -893,6 +1439,14 @@ class EoloV2:
             "DONCHIAN_TURTLE":   "donchian_turtle",
             "BULLS_BSP":         "bulls_bsp",
             "NET_BSV":           "net_bsv",
+            # Combos Ganadores (2026-04)
+            "COMBO1_EMA_SCALPER":  "combo1_ema_scalper",
+            "COMBO2_RUBBER_BAND":  "combo2_rubber_band",
+            "COMBO3_NINO_SQUEEZE": "combo3_nino_squeeze",
+            "COMBO4_SLIMRIBBON":   "combo4_slimribbon",
+            "COMBO5_BTD":          "combo5_btd",
+            "COMBO6_FRACTALCCIX":  "combo6_fractalccix",
+            "COMBO7_CAMPBELL":     "combo7_campbell",
         }
 
         def _run(name: str, fn, md, *args, **kwargs):
@@ -985,6 +1539,17 @@ class EoloV2:
             _run("DONCHIAN_TURTLE", _strat_v3.analyze_donchian_turtle, md)
             _run("BULLS_BSP",       _strat_v3.analyze_bulls_bsp,       md)
             _run("NET_BSV",         _strat_v3.analyze_net_bsv,         md)
+
+            # ───────────────────────────────────────────────
+            #  Combos Ganadores (2026-04) — 7 estrategias
+            # ───────────────────────────────────────────────
+            _run("COMBO1_EMA_SCALPER",  _strat_v3.analyze_combo1_ema_scalper,  md)
+            _run("COMBO2_RUBBER_BAND",  _strat_v3.analyze_combo2_rubber_band,  md)
+            _run("COMBO3_NINO_SQUEEZE", _strat_v3.analyze_combo3_nino_squeeze, md)
+            _run("COMBO4_SLIMRIBBON",   _strat_v3.analyze_combo4_slimribbon,   md)
+            _run("COMBO5_BTD",          _strat_v3.analyze_combo5_btd,          md)
+            _run("COMBO6_FRACTALCCIX",  _strat_v3.analyze_combo6_fractalccix,  md)
+            _run("COMBO7_CAMPBELL",     _strat_v3.analyze_combo7_campbell,     md)
 
         # Consolidar multi-TF → una señal por estrategia
         self._confluence_snapshot = cf.snapshot()
@@ -1304,31 +1869,59 @@ class EoloV2:
 
     def _is_daily_loss_cap_hit(self) -> bool:
         """
-        Retorna True cuando el P&L realizado + no-realizado del día
-        (sobre capital nocional = budget_per_trade × max_positions)
-        es <= self._daily_loss_cap_pct. Fail-soft: ante error, False.
+        Evalúa el daily loss cap y cachea el resultado detallado en
+        self._daily_loss_cap_status. Retorna True cuando el P&L realizado +
+        no-realizado del día (sobre capital nocional = budget_per_trade ×
+        max_positions) es <= self._daily_loss_cap_pct. Fail-soft: ante error,
+        False.
 
         El cap se setea desde el modal Config (negativo, p.ej. -5 → frena
         cuando perdés 5% del capital nocional del día).
+
+        Side-effect: escribe en self._daily_loss_cap_status un dict con:
+            hit, pnl_pct, realized, unrealized, cap, nominal_equity,
+            n_open, n_trades_today, ts
+        Esto lo consume el state publisher (dashboard-visible) y el caller
+        que loguea con contexto rico.
         """
+        status = {
+            "hit":            False,
+            "pnl_pct":        0.0,
+            "realized":       0.0,
+            "unrealized":     0.0,
+            "cap":            float(self._daily_loss_cap_pct),
+            "nominal_equity": 0.0,
+            "n_open":         0,
+            "n_trades_today": 0,
+            "ts":             time.time(),
+            "error":          None,
+        }
         try:
             cap = float(self._daily_loss_cap_pct)
             if cap >= 0:
                 # No configurado o valor inválido → sin cap
+                self._daily_loss_cap_status = status
                 return False
 
             budget = float(self._budget_per_trade or 0) or 200.0
             nominal_equity = budget * max(1, int(self._max_positions))
+            status["nominal_equity"] = nominal_equity
             if nominal_equity <= 0:
+                self._daily_loss_cap_status = status
                 return False
 
             # Realized: desde paper_trades del día
             trades = self._read_paper_trades()
+            status["n_trades_today"] = len(trades)
             realized = self._calc_pnl(trades).get("total_pnl", 0.0)
 
             # Unrealized: posiciones abiertas con current/entry
+            # (En paper mode el current_price no se refresca post-open; en live
+            # viene de Schwab vía options_trader.get_positions.)
             unrealized = 0.0
+            n_open = 0
             for pos in self._open_positions:
+                n_open += 1
                 entry   = float(pos.get("entry_price", 0) or 0)
                 current = float(pos.get("current_price", 0) or 0)
                 qty     = int(pos.get("contracts", pos.get("qty", 1)) or 1)
@@ -1337,9 +1930,20 @@ class EoloV2:
 
             pnl_total = realized + unrealized
             pnl_pct   = pnl_total / nominal_equity * 100.0
-            return pnl_pct <= cap
+
+            status.update({
+                "hit":        pnl_pct <= cap,
+                "pnl_pct":    pnl_pct,
+                "realized":   realized,
+                "unrealized": unrealized,
+                "n_open":     n_open,
+            })
+            self._daily_loss_cap_status = status
+            return status["hit"]
         except Exception as e:
             logger.debug(f"[EOLO v2] _is_daily_loss_cap_hit error: {e}")
+            status["error"] = str(e)
+            self._daily_loss_cap_status = status
             return False
 
     async def _check_exit_conditions(self):
@@ -1645,6 +2249,27 @@ class EoloV2:
                 else:
                     logger.error("[COMMANDS] Loop no disponible para close_all")
 
+            elif cmd_type == "force_theta_entry":
+                # Fuerza una entrada inmediata ignorando la ventana horaria.
+                # Útil para testing fuera de la ventana 10:00-10:45.
+                tickers = cmd.get("tickers") or THETA_TICKERS
+                logger.warning(f"[COMMANDS] FORCE_THETA_ENTRY para {tickers}")
+                self._theta_force_entry = True
+                loop = getattr(self, "_loop", None)
+                if loop is not None:
+                    async def _force_entries():
+                        try:
+                            for t in tickers:
+                                chain = self._last_chain.get(t)
+                                if chain:
+                                    logger.info(f"[COMMANDS] force_theta_entry: scan {t}")
+                                    await self._run_theta_harvest(t, chain)
+                                else:
+                                    logger.warning(f"[COMMANDS] sin chain para {t} — skip")
+                        finally:
+                            self._theta_force_entry = False   # reset DESPUÉS de correr
+                    asyncio.run_coroutine_threadsafe(_force_entries(), loop)
+
             else:
                 logger.warning(f"[COMMANDS] Tipo desconocido: {cmd_type}")
 
@@ -1901,6 +2526,13 @@ class EoloV2:
             # P&L desde CSV de paper trades
             paper_trades = self._read_paper_trades()
 
+            # Refrescar snapshot del daily loss cap antes de publicar
+            # (side-effect: actualiza self._daily_loss_cap_status).
+            try:
+                self._is_daily_loss_cap_hit()
+            except Exception as e:
+                logger.debug(f"[EOLO v2] dlc refresh en state publish falló: {e}")
+
             # Schedule status — dashboard usa esto para mostrar el banner
             # "Pause time limit" cuando is_within_window=False.
             from eolo_common.trading_hours import format_schedule_for_api
@@ -1929,6 +2561,10 @@ class EoloV2:
                     "auto_close_et":           self._schedule.auto_close.strftime("%H:%M"),
                     "trading_hours_enabled":   self._schedule.enabled,
                 },
+                # Daily loss cap snapshot — dashboard lo usa para mostrar
+                # pnl real vs cap + estado (HIT / armed / disabled).
+                # Poblado en cada _is_daily_loss_cap_hit() call.
+                "daily_loss_cap": self._daily_loss_cap_status or {},
                 "active_tickers": sorted(self._active_tickers),
 
                 # Quotes en tiempo real
@@ -2010,6 +2646,33 @@ class EoloV2:
                     "paper_positions": self._claude_bot_positions,
                     "available":     self.claude_bot is not None,
                 },
+
+                # ── Theta Harvest state ───────────────────────────
+                "theta": {
+                    "positions":    self._theta_positions,
+                    "slots": {
+                        t: {str(k): v for k, v in s.items()}
+                        for t, s in self._theta_slots.items()
+                    },
+                    "stats":        {
+                        k: v for k, v in self._theta_stats.items()
+                        if not k.startswith("_")   # ocultar _wins/_losses del dashboard
+                    },
+                    "pnl_history":  self._theta_pnl_history[-80:],
+                    "macro":        self._theta_macro_status,
+                    "pivots": {
+                        t: {
+                            "consensus_risk": getattr(r, "consensus_risk", None),
+                            "delta_min":      getattr(r, "delta_min", None),
+                            "delta_max":      getattr(r, "delta_max", None),
+                            "atr_gate_hit":   getattr(r, "atr_gate_hit", None),
+                            "price":          getattr(r, "price", None),
+                        }
+                        for t, r in self._theta_pivot_cache.items()
+                    },
+                    "tick_ad":      self._theta_tick_ad,
+                    "enabled":      self._theta_harvest_enabled,
+                },
             }
 
             # 1. JSON local
@@ -2030,20 +2693,45 @@ class EoloV2:
     def _write_firestore(self, state: dict):
         """Escribe el estado en Firestore (corre en thread separado).
 
-        Firestore no acepta ciertos tipos (numpy.int64/float64, set, bytes, etc).
-        Sanitizamos el state recursivamente a tipos nativos de Python antes de
-        enviarlo. Si igual falla, logueamos traceback completo con la sub-ruta
-        problemática para poder diagnosticar.
+        CRITICAL FIX (2026-04-24):
+        - Detecta y elimina valores NaN/Infinity (Firestore los rechaza)
+        - Elimina campos stats si causa problemas
+        - Maneja dicts anidados profundos que Firestore rechaza
         """
         try:
             from google.cloud import firestore as _fs
             clean = _sanitize_for_firestore(state)
+
+            # Si clean quedó None o vacío, no hay nada que escribir
+            if not clean or (isinstance(clean, dict) and not clean):
+                logger.debug("[DASHBOARD] State vacío después de sanitización, skip write")
+                return
+
             db  = _fs.Client()
             doc = db.collection("eolo-options-state").document("current")
             doc.set(clean)
             logger.debug("[DASHBOARD] State escrito en Firestore ✅")
+
         except Exception as e:
             import traceback
+            error_str = str(e)
+
+            # Si el error menciona 'stats', reintenta sin ese campo
+            if "stats" in error_str.lower() and isinstance(state, dict):
+                try:
+                    logger.warning("[DASHBOARD] Error con stats field, reintentando sin él...")
+                    state_no_stats = {k: v for k, v in state.items() if k != "stats"}
+                    clean = _sanitize_for_firestore(state_no_stats)
+                    if clean:
+                        db  = _fs.Client()
+                        doc = db.collection("eolo-options-state").document("current")
+                        doc.set(clean)
+                        logger.info("[DASHBOARD] State escrito sin stats field ✅")
+                        return
+                except Exception as e2:
+                    logger.error(f"[DASHBOARD] Reintento también falló: {e2}")
+
+            # Logging completo del error original
             bad = _find_unserializable_path(state)
             logger.error(
                 f"[DASHBOARD] Firestore write error: {type(e).__name__}: {e} "
@@ -2051,20 +2739,90 @@ class EoloV2:
             )
 
     def _read_paper_trades(self) -> list[dict]:
-        """Lee el CSV de paper trades del día."""
-        csv_path = os.path.join(BASE_DIR, "paper_trades_log.csv")
-        if not os.path.exists(csv_path):
-            return []
+        """
+        Lee paper trades del día — HYBRID Firestore (autoritativo) + CSV local (fallback).
+
+        El CSV `paper_trades_log.csv` vive en el fs efímero de Cloud Run: se
+        borra en cada redeploy. Antes de este fix, tras un redeploy el cap
+        diario "se olvidaba" del P&L realizado acumulado porque _calc_pnl
+        leía solo CSV. Ahora:
+          1. Primero lee eolo-options-trades/{YYYY-MM-DD} de Firestore
+             (todos los trades del día, sobreviven redeploys).
+          2. Luego merge con CSV local (para trades que todavía no hicieron
+             round-trip a Firestore — rare, pero cubre el gap).
+          3. Dedup por order_id. Si el order_id no está, usa key compuesta.
+          4. Sort por timestamp ascendente.
+          5. Normaliza strike a `str(float(...))` para que el tuple key de
+             _calc_pnl empareje BUY/SELL aunque vengan de fuentes distintas.
+        Ante error en cualquiera de las dos fuentes, fallback a la otra.
+        """
+        def _norm_strike(v) -> str:
+            try:
+                return str(float(v)) if v is not None and v != "" else ""
+            except (ValueError, TypeError):
+                return str(v) if v is not None else ""
+
+        def _normalize(t: dict) -> dict:
+            return {
+                "timestamp":   str(t.get("timestamp") or ""),
+                "order_id":    str(t.get("order_id") or ""),
+                "action":      str(t.get("action") or ""),
+                "ticker":      str(t.get("ticker") or ""),
+                "option_type": str(t.get("option_type") or ""),
+                "expiration":  str(t.get("expiration") or ""),
+                "strike":      _norm_strike(t.get("strike")),
+                "contracts":   t.get("contracts", 0) or 0,
+                "limit_price": t.get("limit_price") if t.get("limit_price") not in (None, "") else "MARKET",
+                "symbol":      str(t.get("symbol") or ""),
+                "strategy":    str(t.get("strategy") or ""),
+                "reason":      str(t.get("reason") or ""),
+                "pnl_usd":     t.get("pnl_usd"),
+                "pnl_pct":     t.get("pnl_pct"),
+            }
+
+        trades_by_key: dict[str, dict] = {}
+
+        # 1. Firestore (autoritativo — sobrevive redeploys)
         try:
-            import csv
-            trades = []
-            with open(csv_path, newline="") as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    trades.append(dict(row))
-            return trades
-        except Exception:
-            return []
+            from google.cloud import firestore as _fs
+            project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
+            db = _fs.Client(project=project_id)
+            today = datetime.now().strftime("%Y-%m-%d")
+            doc = db.collection("eolo-options-trades").document(today).get()
+            if doc.exists:
+                for doc_key, t in (doc.to_dict() or {}).items():
+                    if not isinstance(t, dict):
+                        continue
+                    normalized = _normalize(t)
+                    # Dedup key: order_id si existe; si no, la clave del doc
+                    # Firestore ({ts}_{ticker}_{action})
+                    dedup_key = normalized["order_id"] or doc_key
+                    trades_by_key[dedup_key] = normalized
+        except Exception as e:
+            logger.debug(f"[EOLO v2] _read_paper_trades Firestore read error: {e}")
+
+        # 2. CSV local (fallback para gap post-write local / pre-write FS)
+        csv_path = os.path.join(BASE_DIR, "paper_trades_log.csv")
+        if os.path.exists(csv_path):
+            try:
+                import csv as _csv
+                with open(csv_path, newline="") as f:
+                    reader = _csv.DictReader(f)
+                    for row in reader:
+                        normalized = _normalize(dict(row))
+                        dedup_key = (
+                            normalized["order_id"]
+                            or f"{normalized['timestamp']}_{normalized['ticker']}_{normalized['action']}"
+                        )
+                        # Solo agregar si Firestore no lo tiene (Firestore gana)
+                        if dedup_key not in trades_by_key:
+                            trades_by_key[dedup_key] = normalized
+            except Exception as e:
+                logger.debug(f"[EOLO v2] _read_paper_trades CSV read error: {e}")
+
+        trades = list(trades_by_key.values())
+        trades.sort(key=lambda t: t.get("timestamp", ""))
+        return trades
 
     def _calc_pnl(self, trades: list[dict]) -> dict:
         """Calcula P&L de paper trades (BUY → SELL_TO_CLOSE pairs)."""
