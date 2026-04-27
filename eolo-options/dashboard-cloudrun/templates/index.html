@@ -400,6 +400,51 @@
   }
 
   /* ══════════════════════════════════════════
+     ESTRATEGIAS — PANEL DE CONTROL
+  ══════════════════════════════════════════ */
+  .strat-group-block {
+    margin-bottom: 16px;
+  }
+  .strat-group-title {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--muted);
+    margin-bottom: 8px; padding-bottom: 4px;
+    border-bottom: 1px solid var(--border);
+  }
+  .strat-chips {
+    display: flex; flex-wrap: wrap; gap: 6px;
+  }
+  .strat-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 11px; border-radius: 5px; cursor: pointer;
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
+    font-size: 0.72rem; font-weight: 600;
+    border: 1px solid var(--border);
+    background: rgba(48,54,61,0.3);
+    color: var(--muted);
+    transition: all 0.12s ease;
+    user-select: none;
+  }
+  .strat-chip:hover { transform: translateY(-1px); opacity: .9; }
+  .strat-chip .s-dot {
+    width: 6px; height: 6px; border-radius: 50%; background: var(--muted);
+    flex-shrink: 0;
+  }
+  .strat-chip.on {
+    border-color: rgba(63,185,80,.45);
+    background: rgba(63,185,80,.10);
+    color: var(--green);
+  }
+  .strat-chip.on .s-dot {
+    background: var(--green);
+    box-shadow: 0 0 5px rgba(63,185,80,.6);
+  }
+  .strat-chip.off {
+    border-color: var(--border); background: transparent; color: var(--dim);
+  }
+  .strat-chip.off .s-dot { background: var(--dim); }
+
+  /* ══════════════════════════════════════════
      SEÑALES v1 — MATRIX
   ══════════════════════════════════════════ */
   #signals-grid {
@@ -1062,6 +1107,14 @@
       <div class="tsel-chips" id="tsel-chips-wheel"></div>
     </div>
   </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     ESTRATEGIAS — PANEL DE CONTROL
+══════════════════════════════════════════ -->
+<div class="section" id="strat-control-section">
+  <h2>🎛️ Estrategias Activas <span class="hint">Click para activar/desactivar. Cambios en vivo sin reinicio.</span></h2>
+  <div id="strat-groups-wrap"></div>
 </div>
 
 <!-- ══════════════════════════════════════════
@@ -1823,6 +1876,7 @@ function render() {
   populateFilters();
   updateTrades();
   updateThetaHarvest();
+  renderStratPanel();
   updateStatusbar();
 }
 
@@ -2768,6 +2822,67 @@ async function setAllTickers(group, value) {
     if (r.ok) toast(`${value ? '🟢 Todas ON' : '⚪ Todas OFF'} en ${group}`, 'info');
     else toast('Error guardando cambio', 'error');
   } catch (e) { toast('Error de red: ' + e.message, 'error'); }
+}
+
+// ══════════════════════════════════════════
+// ESTRATEGIAS — PANEL DE CONTROL
+// ══════════════════════════════════════════
+const STRAT_GROUPS = [
+  { label: '⚡ Clásicas',    keys: ['ema_crossover','gap_fade','rsi_sma200','hh_ll','ema_tsi','vwap_rsi','bollinger','orb','supertrend','ha_cloud','squeeze','macd_bb','vela_pivot'] },
+  { label: '📊 Nivel 1',     keys: ['rvol_breakout','stop_run','vwap_zscore','volume_reversal_bar','anchor_vwap','obv_mtf','tsv','vw_macd','opening_drive'] },
+  { label: '🌐 Nivel 2 (Macro)', keys: ['vix_mean_rev','vix_correlation','vix_squeeze','tick_trin_fade','vrp_intraday'] },
+  { label: '🔷 Suite v3',    keys: ['ema_3_8','ema_8_21','macd_accel','volume_breakout','buy_pressure','sell_pressure','vwap_momentum','orb_v3','donchian_turtle','bulls_bsp','net_bsv'] },
+  { label: '🏆 Combos',      keys: ['combo1_ema_scalper','combo2_rubber_band','combo3_nino_squeeze','combo4_slimribbon','combo5_btd','combo6_fractalccix','combo7_campbell'] },
+  { label: '🌾 Theta Harvest', keys: ['theta_harvest'] },
+];
+
+let stratEnabled = {};   // copia local del estado
+
+function renderStratPanel() {
+  const wrap = document.getElementById('strat-groups-wrap');
+  if (!wrap) return;
+  const enabled = state.strategies_enabled || {};
+  // actualizar copia local solo si viene del state (para no sobreescribir optimistic updates)
+  Object.assign(stratEnabled, enabled);
+
+  wrap.innerHTML = STRAT_GROUPS.map(g => `
+    <div class="strat-group-block">
+      <div class="strat-group-title">${g.label}</div>
+      <div class="strat-chips">
+        ${g.keys.map(k => {
+          const on = stratEnabled[k] !== false;   // default true si no está en el dict
+          return `<div class="strat-chip ${on ? 'on' : 'off'}" onclick="toggleStrategy('${k}')">
+            <div class="s-dot"></div>${k.replace(/_/g,' ')}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function toggleStrategy(key) {
+  const cur = stratEnabled[key] !== false;
+  const next = !cur;
+  stratEnabled[key] = next;
+  renderStratPanel();   // optimistic update
+  try {
+    const r = await fetch('/api/toggle-strategy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy: key, enabled: next }),
+    });
+    if (r.ok) {
+      toast(`${next ? '🟢' : '⚫'} ${key.replace(/_/g,' ')} ${next ? 'activada' : 'desactivada'}`, 'info');
+    } else {
+      stratEnabled[key] = cur;   // revertir
+      renderStratPanel();
+      toast('Error guardando estrategia', 'error');
+    }
+  } catch (e) {
+    stratEnabled[key] = cur;
+    renderStratPanel();
+    toast('Error de red: ' + e.message, 'error');
+  }
 }
 
 // ══════════════════════════════════════════
