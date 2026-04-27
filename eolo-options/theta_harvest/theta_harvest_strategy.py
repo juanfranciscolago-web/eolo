@@ -85,9 +85,9 @@ TRANCHE_PROFIT_TARGETS: list = [0.35, 0.65, None]
 
 # Hora de entrada diaria (ET, formato decimal)
 # 9:45 ET: evitar los primeros 15 min de alta volatilidad post-apertura.
-# Ventana hasta 14:00 ET: da suficiente margen para que opere sin forzar entradas tardías.
+# Ventana hasta 12:00 ET: evita entradas tardías de alto riesgo.
 ENTRY_HOUR_ET        = 9.75   # 9:45 ET — tras el gap fill inicial de apertura
-ENTRY_WINDOW_MINUTES = 255    # 255 min = 9:45 → 14:00 ET (ventana amplia)
+ENTRY_WINDOW_MINUTES = 135    # 135 min = 9:45 → 12:00 ET (sin entradas después del mediodía)
 
 # EOD force-close — diferenciado por DTE
 # 0DTE: gamma explota en los últimos 30 min → cerrar a las 15:30 ET.

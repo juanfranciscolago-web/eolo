@@ -37,8 +37,8 @@ import csv
 import os
 import re
 import time
-from datetime import datetime
-from typing import Literal
+from datetime import datetime, timezone
+from typing import Literal, Optional
 from loguru import logger
 
 try:
@@ -49,6 +49,14 @@ except ImportError:
 import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from helpers import get_access_token
+
+# Shared trade-enrichment helper (Phase 1 — 2026-04-21).
+# Produce VIX/session/slippage/counter fields en cada trade para que
+# eolo-sheets-sync + Strategy_Stats tengan las columnas analíticas.
+try:
+    from eolo_common.trade_enrichment import build_enrichment  # type: ignore
+except Exception:
+    build_enrichment = None  # fallback: sin enrichment si no está disponible
 
 # ── Constantes ────────────────────────────────────────────
 SCHWAB_TRADER_BASE = "https://api.schwabapi.com/trader/v1"
@@ -71,9 +79,9 @@ PAPER_LOG_FILE = os.path.join(os.path.dirname(__file__), "..", "paper_trades_log
 # Patrón idéntico a v1 (eolo-trades/YYYY-MM-DD con key = {ts}_{ticker}_{action}).
 FIRESTORE_TRADES_COLLECTION = "eolo-options-trades"
 
-# Telegram (opcional — mismo setup que v1)
-TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "")
-TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
+# Telegram — mismo token/chat que V1 y Crypto
+TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "8207559403:AAGwiQS15APh3ivFsAUUu_DCMbltMoDYV-o")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "5802788501")
 TELEGRAM_ENABLED = bool(TELEGRAM_TOKEN and TELEGRAM_CHAT_ID)
 
 
@@ -123,11 +131,23 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
                      expiration: str, strike: float,
                      strategy: str = "", reason: str = "",
                      pnl_usd: float | None = None,
-                     pnl_pct: float | None = None) -> str:
+                     pnl_pct: float | None = None,
+                     macro_feeds=None,
+                     entry_price_override: Optional[float] = None,
+                     opened_at_ts: Optional[float] = None,
+                     expected_price: Optional[float] = None,
+                     fill_price: Optional[float] = None) -> str:
     """
     Loguea una orden paper en CSV + Firestore y retorna un order_id fake.
     Si la orden es SELL_TO_CLOSE el caller puede pasar pnl_usd/pnl_pct ya calculados
     para que queden persistidos junto al trade.
+
+    Enriquecimiento (Phase 1 — 2026-04-21):
+        macro_feeds          → VIX snapshot + bucket
+        entry_price_override → precio de apertura (SELL_TO_CLOSE)
+        opened_at_ts         → epoch seconds de la apertura (SELL_TO_CLOSE)
+        expected_price       → precio esperado (para slippage live)
+        fill_price           → precio de llenado (para slippage live)
     """
     order_id  = f"PAPER-{int(time.time() * 1000) % 10_000_000:07d}"
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -161,8 +181,33 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
     except Exception as e:
         logger.warning(f"[PAPER] CSV log error: {e}")
 
+    # Enrichment (Phase 1 — 2026-04-21):
+    # build_enrichment() produce vix/session/slippage/counter fields. En paper
+    # simula slippage ~2bps. El caller pasa macro_feeds + opened_at_ts cuando
+    # los tiene (SELL_TO_CLOSE); en BUY_TO_OPEN solo mete ts+session+vix+counter.
+    side = "BUY" if "BUY" in action else "SELL"
+    enrich: dict = {}
+    if build_enrichment is not None:
+        try:
+            enrich = build_enrichment(
+                ts_utc          = datetime.now(timezone.utc),
+                asset_class     = "stock",
+                side            = side,  # BUY / SELL
+                mode            = "PAPER",
+                expected_price  = expected_price if expected_price is not None else limit,
+                fill_price      = fill_price     if fill_price     is not None else limit,
+                macro_feeds     = macro_feeds,
+                spy_ret_5d_fn   = None,
+                entry_price     = entry_price_override,
+                opened_at_ts    = opened_at_ts,
+                reason          = reason or "",
+                counter_key     = "eolo_v2",
+            ) or {}
+        except Exception as e:
+            logger.debug(f"[PAPER] build_enrichment falló: {e}")
+
     # Firestore (daily doc) — mismo schema que v1 pero con campos de opciones
-    _persist_trade_to_firestore({
+    trade_payload = {
         "timestamp":   timestamp,
         "mode":        "PAPER",
         "action":      action,
@@ -179,7 +224,10 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
         "order_id":    order_id,
         "pnl_usd":     pnl_usd,
         "pnl_pct":     pnl_pct,
-    })
+    }
+    if enrich:
+        trade_payload.update(enrich)
+    _persist_trade_to_firestore(trade_payload)
 
     # Telegram
     mode_icon = "📄 PAPER"
@@ -210,16 +258,23 @@ class OptionsTrader:
       - close_all_positions() limpia el estado paper
     """
 
-    def __init__(self, paper: bool = PAPER_TRADING):
+    def __init__(self, paper: bool = PAPER_TRADING, macro_feeds=None):
         self.paper         = paper
         self._account_id   = None
         self._open_positions: dict[str, dict] = {}   # order_id → position_dict
         # Paper trading: estado en memoria
         self._paper_positions: list[dict] = []        # list de dicts como get_positions()
         self._paper_order_counter = 0
+        # MacroFeeds inyectado desde eolo_v2_main (para VIX snapshot en enrichment).
+        # Se puede setear después con set_macro_feeds(); None → campos VIX quedan vacíos.
+        self._macro_feeds = macro_feeds
 
         mode = "📄 PAPER" if self.paper else "💰 LIVE"
         logger.info(f"[TRADER] Modo: {mode}")
+
+    def set_macro_feeds(self, macro_feeds):
+        """Inyecta MacroFeeds post-init (eolo_v2_main lo crea async)."""
+        self._macro_feeds = macro_feeds
 
     # ── Autenticación y cuenta ─────────────────────────────
 
@@ -327,11 +382,14 @@ class OptionsTrader:
         strike:     float,
         contracts:  int   = 1,
         limit:      float | None = None,
+        strategy:   str = "",
+        reason:     str = "",
     ) -> str | None:
         """Cierra una posición larga de call (SELL TO CLOSE)."""
         return await self._place_single(
             ticker, expiration, strike, "call",
-            "SELL_TO_CLOSE", contracts, limit
+            "SELL_TO_CLOSE", contracts, limit,
+            strategy=strategy, reason=reason,
         )
 
     async def close_long_put(
@@ -341,11 +399,14 @@ class OptionsTrader:
         strike:     float,
         contracts:  int   = 1,
         limit:      float | None = None,
+        strategy:   str = "",
+        reason:     str = "",
     ) -> str | None:
         """Cierra una posición larga de put (SELL TO CLOSE)."""
         return await self._place_single(
             ticker, expiration, strike, "put",
-            "SELL_TO_CLOSE", contracts, limit
+            "SELL_TO_CLOSE", contracts, limit,
+            strategy=strategy, reason=reason,
         )
 
     # ── Debit Spread ───────────────────────────────────────
@@ -400,6 +461,161 @@ class OptionsTrader:
 
         return await self._submit_order(account_id, order, f"DEBIT_SPREAD {ticker}")
 
+    # ── Credit Spreads (Theta Harvest) ────────────────────
+
+    async def open_credit_spread(
+        self,
+        ticker:       str,
+        expiration:   str,
+        spread_type:  str,          # "put_credit_spread" | "call_credit_spread"
+        short_strike: float,        # strike que VENDEMOS (más ATM)
+        long_strike:  float,        # strike de protección (más OTM)
+        contracts:    int   = 1,
+        net_credit:   float | None = None,
+        strategy:     str   = "THETA_HARVEST",
+        reason:       str   = "",
+    ) -> str | None:
+        """
+        Abre un credit spread (theta harvest):
+          - SELL TO OPEN short_strike (cobra prima)
+          - BUY  TO OPEN long_strike  (protección)
+        Net credit → orden NET_CREDIT.
+
+        put_credit_spread : short_strike > long_strike  (put OTM vendida)
+        call_credit_spread: short_strike < long_strike  (call OTM vendida)
+        """
+        opt_type     = "put" if "put" in spread_type else "call"
+        short_symbol = self.build_occ_symbol(ticker, expiration, opt_type, short_strike)
+        long_symbol  = self.build_occ_symbol(ticker, expiration, opt_type, long_strike)
+
+        tag = f"CREDIT_SPREAD {'PUT' if opt_type == 'put' else 'CALL'} {ticker} K={short_strike}/{long_strike} exp={expiration}"
+
+        if self.paper:
+            trade_id = f"PAPER_{ticker}_CSPREAD_{short_strike}_{expiration}_{int(asyncio.get_event_loop().time())}"
+            _log_paper_trade(
+                action=f"SELL_TO_OPEN_SPREAD ({spread_type})",
+                symbol=short_symbol,
+                ticker=ticker,
+                contracts=contracts,
+                limit=net_credit or 0,
+                option_type="put" if "put" in spread_type else "call",
+                expiration=expiration,
+                strike=short_strike,
+                strategy=strategy,
+                reason=reason,
+            )
+            logger.info(
+                f"[TRADER PAPER] {tag} | credit=${net_credit:.2f} | "
+                f"reason={reason[:80]}"
+            )
+            # Persistir en posiciones paper (short leg como referencia del spread)
+            self._update_paper_positions(
+                instruction = "BUY_TO_OPEN",   # reutiliza el tracker de posiciones
+                ticker      = ticker,
+                expiration  = expiration,
+                strike      = short_strike,
+                opt_type    = opt_type,
+                contracts   = contracts,
+                entry_price = net_credit,       # crédito cobrado (precio efectivo)
+                order_id    = trade_id,
+            )
+            return trade_id
+
+        # ── Live ──────────────────────────────────────────
+        account_id = await asyncio.get_event_loop().run_in_executor(
+            None, self.get_account_id
+        )
+        order = {
+            "orderType":          "NET_CREDIT",
+            "session":            "NORMAL",
+            "duration":           "DAY",
+            "orderStrategyType":  "SINGLE",
+            "orderLegCollection": [
+                {
+                    "instruction": "SELL_TO_OPEN",
+                    "quantity":    contracts,
+                    "instrument":  {"symbol": short_symbol, "assetType": "OPTION"},
+                },
+                {
+                    "instruction": "BUY_TO_OPEN",
+                    "quantity":    contracts,
+                    "instrument":  {"symbol": long_symbol, "assetType": "OPTION"},
+                },
+            ],
+        }
+        if net_credit:
+            order["price"] = round(net_credit, 2)
+        else:
+            order["orderType"] = "MARKET"
+
+        return await self._submit_order(account_id, order, tag)
+
+    async def close_spread(
+        self,
+        ticker:       str,
+        expiration:   str,
+        spread_type:  str,
+        short_strike: float,
+        long_strike:  float,
+        contracts:    int   = 1,
+        net_debit:    float | None = None,
+        reason:       str   = "",
+    ) -> str | None:
+        """
+        Cierra un credit spread existente:
+          - BUY  TO CLOSE short_strike
+          - SELL TO CLOSE long_strike
+        Es una orden NET_DEBIT (pagamos para cerrar).
+        """
+        opt_type     = "put" if "put" in spread_type else "call"
+        short_symbol = self.build_occ_symbol(ticker, expiration, opt_type, short_strike)
+        long_symbol  = self.build_occ_symbol(ticker, expiration, opt_type, long_strike)
+
+        tag = f"CLOSE_CSPREAD {ticker} K={short_strike}/{long_strike} exp={expiration}"
+
+        if self.paper:
+            trade_id = f"PAPER_{ticker}_CLOSE_CSPREAD_{short_strike}_{expiration}_{int(asyncio.get_event_loop().time())}"
+            _log_paper_trade(
+                action=f"BUY_TO_CLOSE_SPREAD ({reason[:40]})",
+                symbol=short_symbol,
+                ticker=ticker,
+                contracts=contracts,
+                price=net_debit or 0,
+                strategy="theta_harvest",
+                reason=reason,
+            )
+            logger.info(f"[TRADER PAPER] {tag} | debit=${net_debit:.2f if net_debit else 0:.2f} | {reason[:80]}")
+            return trade_id
+
+        # ── Live ──────────────────────────────────────────
+        account_id = await asyncio.get_event_loop().run_in_executor(
+            None, self.get_account_id
+        )
+        order = {
+            "orderType":          "NET_DEBIT",
+            "session":            "NORMAL",
+            "duration":           "DAY",
+            "orderStrategyType":  "SINGLE",
+            "orderLegCollection": [
+                {
+                    "instruction": "BUY_TO_CLOSE",
+                    "quantity":    contracts,
+                    "instrument":  {"symbol": short_symbol, "assetType": "OPTION"},
+                },
+                {
+                    "instruction": "SELL_TO_CLOSE",
+                    "quantity":    contracts,
+                    "instrument":  {"symbol": long_symbol, "assetType": "OPTION"},
+                },
+            ],
+        }
+        if net_debit:
+            order["price"] = round(net_debit, 2)
+        else:
+            order["orderType"] = "MARKET"
+
+        return await self._submit_order(account_id, order, tag)
+
     # ── Orden genérica ─────────────────────────────────────
 
     async def _place_single(
@@ -420,8 +636,11 @@ class OptionsTrader:
         if self.paper:
             # Si es cierre, calculamos P&L contra la posición abierta ANTES
             # de loguear, así queda persistido junto al trade en Firestore/CSV.
+            # También rescatamos entry_price + opened_at_ts para enrichment.
             pnl_usd = None
             pnl_pct = None
+            entry_price_override: Optional[float] = None
+            opened_at_ts:         Optional[float] = None
             if instruction == "SELL_TO_CLOSE":
                 for p in self._paper_positions:
                     if (p["ticker"] == ticker and p["expiration"] == expiration
@@ -431,6 +650,8 @@ class OptionsTrader:
                         if entry:
                             pnl_pct = round((current - entry) / entry * 100, 2)
                         pnl_usd = round((current - entry) * p["contracts"] * 100, 2)
+                        entry_price_override = float(entry) if entry else None
+                        opened_at_ts         = p.get("opened_at_ts")
                         break
 
             order_id = _log_paper_trade(
@@ -446,6 +667,9 @@ class OptionsTrader:
                 reason      = reason,
                 pnl_usd     = pnl_usd,
                 pnl_pct     = pnl_pct,
+                macro_feeds = self._macro_feeds,
+                entry_price_override = entry_price_override,
+                opened_at_ts         = opened_at_ts,
             )
             # Actualizar posiciones paper en memoria
             self._update_paper_positions(
@@ -483,6 +707,8 @@ class OptionsTrader:
             total_est = round((limit or 0) * contracts * 100, 2)
             pnl_usd = None
             pnl_pct = None
+            entry_price_override: Optional[float] = None
+            opened_at_ts:         Optional[float] = None
             if instruction == "SELL_TO_CLOSE":
                 opened = self._open_positions.pop(symbol, None)
                 if opened:
@@ -491,6 +717,8 @@ class OptionsTrader:
                     if entry:
                         pnl_pct = round((current - entry) / entry * 100, 2)
                     pnl_usd = round((current - entry) * opened.get("contracts", contracts) * 100, 2)
+                    entry_price_override = float(entry) if entry else None
+                    opened_at_ts         = opened.get("opened_at_ts")
             elif instruction == "BUY_TO_OPEN":
                 self._open_positions[symbol] = {
                     "ticker":       ticker,
@@ -500,10 +728,33 @@ class OptionsTrader:
                     "contracts":    contracts,
                     "entry_price":  limit if limit is not None else 0,
                     "opened_at":    timestamp,
+                    "opened_at_ts": time.time(),  # epoch para hold_seconds en cierre
                     "order_id":     order_id,
                 }
 
-            _persist_trade_to_firestore({
+            # Enrichment LIVE — mismo helper que paper, modo LIVE usa slippage real.
+            side = "BUY" if "BUY" in instruction else "SELL"
+            enrich: dict = {}
+            if build_enrichment is not None:
+                try:
+                    enrich = build_enrichment(
+                        ts_utc          = datetime.now(timezone.utc),
+                        asset_class     = "stock",
+                        side            = side,
+                        mode            = "LIVE",
+                        expected_price  = limit,   # mid/limit que enviamos
+                        fill_price      = limit,   # Schwab no nos devuelve fill aquí; usar limit como proxy
+                        macro_feeds     = self._macro_feeds,
+                        spy_ret_5d_fn   = None,
+                        entry_price     = entry_price_override,
+                        opened_at_ts    = opened_at_ts,
+                        reason          = reason or "",
+                        counter_key     = "eolo_v2",
+                    ) or {}
+                except Exception as e:
+                    logger.debug(f"[LIVE] build_enrichment falló: {e}")
+
+            trade_payload = {
                 "timestamp":   timestamp,
                 "mode":        "LIVE",
                 "action":      instruction,
@@ -520,7 +771,10 @@ class OptionsTrader:
                 "order_id":    order_id,
                 "pnl_usd":     pnl_usd,
                 "pnl_pct":     pnl_pct,
-            })
+            }
+            if enrich:
+                trade_payload.update(enrich)
+            _persist_trade_to_firestore(trade_payload)
 
         return order_id
 
@@ -558,6 +812,7 @@ class OptionsTrader:
                 "unrealized_pnl":  0.0,
                 "unrealized_pnl_pct": 0.0,
                 "opened_at":       datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "opened_at_ts":    time.time(),  # epoch para hold_seconds en enrichment
             })
             logger.info(
                 f"[📄 PAPER] Posición abierta: {ticker} {opt_type.upper()} "
@@ -841,7 +1096,8 @@ class OptionsTrader:
         reason      = decision.get("reason", "")
         confidence  = decision.get("confidence", "")
         mp_type     = decision.get("mispricing_type") or ""
-        strategy    = mp_type if mp_type else f"CLAUDE_{confidence}" if confidence else "CLAUDE"
+        _raw_strat  = mp_type if mp_type else f"claude_{confidence.lower()}" if confidence else "claude_bot"
+        strategy    = _raw_strat.lower()
 
         if action == "BUY" and exp and strike:
             if opt_type == "call":
@@ -853,9 +1109,38 @@ class OptionsTrader:
 
         elif action == "SELL_TO_CLOSE" and exp and strike:
             if opt_type == "call":
-                return await self.close_long_call(ticker, exp, strike, contracts, limit)
+                return await self.close_long_call(ticker, exp, strike, contracts, limit,
+                                                   strategy=strategy, reason=reason)
             else:
-                return await self.close_long_put(ticker, exp, strike, contracts, limit)
+                return await self.close_long_put(ticker, exp, strike, contracts, limit,
+                                                  strategy=strategy, reason=reason)
+
+        elif action == "SELL_SPREAD":
+            # Credit spread — Theta Harvest
+            return await self.open_credit_spread(
+                ticker       = ticker,
+                expiration   = decision.get("expiration", ""),
+                spread_type  = decision.get("spread_type", "put_credit_spread"),
+                short_strike = decision.get("short_strike", 0),
+                long_strike  = decision.get("long_strike", 0),
+                contracts    = contracts,
+                net_credit   = decision.get("net_credit"),
+                strategy     = decision.get("strategy", "theta_harvest").lower(),
+                reason       = reason,
+            )
+
+        elif action == "CLOSE_SPREAD":
+            # Cierre de credit spread (profit/stop/time)
+            return await self.close_spread(
+                ticker       = ticker,
+                expiration   = decision.get("expiration", ""),
+                spread_type  = decision.get("spread_type", "put_credit_spread"),
+                short_strike = decision.get("short_strike", 0),
+                long_strike  = decision.get("long_strike", 0),
+                contracts    = contracts,
+                net_debit    = decision.get("close_debit"),
+                reason       = reason,
+            )
 
         else:
             return None

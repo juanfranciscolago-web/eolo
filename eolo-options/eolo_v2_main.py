@@ -1012,7 +1012,15 @@ class EoloV2:
         from datetime import date as _date
         today = _date.today().isoformat()
 
-        # ── 0. Inicializar / resetear slots ────────────────
+        # ── 0. Gate horario — solo operar dentro de sesión NYSE (9:30–16:00 ET)
+        #       Bloquea entradas en pre/post market y fines de semana.
+        #       El check de ventana interna (9:45–12:00) lo hace scan_theta_harvest;
+        #       este gate evita intentos fuera de sesión completamente.
+        if not self._is_within_trading_window():
+            logger.debug(f"[ThetaHarvest] {ticker} — fuera de sesión NYSE, skip")
+            return
+
+        # ── 0b. Inicializar / resetear slots ────────────────
         self._theta_init_slots(ticker, today)
 
         # ── 1. Macro news filter ───────────────────────────
@@ -2674,6 +2682,17 @@ class EoloV2:
                             "price":          getattr(r, "price", None),
                         }
                         for t, r in self._theta_pivot_cache.items()
+                    },
+                    # sector: dirección agregada del análisis sectorial (para el chart del dashboard)
+                    "sector": {
+                        t: {
+                            "direction":           getattr(getattr(r, "sector", None), "direction", None),
+                            "weighted_change_pct": getattr(getattr(r, "sector", None), "weighted_change_pct", None),
+                            "spread_type":         getattr(getattr(r, "sector", None), "spread_type", None),
+                            "top_movers":          getattr(getattr(r, "sector", None), "top_movers", []),
+                        }
+                        for t, r in self._theta_pivot_cache.items()
+                        if getattr(r, "sector", None) is not None
                     },
                     "tick_ad":      self._theta_tick_ad,
                     "enabled":      self._theta_harvest_enabled,
