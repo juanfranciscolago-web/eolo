@@ -781,7 +781,8 @@ class EoloV2:
             return
 
         # Ticker desactivado en los 3 grupos del selector → skip
-        if ticker not in self._active_tickers:
+        # Excepción: THETA_HARVEST_TICKERS siempre se procesan (aunque no estén en puts/calls/wheel)
+        if ticker not in self._active_tickers and ticker not in THETA_HARVEST_TICKERS:
             logger.debug(
                 f"[EOLO v2] {ticker} desactivado en el selector del dashboard — skip"
             )

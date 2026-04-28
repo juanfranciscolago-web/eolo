@@ -1014,6 +1014,59 @@ def api_strategy_stats():
         return jsonify({"error": str(e), "stats": {}}), 200
 
 
+@app.route("/daily-open-reset", methods=["GET", "POST"])
+def daily_open_reset():
+    """
+    Disparado por Cloud Scheduler a las 9:30am ET (lunes–viernes).
+    1. Setea close_all flag en Firestore (el bot lo ejecuta en el próximo ciclo)
+    2. Limpia el doc de trades de ayer en Firestore (P&L del día vuelve a $0)
+    3. Resetea daily loss cap en Firestore para que el bot pueda tradear de nuevo
+    4. Loguea el reset para auditoría
+
+    Idempotente: si no hay posiciones abiertas, el bot ignora el flag sin daño.
+    """
+    import time as _time
+    results = {}
+    db = get_db()
+
+    # ── 1. Setear close_all flag en Firestore ─────────────────
+    try:
+        doc = db.collection(CONFIG_COLLECTION).document(SETTINGS_DOC)
+        doc.set({
+            "close_all":    True,
+            "close_all_ts": datetime.now(EASTERN).isoformat(),
+        }, merge=True)
+        results["close_all_flag"] = "ok — bot ejecutará en próximo ciclo"
+    except Exception as e:
+        results["close_all_flag"] = f"error: {e}"
+
+    # ── 2. Limpiar P&L de ayer en Firestore ──────────────────
+    try:
+        yesterday = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
+        db.collection(TRADES_COLLECTION).document(yesterday).delete()
+        results["firestore_cleanup"] = f"eliminado eolo-trades/{yesterday}"
+    except Exception as e:
+        results["firestore_cleanup"] = f"error: {e}"
+
+    # ── 3. Resetear daily loss cap en Firestore ───────────────
+    try:
+        doc = db.collection(CONFIG_COLLECTION).document(SETTINGS_DOC)
+        doc.set({
+            "daily_loss_cap_triggered": False,
+            "daily_reset_ts":           _time.time(),
+            "daily_reset_at":           datetime.now(EASTERN).isoformat(),
+        }, merge=True)
+        results["daily_cap_reset"] = "ok"
+    except Exception as e:
+        results["daily_cap_reset"] = f"error: {e}"
+
+    from loguru import logger as _logger
+    _logger.warning(
+        f"[DAILY_OPEN_RESET] ✅ V1 Reset completado a las 9:30am ET | {results}"
+    )
+    return jsonify({"ok": True, "results": results}), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port, debug=False)

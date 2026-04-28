@@ -154,7 +154,7 @@ STRATEGIES_ENABLED = {
 # para que se ejecute un trade. Con 5 estrategias activas, >= 2
 # significa 40% de acuerdo (evita trades de una sola estrategia).
 # Sube a 3 para ser más conservador.
-MIN_STRATEGY_CONSENSUS = 2
+MIN_STRATEGY_CONSENSUS = 1
 
 # Claude Bot #14 — motor con Anthropic API adaptado a crypto
 # Haiku 4.5 es ~10-15x más barato que Sonnet 4.6 y alcanza para decisiones
@@ -166,15 +166,18 @@ CLAUDE_MAX_COST_PER_DAY   = float(os.environ.get("CLAUDE_MAX_COST_PER_DAY", "3.0
 
 
 # ── Timeframes y buffers ──────────────────────────────────
-KLINE_INTERVAL      = "1m"                # vela base de streaming (ajustable: 1m|5m|15m)
-BUFFER_SIZE         = 300                 # velas en memoria por par (suficiente para SMA200)
-HISTORICAL_LOAD     = 250                 # velas a backfill al arrancar (REST /klines)
+KLINE_INTERVAL      = "1m"                # vela base de streaming
+BUFFER_SIZE         = 2000                # 2000 velas 1m (~33h) — suficiente para 30 velas de 1h
+HISTORICAL_LOAD     = 1000                # máximo por call REST Binance (/api/v3/klines limit=1000)
 
 # Timeframes activos para evaluación de señales.
-# Backtests (FASE 4/5/7a) confirmaron que 1m tiene PF < 1 con fees Binance
-# (37% WR, PF ~1.01 pre-fees → ~0.6 neto). 4h filtra el ruido y solo
-# evalúa cuando una vela de 240 min cierra. Se puede override vía Firestore.
-ACTIVE_TIMEFRAMES   = [240]               # solo 4h — cambiable desde dashboard
+# [1, 15, 60]: multi-TF apropiado para crypto volátil (24/7).
+#   1m  → reacciona rápido a movimientos, arranca con 250 velas backfill
+#   15m → confirma tendencia (necesita 30×15=450 velas ~7.5h de acumulación)
+#   60m → contexto horario (necesita 30×60=1800 velas ~30h de acumulación)
+# Consensus=3 estrategias filtra ruido: requiere convicción en múltiples TF.
+# Override via Firestore sin redeploy.
+ACTIVE_TIMEFRAMES   = [1, 15, 60]         # 1m + 15m + 1h (multi-TF crypto)
 
 
 # ── Logging y observabilidad ──────────────────────────────

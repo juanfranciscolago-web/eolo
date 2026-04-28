@@ -149,6 +149,75 @@ def billing():
     }), 200
 
 
+@app.route("/daily-open-reset", methods=["GET", "POST"])
+def daily_open_reset():
+    """
+    Disparado por Cloud Scheduler a las 9:30am ET (lunes–viernes).
+    1. Cierra todas las posiciones abiertas (theta harvest + otras)
+    2. Limpia _theta_positions y _theta_slots → bot re-entra fresh
+    3. Limpia el doc de trades de ayer en Firestore (P&L del día vuelve a $0)
+    4. Loguea el reset para auditoría
+
+    Idempotente: si no hay posiciones abiertas, no hace nada dañino.
+    """
+    import asyncio as _asyncio
+    from datetime import datetime, timedelta, timezone
+    from google.cloud import firestore as _fs
+    import os as _os
+
+    bot = getattr(eolo_v2_main, "bot_instance", None)
+    if bot is None:
+        return jsonify({"ok": False, "error": "bot_instance no disponible aún"}), 503
+
+    results = {}
+
+    # ── 1. Cerrar todas las posiciones abiertas ───────────────
+    try:
+        loop = getattr(bot, "_loop", None)
+        if loop and loop.is_running():
+            future = _asyncio.run_coroutine_threadsafe(
+                bot._execute_close_all(reason="daily-open-reset"), loop
+            )
+            future.result(timeout=30)
+            results["close_all"] = "ok"
+        else:
+            results["close_all"] = "loop no disponible — skip"
+    except Exception as e:
+        results["close_all"] = f"error: {e}"
+
+    # ── 2. Limpiar estado de theta harvest ────────────────────
+    try:
+        bot._theta_positions.clear()
+        bot._theta_slots.clear()
+        bot._theta_stats = {"credit_total": 0, "closed_pnl": 0}
+        results["theta_reset"] = "ok"
+    except Exception as e:
+        results["theta_reset"] = f"error: {e}"
+
+    # ── 3. Limpiar P&L de ayer en Firestore ──────────────────
+    try:
+        project_id = _os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
+        db = _fs.Client(project=project_id)
+        yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
+        db.collection("eolo-options-trades").document(yesterday).delete()
+        results["firestore_cleanup"] = f"eliminado eolo-options-trades/{yesterday}"
+    except Exception as e:
+        results["firestore_cleanup"] = f"error: {e}"
+
+    # ── 4. Resetear daily loss cap status ─────────────────────
+    try:
+        bot._daily_loss_cap_status = {}
+        bot._daily_loss_cap_log_ts = 0.0
+        results["daily_cap_reset"] = "ok"
+    except Exception as e:
+        results["daily_cap_reset"] = f"error: {e}"
+
+    logger.warning(
+        f"[DAILY_OPEN_RESET] ✅ Reset completado a las 9:30am ET | {results}"
+    )
+    return jsonify({"ok": True, "results": results}), 200
+
+
 # ── Entry point local (dev) ───────────────────────────────
 # En Cloud Run se arranca con gunicorn; este if solo sirve para correr
 # `python main.py` en el Mac como alternativa a start_eolo.sh.

@@ -71,10 +71,11 @@ TICKER_CONFIG: dict[str, dict] = {
     },
 }
 
-# DTEs objetivo — reducido a los 3 mejores según backtest:
-#   DTE 0: PF 9.97 WR 96.7%  |  DTE 1: PF 17.82 WR 98.1%  |  DTE 2: PF 4.26 WR 79.7%
-#   DTE 3: PF 2.90 (descartado)  |  DTE 4: PF 1.79 (descartado)
-TARGET_DTES: list[int] = [0, 1, 2]
+# DTEs objetivo — todos los aprobados según backtest + instrucción always-in:
+#   DTE 0: PF 9.97 WR 96.7%  |  DTE 1: PF 17.82 WR 98.1%
+#   DTE 2: PF 4.26 WR 79.7%  |  DTE 3: PF 2.90 (activado por instrucción always-in)
+#   DTE 4: PF 1.79 (descartado — max_dte en TICKER_CONFIG limita a 4 si se reactiva)
+TARGET_DTES: list[int] = [0, 1, 2, 3]
 
 # Tranche profit targets — 3 contratos por spread, cada uno con distinto exit:
 #   T0: capturar 35% del crédito (exit rápido, income diario asegurado)
