@@ -3,3 +3,4 @@ gunicorn==21.2.0
 google-cloud-firestore==2.16.0
 protobuf==4.25.3
 loguru==0.7.0
+requests>=2.31.0

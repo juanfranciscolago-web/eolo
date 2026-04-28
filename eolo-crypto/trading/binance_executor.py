@@ -304,17 +304,20 @@ class BinanceExecutor:
 
     # ── Sizing ────────────────────────────────────────────
 
-    def _size_notional(self, current_price: float, balance_usdt: float) -> float:
+    def _size_notional(self, current_price: float, balance_usdt: float,
+                       size_mult: float = 1.0) -> float:
         """
         Calcula el notional USDT de la próxima orden. El MODE (PERCENT|FIXED)
         y el USDT fijo siguen viniendo de settings.py (no son editables desde
         el dashboard), pero el % efectivo viene de runtime_config para que
         el slider del dashboard tenga efecto sin redeploy.
+
+        size_mult : multiplicador externo (ej. Macro Regime Bridge). Default 1.0.
         """
         if settings.POSITION_SIZING_MODE == "FIXED":
-            return settings.POSITION_SIZE_USDT
+            return settings.POSITION_SIZE_USDT * max(0.1, float(size_mult))
         # PERCENT
-        return balance_usdt * (runtime_config.position_size_pct / 100.0)
+        return balance_usdt * (runtime_config.position_size_pct / 100.0) * max(0.1, float(size_mult))
 
     def _quantize(self, symbol: str, qty: float, price: float) -> tuple[float, float, float]:
         """Ajusta qty/price a stepSize/tickSize. Retorna (qty, price, notional)."""
@@ -341,10 +344,13 @@ class BinanceExecutor:
     # ── Entrada / salida ──────────────────────────────────
 
     def open_long(self, symbol: str, price: float, strategy: str,
-                  reason: str = "") -> dict | None:
+                  reason: str = "", size_mult: float = 1.0) -> dict | None:
         """
         Abre una posición long (BUY market) del tamaño configurado.
         Retorna el dict de la orden ejecutada o None si falló.
+
+        size_mult : multiplicador externo de sizing (ej. Macro Regime Bridge).
+                    Default 1.0 = sin cambio.
         """
         symbol = symbol.upper()
 
@@ -362,7 +368,7 @@ class BinanceExecutor:
             return None
 
         balance = self.get_balance_usdt()
-        notional = self._size_notional(price, balance)
+        notional = self._size_notional(price, balance, size_mult=size_mult)
         if notional > balance:
             logger.warning(
                 f"[EXEC] {symbol} notional ${notional:.2f} > balance ${balance:.2f}"

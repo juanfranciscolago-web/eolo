@@ -81,6 +81,7 @@ class RuntimeConfig:
         "daily_loss_cap_pct":      ("DAILY_LOSS_CAP_PCT",      float),
         "claude_max_cost_per_day": ("CLAUDE_MAX_COST_PER_DAY", float),
         "claude_bot_enabled":      ("CLAUDE_BOT_ENABLED",      bool),
+        "min_strategy_consensus":  ("MIN_STRATEGY_CONSENSUS",  int),
     }
 
     def __init__(self):
@@ -152,8 +153,14 @@ class RuntimeConfig:
         # ── Multi-TF config (active_timeframes + confluence) ──
         # Se parsea de forma independiente porque requiere validación
         # semántica (TFs soportados, min_agree ≤ len(tfs), etc.)
+        # Inyectamos settings.ACTIVE_TIMEFRAMES como fallback si Firestore
+        # no tiene el campo — así el default de crypto es [240] (4h)
+        # en vez del [1,5,15,30,60,240] genérico de eolo_common.
         try:
-            self._multi_tf = load_multi_tf_config(data)
+            data_mt = dict(data)
+            if "active_timeframes" not in data_mt:
+                data_mt["active_timeframes"] = list(settings.ACTIVE_TIMEFRAMES)
+            self._multi_tf = load_multi_tf_config(data_mt)
         except Exception as e:
             logger.warning(f"[CFG] multi_tf parse falló: {e} — mantengo previa")
 
@@ -229,6 +236,10 @@ class RuntimeConfig:
     def claude_bot_enabled(self) -> bool:
         return bool(self._scalar("claude_bot_enabled"))
 
+    @property
+    def min_strategy_consensus(self) -> int:
+        return max(1, int(self._scalar("min_strategy_consensus")))
+
     # ── Multi-TF ──────────────────────────────────────────
 
     @property
@@ -268,6 +279,7 @@ class RuntimeConfig:
             "daily_loss_cap_pct":      self.daily_loss_cap_pct,
             "claude_max_cost_per_day": self.claude_max_cost_per_day,
             "claude_bot_enabled":      self.claude_bot_enabled,
+            "min_strategy_consensus":  self.min_strategy_consensus,
             "active_timeframes":       self.active_timeframes,
             "confluence_mode":         self.confluence_mode,
             "confluence_min_agree":    self.confluence_min_agree,

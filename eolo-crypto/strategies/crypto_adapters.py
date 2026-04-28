@@ -60,8 +60,11 @@ STRATEGY_MODULES = {
     "tsv":                 "bot_tsv_strategy",
     "vw_macd":             "bot_vw_macd_strategy",
     # ── Crypto-native (2026-04-27) ────────────────────────
-    # Módulo propio en strategies/ — sys.path incluye _THIS_DIR
+    # Módulos propios en strategies/ — sys.path incluye _THIS_DIR
     "liquidation_cascade": "bot_liquidation_cascade_crypto",
+    "funding_rate_carry":  "bot_funding_rate_carry_crypto",
+    "weekend_breakout":    "bot_weekend_breakout_crypto",
+    "btc_lead_lag":        "bot_btc_lead_lag_crypto",
     # ── FASE 4/5/7a winners (2026-04-27) ──────────────────
     # FASE 4: Bollinger_RSI_Sensitive (PF 38.52 SPY, 14.78 AAPL, 14.02 QQQ)
     "bollinger_rsi_sensitive": "bot_bollinger_rsi_sensitive_strategy",

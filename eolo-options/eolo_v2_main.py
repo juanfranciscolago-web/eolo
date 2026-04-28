@@ -67,6 +67,11 @@ from theta_harvest.pivot_analysis import (
     fetch_tick_ad, TickADContext,
 )
 from theta_harvest.macro_news_filter import is_news_day, log_calendar_status
+# ── Nuevas estrategias v2 (2026-04-27) ────────────────────
+from theta_harvest.vrp_carry_strategy import scan_vrp_carry, VRPSignal
+from theta_harvest.gamma_scalp_0dte_strategy import scan_gamma_scalp, should_force_close, GammaScalpSignal
+from theta_harvest.earnings_iv_harvest_strategy import scan_earnings_iv, EarningsIVSignal
+from theta_harvest.put_skew_normalization_strategy import scan_put_skew, PutSkewSignal
 # ── Multi-TF compartido (paquete común eolo_common) ───────
 # Vive en /eolo_common/ del repo root. Dockerfile lo copia a /app/eolo_common.
 import sys as _sys, os as _os
@@ -77,6 +82,7 @@ from eolo_common.multi_tf import (
     CandleBuffer, BufferMarketData, ConfluenceFilter, load_multi_tf_config,
 )
 from eolo_common.multi_tf.normalize import from_schwab_chart_equity
+from eolo_common.routing import AutoRouter as _AutoRouter  # Strategy Auto-Router
 from eolo_common.trading_hours import (
     DEFAULTS_EQUITY,
     TradingSchedule,
@@ -315,6 +321,8 @@ class EoloV2:
         self.mispricing    = MispricingScanner()
         self.brain         = OptionsBrain()
         self.trader        = OptionsTrader(paper=PAPER_TRADING)
+        # Auto-Router — actualiza toggles de estrategias según régimen cada 30 min
+        self._auto_router  = _AutoRouter(bot_id="v2", update_interval_min=30)
 
         # Claude Bot — estrategia #14 sobre acciones del underlying.
         # Corre en paralelo con OptionsBrain (que opera opciones).
@@ -395,6 +403,15 @@ class EoloV2:
         self._theta_macro_status: dict = {}
         # Último Tick/A-D leído (para dashboard pill)
         self._theta_tick_ad: dict = {}
+        # ── Nuevas estrategias v2 (2026-04-27) ───────────────
+        self._vrp_enabled:     bool = True
+        self._gamma_scalp_enabled: bool = True
+        self._earnings_iv_enabled: bool = True
+        self._put_skew_enabled:    bool = True
+        # Flags de posición abierta (evitar entradas dobles)
+        self._has_open_0dte:   bool = False
+        self._has_open_vrp:    dict[str, bool] = {}   # ticker → bool
+        self._has_open_skew:   dict[str, bool] = {}   # ticker → bool
 
         # ── Dashboard state ───────────────────────────────
         self._quotes:          dict[str, dict] = {}
@@ -432,6 +449,8 @@ class EoloV2:
         # Schedule de trading — editable desde el dashboard. Defaults equity
         # (09:30-15:27 ET con auto-close 15:27). Se refresca en _poll_settings().
         self._schedule: TradingSchedule = DEFAULTS_EQUITY
+        # Filtro macro — se puede desactivar desde el dashboard (toggle MACRO ON/OFF)
+        self._macro_filter_enabled: bool = True
         self._last_command_ts:      float        = 0.0
         self._last_settings_ts:     float        = 0.0
         self._command_poll_interval = 5          # segundos
@@ -732,6 +751,30 @@ class EoloV2:
 
         self._last_analysis[ticker] = now
 
+        # ── Auto-Router: actualizar toggles cada 30 min (solo en SPY) ─
+        if ticker == "SPY":
+            try:
+                if self._auto_router.should_update():
+                    _vix_val, _ = self._theta_get_macro_context()
+                    if _vix_val is not None:
+                        # Obtener daily_df de SPY desde los candle buffers
+                        _spy_df = None
+                        if hasattr(self, "_candle_buffers") and "SPY" in self._candle_buffers:
+                            _buf = self._candle_buffers["SPY"]
+                            _spy_df = _buf.to_dataframe() if hasattr(_buf, "to_dataframe") else None
+                        if _spy_df is not None and len(_spy_df) >= 20:
+                            _toggles = self._auto_router.update(
+                                vix=float(_vix_val), spy_df=_spy_df, save_firestore=False
+                            )
+                            # Aplicar toggles a las estrategias extra de v2
+                            self._vrp_enabled          = _toggles.get("vrp_carry",          self._vrp_enabled)
+                            self._gamma_scalp_enabled  = _toggles.get("0dte_gamma_scalp",   self._gamma_scalp_enabled)
+                            self._earnings_iv_enabled  = _toggles.get("earnings_iv_harvest",self._earnings_iv_enabled)
+                            self._put_skew_enabled     = _toggles.get("put_skew",           self._put_skew_enabled)
+                            logger.debug(f"[AUTO_ROUTER] v2 toggles: {_toggles}")
+            except Exception as _ar_e:
+                logger.debug(f"[AUTO_ROUTER] v2 skip: {_ar_e}")
+
         # Bot pausado desde el dashboard → skip
         if not self._active:
             logger.debug(f"[EOLO v2] Bot pausado (dashboard) — skip {ticker}")
@@ -915,6 +958,157 @@ class EoloV2:
         if ticker in THETA_HARVEST_TICKERS and self._theta_harvest_enabled:
             await self._run_theta_harvest(ticker, chain)
 
+        # 11. Nuevas estrategias v2 (2026-04-27)
+        await self._run_v2_extra_strategies(ticker, chain)
+
+    # ── Nuevas estrategias v2 extras ──────────────────────
+
+    async def _run_v2_extra_strategies(self, ticker: str, chain: dict):
+        """
+        Corre las 4 estrategias nuevas de v2:
+          - VRP Carry        (OPEN_SPREAD si VIX - HV > 5pts)
+          - 0DTE Gamma Scalp (LONG_CALL/PUT los viernes, RSI extremo)
+          - Earnings IV      (OPEN_SPREAD si earnings en 2-5d y IV_rank > 70)
+          - Put Skew Fade    (FADE_SKEW si percentil skew > 90)
+
+        Todas son "signal only" — el orchestrator loggea y notifica pero
+        la ejecución real va por OptionsTrader (TODO fase siguiente).
+        """
+        from datetime import datetime, timezone
+        import pytz
+
+        if ticker not in THETA_HARVEST_TICKERS:
+            return  # solo SPY, QQQ, IWM, TQQQ
+
+        vix_val, _ = self._theta_get_macro_context()
+        vix_current = float(vix_val) if vix_val else 20.0
+        news_today  = is_news_day(enabled_override=self._macro_filter_enabled)
+        now_et      = datetime.now(pytz.timezone("America/New_York"))
+
+        # Obtener daily_df desde el buffer de candles (si disponible)
+        daily_df = None
+        try:
+            if hasattr(self, "_candle_buffers") and ticker in self._candle_buffers:
+                buf = self._candle_buffers[ticker]
+                daily_df = buf.to_dataframe() if hasattr(buf, "to_dataframe") else None
+        except Exception:
+            pass
+
+        if daily_df is None or daily_df.empty:
+            return
+
+        # ── VRP Carry ─────────────────────────────────────
+        if self._vrp_enabled:
+            try:
+                spy_trend = "NEUTRAL"
+                if len(daily_df) >= 20:
+                    ret = (float(daily_df["close"].iloc[-1]) - float(daily_df["close"].iloc[-20])) / float(daily_df["close"].iloc[-20]) * 100
+                    spy_trend = "UP" if ret > 2 else ("DOWN" if ret < -2 else "NEUTRAL")
+                sig: VRPSignal = scan_vrp_carry(
+                    ticker=ticker, daily_df=daily_df,
+                    vix_current=vix_current,
+                    spy_trend=spy_trend,
+                    macro_news_today=news_today,
+                )
+                if sig.signal != "HOLD":
+                    logger.info(
+                        f"[VRP_CARRY] {ticker} → {sig.signal} | "
+                        f"VRP={sig.vrp:+.1f} conf={sig.confidence:.2f} | {sig.reason}"
+                    )
+                    _send_telegram(
+                        f"📊 VRP Carry {ticker}: {sig.signal} | VRP={sig.vrp:+.1f}pts "
+                        f"(VIX={sig.vix:.1f} HV30={sig.hv_30d:.1f})"
+                    )
+                    if sig.signal == "OPEN_SPREAD":
+                        self._has_open_vrp[ticker] = True
+                    elif sig.signal == "CLOSE_SPREAD":
+                        self._has_open_vrp[ticker] = False
+            except Exception as e:
+                logger.debug(f"[VRP_CARRY] {ticker} error: {e}")
+
+        # ── 0DTE Gamma Scalp ──────────────────────────────
+        if self._gamma_scalp_enabled and ticker == "SPY":
+            try:
+                # Forzar cierre si ya pasó las 14:00 ET en viernes
+                if should_force_close(now_et) and self._has_open_0dte:
+                    logger.info("[0DTE_GAMMA] SPY → FORCE_CLOSE (14:00 ET viernes)")
+                    _send_telegram("🔔 0DTE Gamma Scalp SPY: FORCE CLOSE — 14:00 ET")
+                    self._has_open_0dte = False
+                else:
+                    gsig: GammaScalpSignal = scan_gamma_scalp(
+                        ticker=ticker,
+                        intraday_df=daily_df,
+                        vix_current=vix_current,
+                        now_et=now_et,
+                        has_open_0dte=self._has_open_0dte,
+                    )
+                    if gsig.signal in ("LONG_CALL", "LONG_PUT"):
+                        logger.info(
+                            f"[0DTE_GAMMA] SPY → {gsig.signal} | "
+                            f"RSI={gsig.rsi:.1f} strike={gsig.target_strike} "
+                            f"conf={gsig.confidence:.2f}"
+                        )
+                        _send_telegram(
+                            f"⚡ 0DTE Gamma Scalp SPY: {gsig.signal} | "
+                            f"RSI={gsig.rsi:.1f} ATM=${gsig.target_strike:.0f} "
+                            f"VIX={vix_current:.1f}"
+                        )
+                        self._has_open_0dte = True
+            except Exception as e:
+                logger.debug(f"[0DTE_GAMMA] SPY error: {e}")
+
+        # ── Earnings IV Harvest ───────────────────────────
+        if self._earnings_iv_enabled:
+            try:
+                esig: EarningsIVSignal = scan_earnings_iv(
+                    ticker=ticker,
+                    daily_df=daily_df,
+                    vix_current=vix_current,
+                    macro_news_today=news_today,
+                )
+                if esig.signal != "HOLD":
+                    logger.info(
+                        f"[EARNINGS_IV] {ticker} → {esig.signal} | "
+                        f"IV_rank={esig.iv_rank:.0f} days={esig.days_to_earnings} "
+                        f"| {esig.reason}"
+                    )
+                    _send_telegram(
+                        f"📅 Earnings IV {ticker}: {esig.signal} | "
+                        f"IV_rank={esig.iv_rank:.0f} "
+                        f"({esig.days_to_earnings}d para earnings)"
+                    )
+            except Exception as e:
+                logger.debug(f"[EARNINGS_IV] {ticker} error: {e}")
+
+        # ── Put Skew Normalization ────────────────────────
+        if self._put_skew_enabled:
+            try:
+                has_skew_pos = self._has_open_skew.get(ticker, False)
+                ssig: PutSkewSignal = scan_put_skew(
+                    ticker=ticker,
+                    daily_df=daily_df,
+                    vix_current=vix_current,
+                    macro_news_today=news_today,
+                    has_open_position=has_skew_pos,
+                )
+                if ssig.signal != "HOLD":
+                    logger.info(
+                        f"[PUT_SKEW] {ticker} → {ssig.signal} | "
+                        f"pct={ssig.skew_percentile:.0f} "
+                        f"skew={ssig.skew_value:+.2f} conf={ssig.confidence:.2f}"
+                    )
+                    _send_telegram(
+                        f"📉 Put Skew {ticker}: {ssig.signal} | "
+                        f"skew_pct={ssig.skew_percentile:.0f} "
+                        f"VIX={vix_current:.1f}"
+                    )
+                    if ssig.signal == "FADE_SKEW":
+                        self._has_open_skew[ticker] = True
+                    elif ssig.signal == "CLOSE_SKEW":
+                        self._has_open_skew[ticker] = False
+            except Exception as e:
+                logger.debug(f"[PUT_SKEW] {ticker} error: {e}")
+
     # ── Theta Harvest v2 — Always-In Multi-DTE ────────────
 
     def _theta_get_macro_context(self) -> tuple[float | None, float | None]:
@@ -1024,7 +1218,7 @@ class EoloV2:
         self._theta_init_slots(ticker, today)
 
         # ── 1. Macro news filter ───────────────────────────
-        news_day = is_news_day()
+        news_day = is_news_day(enabled_override=self._macro_filter_enabled)
         # Actualizar estado macro para dashboard
         try:
             from theta_harvest.macro_news_filter import get_today_events
@@ -2481,6 +2675,17 @@ class EoloV2:
                     changed.append(
                         f"tickers_activos={sorted(self._active_tickers)}"
                     )
+
+            # ── Macro filter enabled (dashboard toggle) ────
+            if "macro_filter_enabled" in cfg:
+                try:
+                    new_val = bool(cfg["macro_filter_enabled"])
+                    if new_val != self._macro_filter_enabled:
+                        old = self._macro_filter_enabled
+                        self._macro_filter_enabled = new_val
+                        changed.append(f"macro_filter_enabled={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
 
             if changed:
                 logger.info(f"[COMMANDS] ⚙️  Config actualizada: {', '.join(changed)}")

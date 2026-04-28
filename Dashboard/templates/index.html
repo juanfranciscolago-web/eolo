@@ -510,6 +510,13 @@
       </div>
     </div>
 
+    <hr style="border:0;border-top:1px solid var(--border);margin:16px 0 10px;">
+    <h4 style="margin:0 0 8px;">Filtro macro</h4>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="cfg-macro-filter" style="width:auto;">
+      <span>Bloquear trading en días FOMC / CPI / NFP / PCE</span>
+    </label>
+
     <div class="actions">
       <button class="btn ghost"   onclick="closeConfigModal()">Cancelar</button>
       <button class="btn primary" onclick="saveConfigModal()">Guardar</button>
@@ -649,6 +656,14 @@
         <button class="strat-btn-all off" onclick="setAllStrats('combos', false)">Todas OFF</button>
       </div>
       <div class="strat-grid" id="strat-grid-combos"></div>
+    </div>
+    <div class="strat-group">
+      <div class="strat-head">
+        <span class="strat-title">🚀 FASE Winners + Nuevas (8) <span class="hint">Backtesting validado · FASE 4/5/7a/8</span></span>
+        <button class="strat-btn-all on"  onclick="setAllStrats('winners', true)">Todas ON</button>
+        <button class="strat-btn-all off" onclick="setAllStrats('winners', false)">Todas OFF</button>
+      </div>
+      <div class="strat-grid" id="strat-grid-winners"></div>
     </div>
   </div>
 </div>
@@ -885,6 +900,16 @@ const STRATEGY_DEFS = {
     { key: "combo6_fractalccix",  label: "💎 C6 — FractalCCIx Premium (BAJA)" },
     { key: "combo7_campbell",     label: "💎 C7 — Campbell Swing (BAJA)" },
   ],
+  winners: [
+    { key: "bollinger_rsi_sensitive", label: "🏆 Bollinger RSI Sensitive (PF 38.52)" },
+    { key: "xom_30m",                 label: "🏆 XOM 30m Breakout (PF 1.38)" },
+    { key: "macd_confluence_fase7a",  label: "🚀 MACD Confluencia 7a" },
+    { key: "momentum_score_fase7a",   label: "🚀 Momentum Score 7a" },
+    { key: "overnight_drift",         label: "🌙 Overnight Drift" },
+    { key: "vix_spike_fade",          label: "⚡ VIX Spike Fade" },
+    { key: "spy_qqq_divergence",      label: "📊 SPY/QQQ Divergence" },
+    { key: "sector_rrg",              label: "🗺️ Sector RRG Rotation" },
+  ],
 };
 
 let STRATEGIES_STATE = {};   // canonical_key → bool
@@ -1001,7 +1026,7 @@ function renderStrategyGroup(groupKey) {
 }
 
 function renderStrategies() {
-  ['emacd', 'classic', 'nivel1', 'nivel2', 'combos'].forEach(renderStrategyGroup);
+  ['emacd', 'classic', 'nivel1', 'nivel2', 'combos', 'winners'].forEach(renderStrategyGroup);
 }
 
 function toggleExpand(key, ev) {
@@ -1451,6 +1476,7 @@ async function openConfigModal() {
     document.getElementById('cfgThStart').value        = cfg.trading_start_et ?? "09:30";
     document.getElementById('cfgThEnd').value          = cfg.trading_end_et   ?? "15:27";
     document.getElementById('cfgThAutoClose').value    = cfg.auto_close_et    ?? "15:27";
+    document.getElementById('cfg-macro-filter').checked = (cfg.macro_filter_enabled ?? true);
     document.getElementById('modal-config').classList.add('show');
   } catch (e) {
     showToast('No pude cargar config: ' + e.message, true);
@@ -1474,6 +1500,7 @@ async function saveConfigModal() {
     trading_start_et:        document.getElementById('cfgThStart').value || "09:30",
     trading_end_et:          document.getElementById('cfgThEnd').value   || "15:27",
     auto_close_et:           document.getElementById('cfgThAutoClose').value || "15:27",
+    macro_filter_enabled:    document.getElementById('cfg-macro-filter').checked,
   };
   // Saneo: quitar NaN antes de mandar (backend valida igual)
   Object.keys(body).forEach(k => { if (Number.isNaN(body[k])) delete body[k]; });

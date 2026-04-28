@@ -4,15 +4,142 @@
 #  URL: https://eolo-dashboard-XXXX-ue.a.run.app
 # ============================================================
 import os
+import functools
+import urllib.parse
 import pytz
 from collections import defaultdict
 from datetime import date, datetime, timedelta
-from flask import Flask, render_template, jsonify, request
+from flask import (
+    Flask, render_template, render_template_string,
+    jsonify, request, session, redirect, url_for
+)
+from werkzeug.middleware.proxy_fix import ProxyFix
 from google.cloud import firestore
+import requests as _req
 
 EASTERN = pytz.timezone("America/New_York")
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # HTTPS correcto en Cloud Run
+
+# ── Auth — Google OAuth 2.0 ───────────────────────────────
+# Variables de entorno requeridas en Cloud Run:
+#   GOOGLE_CLIENT_ID     → OAuth 2.0 Client ID (GCP Console)
+#   GOOGLE_CLIENT_SECRET → OAuth 2.0 Client Secret
+#   FLASK_SECRET_KEY     → clave para firmar cookies (Secret Manager)
+#   ALLOWED_EMAIL        → email autorizado (default: juanfranciscolago@gmail.com)
+_GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
+_GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+_ALLOWED_EMAILS       = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "juanfranciscolago@gmail.com").split(",") if e.strip()}
+_GOOGLE_AUTH_URL      = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL  = "https://www.googleapis.com/oauth2/v2/userinfo"
+app.secret_key                 = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
+app.permanent_session_lifetime = timedelta(hours=48)
+
+_DENIED_HTML = """
+<!doctype html><html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acceso denegado</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px 28px;
+        width:100%;max-width:380px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+  h1{font-size:1.1rem;margin-bottom:10px}
+  p{font-size:.82rem;color:#8b949e;margin-bottom:18px}
+  a{color:#58a6ff;font-size:.82rem;text-decoration:none}
+  a:hover{text-decoration:underline}
+</style></head>
+<body><div class="card">
+  <h1>🚫 Acceso denegado</h1>
+  <p><strong>{{ email }}</strong> no está autorizado para acceder a este dashboard.</p>
+  <a href="/logout">← Intentar con otra cuenta</a>
+</div></body></html>
+"""
+
+
+def require_auth(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if _GOOGLE_CLIENT_ID and not session.get("authenticated"):
+            return redirect(url_for("login", next=request.path))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login")
+def login():
+    """Redirige al flujo OAuth de Google (sin PKCE, sin librerías intermedias)."""
+    if not _GOOGLE_CLIENT_ID:
+        session.permanent = True
+        session["authenticated"] = True
+        return redirect(request.args.get("next") or "/")
+    state = os.urandom(16).hex()
+    session["oauth_state"] = state
+    if request.args.get("next"):
+        session["oauth_next"] = request.args["next"]
+    params = {
+        "client_id":     _GOOGLE_CLIENT_ID,
+        "redirect_uri":  url_for("oauth2callback", _external=True),
+        "response_type": "code",
+        "scope":         "openid email",
+        "access_type":   "offline",
+        "state":         state,
+        "login_hint":    next(iter(_ALLOWED_EMAILS), ""),
+        "prompt":        "select_account",
+    }
+    return redirect(_GOOGLE_AUTH_URL + "?" + urllib.parse.urlencode(params))
+
+
+@app.route("/oauth2callback")
+def oauth2callback():
+    """Callback OAuth: intercambia code → token → email y establece sesión."""
+    if not _GOOGLE_CLIENT_ID:
+        return redirect("/")
+    if request.args.get("state") != session.get("oauth_state"):
+        return render_template_string(_DENIED_HTML, email="Error: estado inválido"), 400
+    code = request.args.get("code")
+    if not code:
+        return render_template_string(_DENIED_HTML, email="Error: sin código de autorización"), 400
+    try:
+        token_r = _req.post(
+            _GOOGLE_TOKEN_URL,
+            data={
+                "code":          code,
+                "client_id":     _GOOGLE_CLIENT_ID,
+                "client_secret": _GOOGLE_CLIENT_SECRET,
+                "redirect_uri":  url_for("oauth2callback", _external=True),
+                "grant_type":    "authorization_code",
+            },
+            timeout=10,
+        )
+        token_r.raise_for_status()
+        access_token = token_r.json().get("access_token", "")
+        userinfo = _req.get(
+            _GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        ).json()
+        email = userinfo.get("email", "").lower()
+    except Exception as exc:
+        return render_template_string(_DENIED_HTML, email=f"Error: {exc}"), 500
+
+    if email not in _ALLOWED_EMAILS:
+        return render_template_string(_DENIED_HTML, email=email), 403
+
+    session.permanent = True
+    session["authenticated"] = True
+    session["user_email"] = email
+    return redirect(session.pop("oauth_next", None) or "/")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+# ─────────────────────────────────────────────────────────
 
 GCP_PROJECT       = "eolo-schwab-agent"
 TRADES_COLLECTION = "eolo-trades"
@@ -292,11 +419,13 @@ def calc_pnl(trades: list) -> dict:
 # ── Routes ────────────────────────────────────────────────
 
 @app.route("/")
+@require_auth
 def index():
     return render_template("index.html")
 
 
 @app.route("/api/data")
+@require_auth
 def api_data():
     trades    = get_today_trades()
     stats     = calc_pnl(trades)
@@ -328,6 +457,7 @@ def api_data():
 
 
 @app.route("/api/toggle-strategy", methods=["POST"])
+@require_auth
 def toggle_strategy():
     data     = request.get_json()
     strategy = data.get("strategy")
@@ -341,6 +471,7 @@ def toggle_strategy():
 
 
 @app.route("/api/toggle-ticker", methods=["POST"])
+@require_auth
 def toggle_ticker():
     """Activa o desactiva un ticker individual en Firestore."""
     data    = request.get_json()
@@ -355,6 +486,7 @@ def toggle_ticker():
 
 
 @app.route("/api/toggle-ticker-group", methods=["POST"])
+@require_auth
 def toggle_ticker_group():
     """Activa o desactiva todos los tickers de un grupo."""
     data    = request.get_json()
@@ -370,6 +502,7 @@ def toggle_ticker_group():
 
 
 @app.route("/api/set-budget", methods=["POST"])
+@require_auth
 def set_budget():
     """Cambia el budget por trade (USD). Respeta min/max."""
     data   = request.get_json()
@@ -387,6 +520,7 @@ def set_budget():
 
 
 @app.route("/api/toggle-active", methods=["POST"])
+@require_auth
 def toggle_active():
     """Pausa o reanuda el bot globalmente (bot_active flag en Firestore)."""
     data    = request.get_json()
@@ -398,6 +532,7 @@ def toggle_active():
 
 
 @app.route("/api/toggle-timeframe", methods=["POST"])
+@require_auth
 def toggle_timeframe():
     """
     Activa o desactiva un timeframe individual.
@@ -440,6 +575,7 @@ def toggle_timeframe():
 
 
 @app.route("/api/config", methods=["GET", "POST"])
+@require_auth
 def api_config():
     """
     GET  → devuelve el doc eolo-config/settings (budget, max_positions,
@@ -536,6 +672,10 @@ def api_config():
         if "trading_hours_enabled" in data:
             allowed["trading_hours_enabled"] = bool(data["trading_hours_enabled"])
 
+        # ── Macro news filter override ──────────────────────
+        if "macro_filter_enabled" in data:
+            allowed["macro_filter_enabled"] = bool(data["macro_filter_enabled"])
+
         if not allowed:
             return jsonify({"ok": False, "error": "Sin campos válidos"}), 400
 
@@ -549,6 +689,7 @@ def api_config():
 
 
 @app.route("/api/schedule-status")
+@require_auth
 def api_schedule_status():
     """
     Devuelve el estado de trading_hours calculado on-the-fly desde el doc
@@ -584,6 +725,7 @@ def api_schedule_status():
 
 
 @app.route("/api/close-all-positions", methods=["POST"])
+@require_auth
 def close_all_positions():
     """
     Escribe un flag en Firestore para que el bot cierre todas las posiciones
@@ -596,6 +738,7 @@ def close_all_positions():
 
 
 @app.route("/api/performance")
+@require_auth
 def api_performance():
     """
     Retorna métricas de performance del día actual + historial de los últimos 30 días.
@@ -734,6 +877,7 @@ def api_performance():
 
 
 @app.route("/api/strategies")
+@require_auth
 def api_strategies():
     """
     Retorna el estado actual de los toggles en formato canónico (27 keys).
@@ -754,6 +898,7 @@ def api_strategies():
 
 
 @app.route("/api/strategy-stats")
+@require_auth
 def api_strategy_stats():
     """
     Agrega stats por estrategia canónica leyendo eolo-trades (daily docs).

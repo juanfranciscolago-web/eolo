@@ -79,6 +79,16 @@ import bot_bollinger_rsi_sensitive_strategy as bb_rsi_sens_strategy
 # ── FASE 7a Winners (30m intraday, SPY/QQQ) ──────────────
 import bot_macd_confluence_fase7a_strategy as macd_conf_strategy
 import bot_momentum_score_fase7a_strategy as momentum_strategy
+# ── Nuevas estrategias (2026-04-27) ───────────────────────
+import bot_overnight_drift_strategy    as overnight_drift_strategy
+import bot_vix_spike_fade_strategy     as vix_spike_fade_strategy
+import bot_spy_qqq_divergence_strategy as sqd_strategy
+import bot_sector_rrg_strategy         as sector_rrg_strategy
+from eolo_common.risk import get_regime_multiplier  # Macro Regime Bridge
+from eolo_common.routing import AutoRouter as _AutoRouter  # Strategy Auto-Router
+
+# Auto-router instance (actualiza toggles cada 30 min según régimen)
+_auto_router_v1 = _AutoRouter(bot_id="v1", update_interval_min=30)
 # ── "EMA 3/8 y MACD" suite (v3) — dispatcher compartido ──
 import bot_strategies_v3_dispatcher      as v3_strategy
 import bot_trader             as trader
@@ -87,6 +97,7 @@ from strategy_router import should_run_strategy  # FASE 6: Asset/TF routing
 # ── Tickers por grupo ─────────────────────────────────────
 TICKERS_EMA_GAP   = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA"]
 TICKERS_LEVERAGED = ["SOXL", "TSLL", "NVDL", "TQQQ"]
+TICKERS_SECTORS   = ["XLK", "XLE", "XLF", "XLV", "XLI", "XLP", "XLU", "XLY", "XLC", "XLRE"]
 
 # ── Timing ───────────────────────────────────────────────
 CANDLE_MINUTES        = 1   # velas de 1 minuto — señales 5x más frecuentes
@@ -151,6 +162,11 @@ DEFAULT_STRATEGIES = {
     "donchian_turtle":     True,
     "bulls_bsp":           True,
     "net_bsv":             True,
+    # ── Nuevas estrategias (2026-04-27) ──────────────────────
+    "overnight_drift":     True,   # Overnight carry: BUY 15:45, SELL 9:35 ET
+    "vix_spike_fade":      True,   # Fade pánico intraday de VIX (>5% spike → BUY)
+    "spy_qqq_divergence":  True,   # Mean-reversion: SPY/QQQ ratio z-score ±2σ
+    "sector_rrg":          True,   # Sector rotation: Leading quadrant (RS-Ratio > 100, RS-Mom > 100)
     # ── Combos Ganadores (2026-04) ────────────────────────────
     "combo1_ema_scalper":  True,   # ALTA  — EMA3/8 + EMA stack 8>21>34>55>89
     "combo2_rubber_band":  True,   # ALTA  — Rubber Band VWAP 09:45-14:30 ET
@@ -527,6 +543,30 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     strategies = get_active_strategies()
     budget     = float(settings.get("budget", 100))
 
+    # ── Auto-Router: ajusta toggles según régimen cada 30 min ──
+    try:
+        if _auto_router_v1.should_update():
+            _spy_df = market_data.get_candles(
+                "SPY", period_type="day", period=1,
+                frequency_type="minute", frequency=timeframe,
+            )
+            _vix = None
+            try:
+                _mac = settings.get("_macro_feeds")
+                if _mac:
+                    _vix = float(_mac.latest("VIX") or 20.0)
+            except Exception:
+                pass
+            if _spy_df is not None and not _spy_df.empty and _vix is not None:
+                _new_toggles = _auto_router_v1.update(vix=_vix, spy_df=_spy_df, save_firestore=False)
+                # Solo aplicar si el toggle no fue sobreescrito manualmente en Firestore
+                for _k, _v in _new_toggles.items():
+                    if _k not in strategies:
+                        strategies[_k] = _v
+                logger.debug(f"[AUTO_ROUTER] v1 toggles actualizados: regime={_auto_router_v1.last_toggles}")
+    except Exception as _ar_e:
+        logger.debug(f"[AUTO_ROUTER] v1 skip: {_ar_e}")
+
     # Leer tickers activos desde Firestore (dashboard toggle)
     tickers_ema_gap   = get_active_tickers(TICKERS_EMA_GAP)
     tickers_leveraged = get_active_tickers(TICKERS_LEVERAGED)
@@ -567,8 +607,12 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         if daily_cap_hit and result.get("signal") == "BUY":
             result["signal"] = "HOLD"
             result["_daily_cap_suppressed"] = True
+        # ── Macro Regime Bridge: ajuste dinámico del budget ──
+        # VIX<15 → 1.5× | VIX 15-25 → 1.0× | VIX>25 → 0.5×
+        regime_mult = get_regime_multiplier(settings.get("_macro_feeds"))
+        adj_budget  = budget * regime_mult
         result["strategy"]     = strat_name
-        result["_budget"]      = budget
+        result["_budget"]      = adj_budget
         result["_timeframe"]   = timeframe
         result["_macro_feeds"] = settings.get("_macro_feeds")
         # Habilita apertura de shorts si el setting lo permite
@@ -1046,6 +1090,54 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         for ticker in momentum_tickers:
             result = momentum_strategy.analyze(market_data, ticker)
             _exec(result, "MOMENTUM_SCORE")
+
+    # ═══════════════════════════════════════════════════════════
+    #  Nuevas estrategias (2026-04-27)
+    # ═══════════════════════════════════════════════════════════
+
+    # ── Overnight Drift — BUY 15:40-15:55 ET, SELL 09:30-09:45 ET
+    if strategies.get("overnight_drift"):
+        od_tickers = ["SPY", "QQQ"]
+        print(f"\n  [OVERNIGHT_DRIFT] Tickers: {od_tickers}")
+        for ticker in od_tickers:
+            entry = trader.entry_prices.get(ticker)
+            result = overnight_drift_strategy.analyze(
+                market_data, ticker, macro=macro,
+                entry_price=entry, timeframe=timeframe,
+            )
+            _exec(result, "OVERNIGHT_DRIFT")
+
+    # ── VIX Spike Fade — BUY cuando VIX sube >5% intraday
+    if strategies.get("vix_spike_fade"):
+        vsf_tickers = [t for t in tickers_all if t in {"SPY", "QQQ", "TQQQ"}]
+        print(f"\n  [VIX_SPIKE_FADE] Tickers: {vsf_tickers}")
+        for ticker in vsf_tickers:
+            entry = trader.entry_prices.get(ticker)
+            result = vix_spike_fade_strategy.analyze(
+                market_data, ticker, macro=macro,
+                entry_price=entry, timeframe=timeframe,
+            )
+            _exec(result, "VIX_SPIKE_FADE")
+
+    if strategies.get("spy_qqq_divergence"):
+        print(f"\n  [SPY_QQQ_DIV] SPY / QQQ")
+        for ticker in ["SPY", "QQQ"]:
+            entry = trader.entry_prices.get(ticker)
+            result = sqd_strategy.analyze(
+                market_data, ticker, macro=macro,
+                entry_price=entry, timeframe=timeframe,
+            )
+            _exec(result, "SPY_QQQ_DIV")
+
+    if strategies.get("sector_rrg"):
+        print(f"\n  [SECTOR_RRG] Sectors: {TICKERS_SECTORS}")
+        for ticker in TICKERS_SECTORS:
+            entry = trader.entry_prices.get(ticker)
+            result = sector_rrg_strategy.analyze(
+                market_data, ticker, macro=macro,
+                entry_price=entry, timeframe=timeframe,
+            )
+            _exec(result, "SECTOR_RRG")
 
     # Note: wait display is informational — actual sleep happens in main()
     print(f"\n{'='*76}")

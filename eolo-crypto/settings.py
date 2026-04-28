@@ -91,53 +91,70 @@ DAILY_LOSS_CAP_PCT        = float(os.environ.get("DAILY_LOSS_CAP_PCT", "-5.0"))
 
 
 # ── Estrategias ───────────────────────────────────────────
-# Las 13 técnicas Eolo v1 (imports de ../Bot/) — toggle individual.
+# Backtests (FASE 4/5/7a + análisis cripto) mostraron que en 1m
+# prácticamente TODAS las estrategias pierden por ruido + fees 0.2%
+# Binance. A 4h solo dejamos las 5 más robustas para crypto 24/7:
+#   • supertrend  — trend-following, funciona bien en 4h crypto
+#   • rsi_sma200  — régimen (SMA200) + momentum (RSI), filtro fuerte
+#   • rvol_breakout — breakout por volumen relativo, ideal en crypto
+#   • vwap_rsi    — distancia VWAP + RSI, señales de reversión/continuación
+#   • bollinger   — bandas universales, crypto suele respetar desviaciones
+#
+# El resto se apaga por defecto; se puede reactivar individualmente
+# desde el dashboard (Firestore → eolo-crypto-config/settings).
+#
+# Para activar los FASE-4/5/7a winners de equity en crypto cuando
+# se tenga suficiente data real de backtesting, poner True.
 STRATEGIES_ENABLED = {
-    "rsi_sma200":    True,
-    "bollinger":     True,
-    "macd_bb":       True,
-    "supertrend":    True,
-    "vwap_rsi":      True,
-    "orb":           True,    # adaptado a 24/7 (ver strategies/crypto_adapters.py)
-    "squeeze":       True,
-    "hh_ll":         True,
-    "ha_cloud":      True,
-    "ema_tsi":       True,
-    "vela_pivot":    True,
-    "gap":           True,    # adaptado: vela 00:00 UTC vs 23:59 anterior
-    "base":          False,   # utility module de Eolo v1 — no tiene detect_signal
-    # ── Nivel 1 (trading_strategies_v2.md) — aplicables a crypto
-    # (las 7 que NO dependen de sesión US / VIX / TICK / TRIN).
-    # Decisión Juan 2026-04-20: todas ON por default.
+    # ── Core 5 activos para 4h crypto ──────────────────────
+    "supertrend":          True,
+    "rsi_sma200":          True,
     "rvol_breakout":       True,
-    "stop_run":            True,
-    "vwap_zscore":         True,   # filtro 11:30 ET deja crypto acotado a ~5h/día
-    "volume_reversal_bar": True,
-    "obv_mtf":             True,
-    "tsv":                 True,
-    "vw_macd":             True,
-    # ── Suite "EMA 3/8 y MACD" (v3) — 10 estrategias ──────
-    # ORB_V3 NO se incluye en crypto (es equity-only: requiere RTH).
-    # tod_filter se fuerza a False en el adapter — 24/7 UTC.
-    "ema_3_8":             True,
-    "ema_8_21":            True,
-    "macd_accel":          True,
-    "volume_breakout":     True,
-    "buy_pressure":        True,
-    "sell_pressure":       True,
-    "vwap_momentum":       True,
-    "donchian_turtle":     True,
-    "bulls_bsp":           True,   # breadth columns ausentes → degrade a True
-    "net_bsv":             True,
-    # ── FASE 4/5/7a winners (2026-04-27) ───────────────────
-    # FASE 4: Bollinger_RSI_Sensitive (PF 38.52, proven on 252 days real data)
-    "bollinger_rsi_sensitive":  True,
-    # FASE 5: XOM_30m (PF 1.38, intraday, adapts to 24/7 UTC)
-    "xom_30m":                   True,
-    # FASE 7a: New strategies (PF 4.58 QQQ / 3.14 SPY)
-    "macd_confluence_fase7a":     True,
-    "momentum_score_fase7a":      True,
+    "vwap_rsi":            True,
+    "bollinger":           True,
+    # ── Crypto-native (2026-04-27) ──────────────────────────
+    "liquidation_cascade": True,   # Post-liquidation bounce (4h, drop>3% + vol>2×MA20)
+    "funding_rate_carry":  True,   # Contrarian: funding negativo extremo → BUY
+    "weekend_breakout":    True,   # BTC/ETH: breakout sobre Friday high el domingo
+    "btc_lead_lag":        True,   # Altcoins: entrar cuando BTC movió pero altcoin no siguió
+    # ── Resto apagado — requieren más data de validación en crypto
+    "macd_bb":             False,
+    "orb":                 False,   # equity-only: RTH opening range
+    "squeeze":             False,
+    "hh_ll":               False,
+    "ha_cloud":            False,
+    "ema_tsi":             False,
+    "vela_pivot":          False,
+    "gap":                 False,
+    "base":                False,   # utility module, no tiene detect_signal
+    "stop_run":            False,
+    "vwap_zscore":         False,
+    "volume_reversal_bar": False,
+    "obv_mtf":             False,
+    "tsv":                 False,
+    "vw_macd":             False,
+    "ema_3_8":             False,
+    "ema_8_21":            False,
+    "macd_accel":          False,
+    "volume_breakout":     False,
+    "buy_pressure":        False,
+    "sell_pressure":       False,
+    "vwap_momentum":       False,
+    "donchian_turtle":     False,
+    "bulls_bsp":           False,
+    "net_bsv":             False,
+    # ── FASE 4/5/7a winners — probados en equity, no en crypto 4h
+    "bollinger_rsi_sensitive": False,
+    "xom_30m":                 False,
+    "macd_confluence_fase7a":  False,
+    "momentum_score_fase7a":   False,
 }
+
+# Mínimo de estrategias que deben coincidir en la misma dirección
+# para que se ejecute un trade. Con 5 estrategias activas, >= 2
+# significa 40% de acuerdo (evita trades de una sola estrategia).
+# Sube a 3 para ser más conservador.
+MIN_STRATEGY_CONSENSUS = 2
 
 # Claude Bot #14 — motor con Anthropic API adaptado a crypto
 # Haiku 4.5 es ~10-15x más barato que Sonnet 4.6 y alcanza para decisiones
@@ -152,6 +169,12 @@ CLAUDE_MAX_COST_PER_DAY   = float(os.environ.get("CLAUDE_MAX_COST_PER_DAY", "3.0
 KLINE_INTERVAL      = "1m"                # vela base de streaming (ajustable: 1m|5m|15m)
 BUFFER_SIZE         = 300                 # velas en memoria por par (suficiente para SMA200)
 HISTORICAL_LOAD     = 250                 # velas a backfill al arrancar (REST /klines)
+
+# Timeframes activos para evaluación de señales.
+# Backtests (FASE 4/5/7a) confirmaron que 1m tiene PF < 1 con fees Binance
+# (37% WR, PF ~1.01 pre-fees → ~0.6 neto). 4h filtra el ruido y solo
+# evalúa cuando una vela de 240 min cierra. Se puede override vía Firestore.
+ACTIVE_TIMEFRAMES   = [240]               # solo 4h — cambiable desde dashboard
 
 
 # ── Logging y observabilidad ──────────────────────────────

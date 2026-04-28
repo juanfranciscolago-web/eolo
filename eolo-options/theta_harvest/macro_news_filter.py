@@ -18,10 +18,19 @@
 # ============================================================
 from __future__ import annotations
 
+import os
 from datetime import date, timedelta
 from typing import Optional
 
 from loguru import logger
+
+# ── Override de emergencia ────────────────────────────────
+# Setear MACRO_FILTER_ENABLED=false en Cloud Run para saltear
+# el filtro sin redeploy (útil en paper trading o testing).
+#   gcloud run services update eolo-bot-v2 \
+#     --region us-east1 --project eolo-schwab-agent \
+#     --update-env-vars MACRO_FILTER_ENABLED=false
+_MACRO_FILTER_ENABLED = os.environ.get("MACRO_FILTER_ENABLED", "true").lower() != "false"
 
 
 # ──────────────────────────────────────────────────────────
@@ -182,11 +191,28 @@ def get_today_events(today: Optional[date] = None) -> list[str]:
     return events
 
 
-def is_news_day(today: Optional[date] = None) -> bool:
+def is_news_day(today: Optional[date] = None,
+                enabled_override: Optional[bool] = None) -> bool:
     """
     True si hoy es un día con noticias macro de alto impacto
     y no debería operar Theta Harvest.
+
+    Override de prioridad (mayor → menor):
+      1. `enabled_override` kwarg (valor leído de Firestore en runtime)
+      2. Env var MACRO_FILTER_ENABLED=false (no-rebuild override)
+      3. Comportamiento normal: True si hay eventos.
     """
+    # 1. Runtime override desde Firestore/dashboard (kwarg explícito)
+    if enabled_override is not None:
+        if not enabled_override:
+            logger.warning("[MacroFilter] ⚠️ Filtro desactivado por dashboard — override runtime")
+            return False
+        # Si enabled_override=True, continuamos evaluando normalmente
+    elif not _MACRO_FILTER_ENABLED:
+        # 2. Env var override
+        logger.warning("[MacroFilter] ⚠️ MACRO_FILTER_ENABLED=false — filtro desactivado por env var")
+        return False
+
     events = get_today_events(today)
     if events:
         logger.info(f"[MacroFilter] 🚫 NO-TRADE día: {events}")

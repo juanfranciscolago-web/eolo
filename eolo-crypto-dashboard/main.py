@@ -24,12 +24,139 @@
 # ============================================================
 import os
 import time
+import functools
+import urllib.parse
 from datetime import datetime, timedelta, timezone
 
-from flask import Flask, render_template, jsonify, request
+from flask import (
+    Flask, render_template, render_template_string,
+    jsonify, request, session, redirect, url_for
+)
+from werkzeug.middleware.proxy_fix import ProxyFix
 from google.cloud import firestore
+import requests as _req
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)  # HTTPS correcto en Cloud Run
+
+# ── Auth — Google OAuth 2.0 ───────────────────────────────
+# Variables de entorno requeridas en Cloud Run:
+#   GOOGLE_CLIENT_ID     → OAuth 2.0 Client ID (GCP Console)
+#   GOOGLE_CLIENT_SECRET → OAuth 2.0 Client Secret
+#   FLASK_SECRET_KEY     → clave para firmar cookies (Secret Manager)
+#   ALLOWED_EMAIL        → email autorizado (default: juanfranciscolago@gmail.com)
+_GOOGLE_CLIENT_ID     = os.environ.get("GOOGLE_CLIENT_ID", "")
+_GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET", "")
+_ALLOWED_EMAILS       = {e.strip().lower() for e in os.environ.get("ALLOWED_EMAILS", "juanfranciscolago@gmail.com").split(",") if e.strip()}
+_GOOGLE_AUTH_URL      = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL     = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL  = "https://www.googleapis.com/oauth2/v2/userinfo"
+app.secret_key                 = os.environ.get("FLASK_SECRET_KEY") or os.urandom(32)
+app.permanent_session_lifetime = timedelta(hours=48)
+
+_DENIED_HTML = """
+<!doctype html><html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Acceso denegado</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+       display:flex;align-items:center;justify-content:center;min-height:100vh}
+  .card{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:32px 28px;
+        width:100%;max-width:380px;text-align:center;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+  h1{font-size:1.1rem;margin-bottom:10px}
+  p{font-size:.82rem;color:#8b949e;margin-bottom:18px}
+  a{color:#58a6ff;font-size:.82rem;text-decoration:none}
+  a:hover{text-decoration:underline}
+</style></head>
+<body><div class="card">
+  <h1>🚫 Acceso denegado</h1>
+  <p><strong>{{ email }}</strong> no está autorizado para acceder a este dashboard.</p>
+  <a href="/logout">← Intentar con otra cuenta</a>
+</div></body></html>
+"""
+
+
+def require_auth(f):
+    @functools.wraps(f)
+    def decorated(*args, **kwargs):
+        if _GOOGLE_CLIENT_ID and not session.get("authenticated"):
+            return redirect(url_for("login", next=request.path))
+        return f(*args, **kwargs)
+    return decorated
+
+
+@app.route("/login")
+def login():
+    """Redirige al flujo OAuth de Google (sin PKCE, sin librerías intermedias)."""
+    if not _GOOGLE_CLIENT_ID:
+        session.permanent = True
+        session["authenticated"] = True
+        return redirect(request.args.get("next") or "/")
+    state = os.urandom(16).hex()
+    session["oauth_state"] = state
+    if request.args.get("next"):
+        session["oauth_next"] = request.args["next"]
+    params = {
+        "client_id":     _GOOGLE_CLIENT_ID,
+        "redirect_uri":  url_for("oauth2callback", _external=True),
+        "response_type": "code",
+        "scope":         "openid email",
+        "access_type":   "offline",
+        "state":         state,
+        "login_hint":    next(iter(_ALLOWED_EMAILS), ""),
+        "prompt":        "select_account",
+    }
+    return redirect(_GOOGLE_AUTH_URL + "?" + urllib.parse.urlencode(params))
+
+
+@app.route("/oauth2callback")
+def oauth2callback():
+    """Callback OAuth: intercambia code → token → email y establece sesión."""
+    if not _GOOGLE_CLIENT_ID:
+        return redirect("/")
+    if request.args.get("state") != session.get("oauth_state"):
+        return render_template_string(_DENIED_HTML, email="Error: estado inválido"), 400
+    code = request.args.get("code")
+    if not code:
+        return render_template_string(_DENIED_HTML, email="Error: sin código de autorización"), 400
+    try:
+        token_r = _req.post(
+            _GOOGLE_TOKEN_URL,
+            data={
+                "code":          code,
+                "client_id":     _GOOGLE_CLIENT_ID,
+                "client_secret": _GOOGLE_CLIENT_SECRET,
+                "redirect_uri":  url_for("oauth2callback", _external=True),
+                "grant_type":    "authorization_code",
+            },
+            timeout=10,
+        )
+        token_r.raise_for_status()
+        access_token = token_r.json().get("access_token", "")
+        userinfo = _req.get(
+            _GOOGLE_USERINFO_URL,
+            headers={"Authorization": f"Bearer {access_token}"},
+            timeout=10,
+        ).json()
+        email = userinfo.get("email", "").lower()
+    except Exception as exc:
+        return render_template_string(_DENIED_HTML, email=f"Error: {exc}"), 500
+
+    if email not in _ALLOWED_EMAILS:
+        return render_template_string(_DENIED_HTML, email=email), 403
+
+    session.permanent = True
+    session["authenticated"] = True
+    session["user_email"] = email
+    return redirect(session.pop("oauth_next", None) or "/")
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for("login"))
+# ─────────────────────────────────────────────────────────
 
 GCP_PROJECT     = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
 
@@ -225,6 +352,7 @@ def compute_day_stats(trades: list[dict]) -> dict:
 # ── Routes: vistas ───────────────────────────────────────
 
 @app.route("/")
+@require_auth
 def index():
     return render_template("index.html")
 
@@ -232,6 +360,7 @@ def index():
 # ── Routes: API ──────────────────────────────────────────
 
 @app.route("/api/state")
+@require_auth
 def api_state():
     state = get_state()
     if not state:
@@ -249,6 +378,7 @@ def api_state():
 
 
 @app.route("/api/schedule-status")
+@require_auth
 def api_schedule_status():
     """
     Devuelve el payload de trading_hours publicado por el bot al state doc.
@@ -282,6 +412,7 @@ def api_schedule_status():
 
 
 @app.route("/api/positions")
+@require_auth
 def api_positions():
     pos_doc = get_positions_doc()
     return jsonify({
@@ -292,6 +423,7 @@ def api_positions():
 
 
 @app.route("/api/trades")
+@require_auth
 def api_trades():
     limit  = min(int(request.args.get("limit", 200)), 500)
     trades = get_recent_trades(limit=limit)
@@ -300,6 +432,7 @@ def api_trades():
 
 
 @app.route("/api/strategies")
+@require_auth
 def api_strategies():
     """
     Estado actual de los toggles en formato canónico. Para crypto, sólo 20 keys
@@ -321,6 +454,7 @@ def api_strategies():
 
 
 @app.route("/api/strategy-stats")
+@require_auth
 def api_strategy_stats():
     """
     Agrega stats por estrategia leyendo eolo-crypto-trades (1 doc por trade).
@@ -385,6 +519,7 @@ def api_strategy_stats():
 
 
 @app.route("/api/decisions")
+@require_auth
 def api_decisions():
     limit = min(int(request.args.get("limit", 50)), 200)
     return jsonify({"decisions": get_recent_decisions(limit=limit)})
@@ -413,6 +548,7 @@ def health():
 # ── Control endpoints ────────────────────────────────────
 
 @app.route("/api/toggle-active", methods=["POST"])
+@require_auth
 def toggle_active():
     try:
         data   = request.get_json(silent=True) or {}
@@ -424,6 +560,7 @@ def toggle_active():
 
 
 @app.route("/api/close-all", methods=["POST"])
+@require_auth
 def close_all():
     """
     Cierra TODAS las posiciones Eolo activas (market sell).
@@ -439,6 +576,7 @@ def close_all():
 
 
 @app.route("/api/toggle-strategy", methods=["POST"])
+@require_auth
 def toggle_strategy():
     """
     Body: { "strategy": "rsi_sma200", "enabled": true }
@@ -461,6 +599,7 @@ def toggle_strategy():
 
 
 @app.route("/api/toggle-claude", methods=["POST"])
+@require_auth
 def toggle_claude():
     """Enable/disable Claude Bot #14."""
     try:
@@ -473,6 +612,7 @@ def toggle_claude():
 
 
 @app.route("/api/config", methods=["POST", "GET"])
+@require_auth
 def api_config():
     try:
         if request.method == "GET":
@@ -563,6 +703,10 @@ def api_config():
 
         if "trading_hours_enabled" in data:
             allowed["trading_hours_enabled"] = bool(data["trading_hours_enabled"])
+
+        # ── Macro news filter override ──────────────────────
+        if "macro_filter_enabled" in data:
+            allowed["macro_filter_enabled"] = bool(data["macro_filter_enabled"])
 
         if not allowed:
             return jsonify({"ok": False, "error": "Sin campos válidos"}), 400

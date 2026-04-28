@@ -116,6 +116,46 @@
   #btn-active.on  .dot { background: var(--green); box-shadow: 0 0 6px var(--green); }
   #btn-active.off .dot { background: var(--red); }
 
+  /* ── Config modal ── */
+  #btn-config {
+    background: #21262d; border: 1px solid #30363d; color: #e6edf3;
+    border-radius: 8px; padding: 5px 10px; font-size: .8rem; cursor: pointer;
+    transition: .15s;
+  }
+  #btn-config:hover { border-color: #d29922; color: #d29922; }
+  .modal-bg {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.55);
+    z-index: 9999; align-items: center; justify-content: center;
+  }
+  .modal-bg.show { display: flex; }
+  .modal {
+    background: #0d1117; border: 1px solid #30363d; border-radius: 12px;
+    padding: 20px 22px; min-width: 340px; max-width: 440px; width: 90%;
+    box-shadow: 0 8px 32px rgba(0,0,0,.5);
+    max-height: 90vh; overflow-y: auto;
+  }
+  .modal h3 { margin: 0 0 14px; font-size: 1rem; color: #e6edf3; }
+  .modal h4 { margin: 0 0 8px; font-size: .82rem; color: #8b949e; }
+  .modal label {
+    display: block; font-size: .72rem; color: #8b949e; margin: 10px 0 4px;
+  }
+  .modal input[type="number"],
+  .modal input[type="time"] {
+    width: 100%; box-sizing: border-box;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    color: #e6edf3; padding: 6px 8px; font-size: .82rem;
+  }
+  .modal input[type="number"]:focus,
+  .modal input[type="time"]:focus { outline: none; border-color: #58a6ff; }
+  .modal .actions {
+    display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;
+  }
+  .modal .btn { padding: 6px 16px; border-radius: 6px; font-size: .82rem; font-weight: 600; cursor: pointer; border: none; }
+  .modal .btn.ghost  { background: transparent; border: 1px solid #30363d; color: #8b949e; }
+  .modal .btn.ghost:hover  { border-color: #58a6ff; color: #58a6ff; }
+  .modal .btn.primary { background: #1f6feb; color: #fff; }
+  .modal .btn.primary:hover { background: #388bfd; }
+
   /* ── Close-All ── */
   #btn-close-all {
     display: flex; align-items: center; gap: 5px;
@@ -971,6 +1011,9 @@
       <button class="budget-save" onclick="saveBudget()">Guardar</button>
     </div>
 
+    <!-- Config modal trigger -->
+    <button id="btn-config" onclick="openConfigModal()">⚙ Config</button>
+
     <!-- Close All -->
     <button id="btn-close-all" onclick="confirmCloseAll()">
       🚨 Cerrar todo
@@ -986,6 +1029,68 @@
     <span id="updated">Cargando...</span>
   </div>
 </header>
+
+<!-- Config modal -->
+<div id="modal-config" class="modal-bg">
+  <div class="modal">
+    <h3>⚙ Configuración</h3>
+
+    <label for="v2-cfg-budget">Budget por trade (USD)</label>
+    <input type="number" id="v2-cfg-budget" min="10" max="100000" step="10">
+
+    <label for="v2-cfg-maxpos">Máx. posiciones simultáneas</label>
+    <input type="number" id="v2-cfg-maxpos" min="1" max="50" step="1">
+
+    <label for="v2-cfg-sl">Stop-loss default (%)</label>
+    <input type="number" id="v2-cfg-sl" min="0.1" max="50" step="0.1">
+
+    <label for="v2-cfg-tp">Take-profit default (%)</label>
+    <input type="number" id="v2-cfg-tp" min="0.1" max="100" step="0.1">
+
+    <label for="v2-cfg-dlc">Daily loss cap (%) — valor negativo</label>
+    <input type="number" id="v2-cfg-dlc" max="0" step="0.1">
+
+    <label style="margin-top:14px;display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="v2-cfg-confluence" style="width:auto;">
+      <span>Confluencia multi-TF (exige agreement entre timeframes)</span>
+    </label>
+    <label for="v2-cfg-confluence-min">Mínimo TFs que deben coincidir</label>
+    <input type="number" id="v2-cfg-confluence-min" min="1" max="10" step="1">
+
+    <hr style="border:0;border-top:1px solid var(--border);margin:16px 0 10px;">
+    <h4>Horario de trading (ET)</h4>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="v2-cfg-thours-enabled" style="width:auto;">
+      <span>Aplicar horario de trading</span>
+    </label>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:8px;">
+      <div>
+        <label for="v2-cfgThStart">Start (ET)</label>
+        <input type="time" id="v2-cfgThStart" />
+      </div>
+      <div>
+        <label for="v2-cfgThEnd">End (ET)</label>
+        <input type="time" id="v2-cfgThEnd" />
+      </div>
+      <div>
+        <label for="v2-cfgThAutoClose">Auto-close (ET)</label>
+        <input type="time" id="v2-cfgThAutoClose" />
+      </div>
+    </div>
+
+    <hr style="border:0;border-top:1px solid var(--border);margin:16px 0 10px;">
+    <h4>Filtro macro</h4>
+    <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+      <input type="checkbox" id="v2-cfg-macro-filter" style="width:auto;">
+      <span>Bloquear trading en días FOMC / CPI / NFP / PCE</span>
+    </label>
+
+    <div class="actions">
+      <button class="btn ghost"   onclick="closeConfigModal()">Cancelar</button>
+      <button class="btn primary" onclick="saveConfigModal()">Guardar</button>
+    </div>
+  </div>
+</div>
 
 <!-- Confirm overlay -->
 <div class="confirm-overlay" id="confirm-overlay">
@@ -1911,7 +2016,7 @@ function updateHeader() {
     if (lbl) lbl.textContent = botActive ? 'ACTIVO' : 'PAUSADO';
   }
 
-  // Config persistente (budget, max_positions, ticker_selection)
+  // Config persistente (budget, max_positions, ticker_selection, macro_filter_enabled)
   if (state.config) {
     const b = document.getElementById('budget-input');
     if (b && state.config.budget_per_trade != null && document.activeElement !== b) {
@@ -2743,6 +2848,73 @@ async function toggleBotActive() {
   } catch (e) { toast('Error de red: ' + e.message, 'error'); }
 }
 
+// ── Config modal ──────────────────────────────────────────
+async function openConfigModal() {
+  try {
+    const r   = await fetch('/api/config');
+    const cfg = r.ok ? (await r.json()) : {};
+    document.getElementById('v2-cfg-budget').value         = cfg.budget_per_trade           ?? 200;
+    document.getElementById('v2-cfg-maxpos').value         = cfg.max_positions              ?? 6;
+    document.getElementById('v2-cfg-sl').value             = cfg.default_stop_loss_pct      ?? 50;
+    document.getElementById('v2-cfg-tp').value             = cfg.default_take_profit_pct    ?? 100;
+    document.getElementById('v2-cfg-dlc').value            = cfg.daily_loss_cap_pct         ?? -5;
+    document.getElementById('v2-cfg-confluence').checked   = !!cfg.confluence_mode;
+    document.getElementById('v2-cfg-confluence-min').value = cfg.confluence_min_agree       ?? 2;
+    document.getElementById('v2-cfg-thours-enabled').checked = (cfg.trading_hours_enabled   ?? true);
+    document.getElementById('v2-cfgThStart').value         = cfg.trading_start_et           ?? "09:30";
+    document.getElementById('v2-cfgThEnd').value           = cfg.trading_end_et             ?? "15:27";
+    document.getElementById('v2-cfgThAutoClose').value     = cfg.auto_close_et              ?? "15:27";
+    document.getElementById('v2-cfg-macro-filter').checked = (cfg.macro_filter_enabled      ?? true);
+    document.getElementById('modal-config').classList.add('show');
+  } catch (e) {
+    toast('No pude cargar config: ' + e.message, 'error');
+  }
+}
+
+function closeConfigModal() {
+  document.getElementById('modal-config').classList.remove('show');
+}
+
+async function saveConfigModal() {
+  const body = {
+    budget_per_trade:        parseFloat(document.getElementById('v2-cfg-budget').value),
+    max_positions:           parseInt  (document.getElementById('v2-cfg-maxpos').value, 10),
+    default_stop_loss_pct:   parseFloat(document.getElementById('v2-cfg-sl').value),
+    default_take_profit_pct: parseFloat(document.getElementById('v2-cfg-tp').value),
+    daily_loss_cap_pct:      parseFloat(document.getElementById('v2-cfg-dlc').value),
+    confluence_mode:         document.getElementById('v2-cfg-confluence').checked,
+    confluence_min_agree:    parseInt  (document.getElementById('v2-cfg-confluence-min').value, 10),
+    trading_hours_enabled:   document.getElementById('v2-cfg-thours-enabled').checked,
+    trading_start_et:        document.getElementById('v2-cfgThStart').value     || "09:30",
+    trading_end_et:          document.getElementById('v2-cfgThEnd').value       || "15:27",
+    auto_close_et:           document.getElementById('v2-cfgThAutoClose').value || "15:27",
+    macro_filter_enabled:    document.getElementById('v2-cfg-macro-filter').checked,
+  };
+  Object.keys(body).forEach(k => { if (Number.isNaN(body[k])) delete body[k]; });
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (r.ok) {
+      // Sync budget-input inline field too
+      const budgetEl = document.getElementById('budget-input');
+      if (budgetEl && body.budget_per_trade) budgetEl.value = body.budget_per_trade;
+      closeConfigModal();
+      toast('✅ Config guardada', 'info');
+    } else {
+      const res = await r.json().catch(() => ({}));
+      toast('Error: ' + (res.error || 'no se pudo guardar'), 'error');
+    }
+  } catch (e) { toast('Error de red: ' + e.message, 'error'); }
+}
+
+// Cerrar modal clickando fuera
+document.getElementById('modal-config').addEventListener('click', (e) => {
+  if (e.target.id === 'modal-config') closeConfigModal();
+});
+
 async function saveBudget() {
   const val = parseFloat(document.getElementById('budget-input').value);
   if (!val || val < 50) { toast('Presupuesto inválido (mín $50)', 'error'); return; }
@@ -2898,6 +3070,12 @@ const STRATEGY_DEFS = {
   theta: [
     { key: 'theta_harvest',       label: '🌾 Theta Harvest (Always-In)' },
   ],
+  fase8: [
+    { key: 'vrp_carry',          label: '📈 VRP Carry (volatility risk premium)' },
+    { key: '0dte_gamma_scalp',   label: '⚡ 0DTE Gamma Scalp' },
+    { key: 'earnings_iv_harvest',label: '💰 Earnings IV Harvest' },
+    { key: 'put_skew',           label: '📉 Put Skew Harvesting' },
+  ],
 };
 
 const STRAT_GROUP_META = [
@@ -2907,6 +3085,7 @@ const STRAT_GROUP_META = [
   { key: 'suitav3',  label: 'Suite v3' },
   { key: 'combos',   label: 'Combos' },
   { key: 'theta',    label: 'Theta Harvest' },
+  { key: 'fase8',    label: '🚀 FASE 8 Options' },
 ];
 
 let STRATEGIES_STATE  = {};   // key -> bool
