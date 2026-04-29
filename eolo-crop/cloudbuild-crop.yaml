@@ -1,0 +1,63 @@
+# ============================================================
+#  CROP — Theta Harvest Only (Cloud Build Pipeline)
+#
+#  Servicio: eolo-bot-crop (us-east1)
+#  Copia limpia de v2 con SOLO Theta Harvest
+#
+#  IMPORTANTE: El submit tiene que hacerse desde la RAÍZ del
+#  repo `eolo/`, porque el Dockerfile copia archivos de Bot/
+#  (estrategias v1) + eolo-crop/ simultáneamente.
+#
+#  Manual trigger:
+#    cd /Users/JUAN/PycharmProjects/eolo
+#    gcloud builds submit --config eolo-crop/cloudbuild-crop.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  # ── Step 1: Build Docker image ────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-crop/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:latest'
+      - '.'
+
+  # ── Step 2: Push ──────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:latest'
+
+  # ── Step 3: Deploy to Cloud Run ───────────────────────
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot-crop'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot-crop:latest'
+      - '--region=us-east1'             # Theta Harvest: us-east1 (misma que v2)
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=1Gi'                  # menos RAM: solo Theta (no VRP/0DTE/Earnings/PutSkew)
+      - '--cpu=1'
+      - '--cpu-boost'
+      - '--no-cpu-throttling'           # CPU siempre asignado — necesario porque el WS no genera tráfico HTTP
+      - '--timeout=3600'                # 1 hora max por request
+      - '--max-instances=1'
+      - '--min-instances=1'             # 24/7 — NUNCA scale-to-zero
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-crop:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+

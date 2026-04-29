@@ -1,0 +1,6 @@
+.env
+*.log
+__pycache__/
+*.pyc
+eolo_state.json
+paper_trades_log.csv

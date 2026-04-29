@@ -1,0 +1,66 @@
+# ============================================================
+#  EOLO v2 (OptionsBrain + Claude Bot v2) — Cloud Build Pipeline
+#
+#  Servicio: eolo-bot-v2 (us-east1)
+#
+#  IMPORTANTE: El submit tiene que hacerse desde la RAÍZ del
+#  repo `eolo/`, porque el Dockerfile copia archivos de Bot/
+#  (estrategias v1) + eolo-options/ simultáneamente.
+#
+#  Manual trigger:
+#    cd /Users/JUAN/PycharmProjects/eolo
+#    gcloud builds submit --config eolo-options/cloudbuild.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  # ── Step 1: Build Docker image ────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-options/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+      - '.'
+
+  # ── Step 2: Push ──────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+
+  # ── Step 3: Deploy to Cloud Run ───────────────────────
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot-v2'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+      - '--region=us-east1'             # más cerca de Schwab
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'                  # v2 usa más RAM: buffers de opciones + IVSurface
+      - '--cpu=1'
+      - '--cpu-boost'                   # CPU extra en arranque (websocket handshake + chain fetch inicial)
+      - '--no-cpu-throttling'           # CPU siempre asignado — necesario porque el WS no genera tráfico HTTP
+      - '--timeout=3600'                # 1 hora max por request
+      - '--max-instances=1'
+      - '--min-instances=1'             # 24/7 — NUNCA scale-to-zero
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      # ANTHROPIC_API_KEY se lee desde Secret Manager en runtime por
+      # claude/claude_bot.py::_get_api_key() y
+      # claude/options_brain.py::_load_api_key_from_secret_manager().
+      # La SA de eolo-bot-v2 necesita roles/secretmanager.secretAccessor.
+      # (Ver comandos de IAM al final del README.)
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

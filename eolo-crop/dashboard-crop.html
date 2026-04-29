@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CROP — Theta Harvest Bot</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+            color: #e2e8f0;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 2px solid #334155;
+        }
+        .header h1 { font-size: 28px; color: #10b981; }
+        .kpis {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .kpi-card {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+        }
+        .kpi-label { font-size: 12px; color: #94a3b8; text-transform: uppercase; margin-bottom: 8px; }
+        .kpi-value { font-size: 24px; font-weight: bold; color: #e2e8f0; }
+        .kpi-value.green { color: #10b981; }
+        .kpi-value.red { color: #ef4444; }
+        .kpi-sub { font-size: 12px; color: #64748b; margin-top: 8px; }
+        .section {
+            background: #1e293b;
+            border: 1px solid #334155;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .section h2 { font-size: 16px; color: #cbd5e1; margin-bottom: 15px; padding-bottom: 10px; border-bottom: 1px solid #334155; }
+        .positions-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        .positions-table th { background: #0f172a; padding: 10px; text-align: left; color: #94a3b8; font-weight: 600; border-bottom: 1px solid #334155; }
+        .positions-table td { padding: 10px; border-bottom: 1px solid #334155; }
+        .ticker-badge { display: inline-block; background: #10b981; color: #0f172a; padding: 4px 8px; border-radius: 4px; font-weight: 600; }
+        .pnl-positive { color: #10b981; }
+        .pnl-negative { color: #ef4444; }
+        .loading { text-align: center; padding: 40px; color: #94a3b8; }
+        .error-banner { background: #7f1d1d; border: 1px solid #dc2626; color: #fca5a5; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🌾 CROP — Theta Harvest Bot</h1>
+            <div style="text-align: right;">
+                <div style="font-size: 12px; color: #94a3b8;">LAST UPDATE</div>
+                <div style="font-size: 18px; color: #10b981; font-weight: bold;" id="last-update">—</div>
+            </div>
+        </div>
+
+        <div id="error-container"></div>
+
+        <div class="kpis">
+            <div class="kpi-card">
+                <div class="kpi-label">P&L Hoy</div>
+                <div class="kpi-value" id="pnl-today">—</div>
+                <div class="kpi-sub" id="pnl-breakdown">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Crédito Total</div>
+                <div class="kpi-value" id="credit-total">—</div>
+                <div class="kpi-sub" id="positions-open">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Win Rate</div>
+                <div class="kpi-value" id="win-rate">—</div>
+                <div class="kpi-sub" id="trades-closed">—</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Active Tickers</div>
+                <div class="kpi-value" id="active-tickers">—</div>
+                <div class="kpi-sub">Theta Harvest</div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h2>📊 Posiciones Abiertas</h2>
+            <div id="positions-container">
+                <div class="loading">Cargando posiciones...</div>
+            </div>
+        </div>
+
+        <div style="text-align: center; color: #64748b; font-size: 12px; margin-top: 20px;">
+            Actualiza cada 60 segundos | CROP Bot en Cloud Run
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = "https://eolo-bot-crop-nmjz4iwcea-ue.a.run.app";
+
+        async function fetchState() {
+            try {
+                const response = await fetch(`${API_BASE}/api/state`);
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                return await response.json();
+            } catch (error) {
+                showError(`Error conectando a CROP: ${error.message}`);
+                return null;
+            }
+        }
+
+        function showError(message) {
+            document.getElementById("error-container").innerHTML = `<div class="error-banner">⚠️ ${message}</div>`;
+        }
+
+        function formatPnl(value) {
+            if (value === null || value === undefined) return "—";
+            const sign = value >= 0 ? "+" : "";
+            return `${sign}$${value.toFixed(2)}`;
+        }
+
+        function updateDashboard(state) {
+            if (!state) return;
+
+            const now = new Date().toLocaleTimeString("es-ES");
+            document.getElementById("last-update").textContent = now;
+            document.getElementById("error-container").innerHTML = "";
+
+            const theta = state.theta || {};
+            const pnlData = theta.pnl_today || {};
+            const stats = theta.stats || {};
+            const positions = theta.positions || [];
+
+            const pnlToday = pnlData.total_pnl_today || 0;
+            const realized = pnlData.realized_today || 0;
+            const unrealized = pnlData.unrealized_today || 0;
+            const creditTotal = pnlData.credit_total || 0;
+            const positionsOpen = pnlData.positions_open || 0;
+            const positionsClosed = pnlData.positions_closed_today || 0;
+            const winRate = stats.win_rate || 0;
+
+            const pnlEl = document.getElementById("pnl-today");
+            pnlEl.textContent = formatPnl(pnlToday);
+            pnlEl.className = `kpi-value ${pnlToday >= 0 ? "green" : "red"}`;
+            document.getElementById("pnl-breakdown").textContent = `${formatPnl(realized)} (realizado) + ${formatPnl(unrealized)} (abierto)`;
+            document.getElementById("credit-total").textContent = `$${creditTotal.toFixed(0)}`;
+            document.getElementById("positions-open").textContent = `${positionsOpen} spreads`;
+            document.getElementById("win-rate").textContent = winRate ? `${winRate.toFixed(1)}%` : "—";
+            document.getElementById("trades-closed").textContent = `${positionsClosed} cerrados`;
+            document.getElementById("active-tickers").textContent = new Set(positions.map(p => p.ticker)).size;
+
+            renderPositions(positions);
+        }
+
+        function renderPositions(positions) {
+            const container = document.getElementById("positions-container");
+            if (positions.length === 0) {
+                container.innerHTML = '<div class="loading">Sin posiciones abiertas</div>';
+                return;
+            }
+
+            let html = `<table class="positions-table"><thead><tr>
+                <th>Ticker</th><th>Type</th><th>DTE</th><th>Tranche</th><th>Strikes</th><th>Credit</th><th>Current</th><th>P&L</th>
+            </tr></thead><tbody>`;
+
+            positions.forEach(pos => {
+                const ticker = pos.ticker || "?";
+                const type = pos.spread_type || "?";
+                const dte = pos.dte_slot || pos.dte || "?";
+                const tranche = `T${pos.tranche_id || 0}`;
+                const strikes = `${(pos.short_strike || 0).toFixed(0)}/${(pos.long_strike || 0).toFixed(0)}`;
+                const credit = (pos.net_credit || 0).toFixed(2);
+                const current = (pos.current_value || 0).toFixed(2);
+                const pnl = pos.unrealized_pnl || 0;
+                const pnlClass = pnl >= 0 ? "pnl-positive" : "pnl-negative";
+
+                html += `<tr>
+                    <td><span class="ticker-badge">${ticker}</span></td>
+                    <td>${type}</td><td>${dte}</td><td>${tranche}</td><td>${strikes}</td>
+                    <td>$${credit}</td><td>$${current}</td><td class="${pnlClass}">${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}</td>
+                </tr>`;
+            });
+
+            html += `</tbody></table>`;
+            container.innerHTML = html;
+        }
+
+        async function refresh() {
+            const state = await fetchState();
+            if (state) updateDashboard(state);
+        }
+
+        refresh();
+        setInterval(refresh, 60000);
+    </script>
+</body>
+</html>

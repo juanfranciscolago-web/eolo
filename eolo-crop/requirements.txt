@@ -1,0 +1,38 @@
+# EOLO v2 — Dependencies
+# Install: pip install -r requirements.txt
+
+# HTTP
+requests>=2.31.0
+
+# WebSocket
+websockets>=12.0
+
+# Logging
+loguru>=0.7.0
+
+# Data / Math (requerido por estrategias Eolo v1)
+numpy>=1.26.0
+pandas>=2.0.0
+scipy>=1.12.0
+
+# Earnings calendar + market data (earnings_iv_harvest_strategy)
+yfinance>=0.2.40
+
+# Claude API
+anthropic>=0.30.0
+
+# Google Cloud
+google-cloud-firestore>=2.16.0
+google-cloud-secret-manager>=2.20.0
+
+# Timezone
+pytz>=2024.1
+tzdata>=2024.1
+
+# Dashboard (legacy local)
+fastapi>=0.111.0
+uvicorn>=0.29.0
+
+# Cloud Run health endpoint (main.py)
+flask>=3.0.0
+gunicorn>=22.0.0

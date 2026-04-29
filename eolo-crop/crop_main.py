@@ -1,24 +1,27 @@
 # ============================================================
-#  EOLO v2 — Main Loop (Orquestador)
+#  CROP — Theta Harvest Bot (Copia limpia de Eolo v2)
 #
-#  Coordina todos los módulos de Eolo v2 en un único proceso:
+#  Especializado en vender spreads de crédito usando Theta Harvest.
+#  Mantiene toda la infraestructura de v2 (config, hours, macro, pivots)
+#  pero SOLO ejecuta Theta Harvest (sin VRP, 0DTE, Earnings, PutSkew).
 #
+#  Módulos:
 #    1. SchwabStream     → quotes L1 + velas 1min en tiempo real
 #    2. OptionChainFetcher → cadena de opciones cada 30s
-#    3. IndicatorEngine  → calcula señales de las 13 estrategias
-#    4. IVSurface        → construye la superficie de volatilidad
-#    5. MispricingScanner → detecta anomalías de precio
-#    6. OptionsBrain     → Claude API decide qué hacer
-#    7. OptionsTrader    → ejecuta la orden en Schwab
+#    3. OptionsBrain     → Claude API decide spread entry/exit
+#    4. OptionsTrader    → ejecuta spreads en Schwab
+#    5. Theta Harvest    → monitor y cierre de posiciones
+#    6. Pivots           → análisis de pivots y riesgo
+#    7. MacroNews        → filtro de noticias macroeconómicas
 #
-#  Flujo de decisión (por ticker, cada ciclo):
-#    WebSocket tick → acumular candles en buffer
-#    Cada 60s O cada chain refresh:
-#      → calcular señales Eolo v1
-#      → construir IV surface
-#      → escanear mispricing
-#      → consultar Claude
-#      → si BUY/SELL → ejecutar orden
+#  Características:
+#    - Live P&L (realized + unrealized + credit_total)
+#    - Daily P&L tracking
+#    - Config modal con risk controls (SL/TP/DLC)
+#    - Trading hours configurables
+#    - Macro filters
+#    - Sheets sync
+#    - Telegram alerts
 #
 #  Auto-close: todas las posiciones se cierran a las 15:27 ET
 #
@@ -27,7 +30,7 @@
 #    GOOGLE_CLOUD_PROJECT: proyecto GCP (para Firestore tokens)
 #
 #  Uso:
-#    python eolo_v2_main.py
+#    python crop_main.py
 # ============================================================
 import asyncio
 import json
@@ -44,14 +47,11 @@ sys.path.insert(0, BASE_DIR)
 sys.path.insert(0, os.path.join(BASE_DIR, ".."))        # raíz eolo/
 sys.path.insert(0, os.path.join(BASE_DIR, "..", "Bot")) # estrategias v1
 
-# ── Imports de módulos Eolo v2 ────────────────────────────
+# ── Imports de módulos CROP (Theta Harvest only) ────────────────────────────
 from stream.options_stream import SchwabStream
 from stream.options_chain  import OptionChainFetcher
 from analysis.greeks       import enrich_contract
-from analysis.mispricing   import MispricingScanner
-from analysis.iv_surface   import IVSurface
 from claude.options_brain  import OptionsBrain
-from claude.claude_bot     import ClaudeBotEngine
 from execution.options_trader import OptionsTrader, _send_telegram
 from theta_harvest import scan_theta_harvest_tranches, ThetaHarvestSignal
 from theta_harvest.theta_harvest_strategy import (
@@ -67,11 +67,8 @@ from theta_harvest.pivot_analysis import (
     fetch_tick_ad, TickADContext,
 )
 from theta_harvest.macro_news_filter import is_news_day, log_calendar_status
-# ── Nuevas estrategias v2 (2026-04-27) ────────────────────
-from theta_harvest.vrp_carry_strategy import scan_vrp_carry, VRPSignal
-from theta_harvest.gamma_scalp_0dte_strategy import scan_gamma_scalp, should_force_close, GammaScalpSignal
-from theta_harvest.earnings_iv_harvest_strategy import scan_earnings_iv, EarningsIVSignal
-from theta_harvest.put_skew_normalization_strategy import scan_put_skew, PutSkewSignal
+
+# ── REMOVED: VRP, 0DTE Gamma Scalp, Earnings IV, Put Skew (CROP es theta-only) ────
 # ── Multi-TF compartido (paquete común eolo_common) ───────
 # Vive en /eolo_common/ del repo root. Dockerfile lo copia a /app/eolo_common.
 import sys as _sys, os as _os
@@ -137,7 +134,7 @@ except ImportError as e:
 # Tickers a operar (superset — el universo del que el dashboard puede
 # activar/desactivar por estrategia: puts / covered calls / wheel).
 # La selección real se lee en caliente desde Firestore
-# (eolo-options-config/settings.ticker_selection) y se cachea en
+# (eolo-crop-config/settings.ticker_selection) y se cachea en
 # self._ticker_selection / self._active_tickers.
 TICKERS = ["SPY", "QQQ", "IWM", "MSFT", "AAPL", "NVDA", "TSLA", "TQQQ"]
 
@@ -312,13 +309,13 @@ def _find_unserializable_path(obj, path: str = "root", _depth: int = 0):
 
 # ── Clase principal ────────────────────────────────────────
 
-class EoloV2:
+class CropBotTheta:
 
     def __init__(self):
         # Módulos
         self.stream        = SchwabStream(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
-        self.mispricing    = MispricingScanner()
+        # CROP: sin MispricingScanner (solo Theta Harvest)
         self.brain         = OptionsBrain()
         self.trader        = OptionsTrader(paper=PAPER_TRADING)
         # Auto-Router — actualiza toggles de estrategias según régimen cada 30 min
@@ -335,7 +332,7 @@ class EoloV2:
             logger.warning(f"[CLAUDE_BOT_V2] Engine NO disponible: {e}")
 
         mode = "📄 PAPER TRADING" if PAPER_TRADING else "💰 LIVE TRADING"
-        logger.info(f"[EOLO v2] Modo: {mode}")
+        logger.info(f"[CROP] Modo: {mode}")
 
         # Estado interno
         # Buffer 1-min compartido (eolo_common.CandleBuffer)
@@ -403,15 +400,6 @@ class EoloV2:
         self._theta_macro_status: dict = {}
         # Último Tick/A-D leído (para dashboard pill)
         self._theta_tick_ad: dict = {}
-        # ── Nuevas estrategias v2 (2026-04-27) ───────────────
-        self._vrp_enabled:     bool = True
-        self._gamma_scalp_enabled: bool = True
-        self._earnings_iv_enabled: bool = True
-        self._put_skew_enabled:    bool = True
-        # Flags de posición abierta (evitar entradas dobles)
-        self._has_open_0dte:   bool = False
-        self._has_open_vrp:    dict[str, bool] = {}   # ticker → bool
-        self._has_open_skew:   dict[str, bool] = {}   # ticker → bool
 
         # ── Dashboard state ───────────────────────────────
         self._quotes:          dict[str, dict] = {}
@@ -420,7 +408,7 @@ class EoloV2:
         self._signals_data:    dict[str, dict] = {}
         self._claude_decisions:dict[str, dict] = {}
         self._claude_history:  list[dict]      = []   # últimas 50 decisiones
-        self._state_file = os.path.join(BASE_DIR, "eolo_state.json")
+        self._state_file = os.path.join(BASE_DIR, "crop_state.json")
 
         # ── Token auto-refresh ────────────────────────────
         # Refresca el access_token de Schwab cada 25 min (expira a los 30)
@@ -428,8 +416,8 @@ class EoloV2:
 
         # ── Control remoto desde el dashboard ─────────────
         # El dashboard Cloud Run escribe en:
-        #   eolo-options-config/commands → órdenes puntuales (toggle, close_all)
-        #   eolo-options-config/settings → config persistente (budget, max_positions, ticker_selection)
+        #   eolo-crop-config/commands → órdenes puntuales (toggle, close_all)
+        #   eolo-crop-config/settings → config persistente (budget, max_positions, ticker_selection)
         # Este bot las lee en _command_watcher_loop() cada 5s.
         self._active:               bool         = True
         self._budget_per_trade:     float | None = None
@@ -487,7 +475,7 @@ class EoloV2:
         # Keys canónicos (matchean los de Bot/bot_main.py DEFAULT_STRATEGIES).
         # El bot consulta este dict en _run() antes de llamar a cada analyzer.
         # Defaults = todos ON. Overrides vienen de Firestore:
-        #   eolo-options-config/settings.strategies_enabled
+        #   eolo-crop-config/settings.strategies_enabled
         self._strategies_enabled: dict[str, bool] = {
             # Clásicas
             "ema_crossover": True, "gap_fade": True, "rsi_sma200": True,
@@ -584,7 +572,7 @@ class EoloV2:
         self._running = False
         self.stream.stop()
         self.chain_fetcher.stop()
-        logger.info("[EOLO v2] Detenido.")
+        logger.info("[CROP] Detenido.")
 
     # ── Circuit breaker: Anthropic billing ─────────────────
 
@@ -767,31 +755,27 @@ class EoloV2:
                             _toggles = self._auto_router.update(
                                 vix=float(_vix_val), spy_df=_spy_df, save_firestore=False
                             )
-                            # Aplicar toggles a las estrategias extra de v2
-                            self._vrp_enabled          = _toggles.get("vrp_carry",          self._vrp_enabled)
-                            self._gamma_scalp_enabled  = _toggles.get("0dte_gamma_scalp",   self._gamma_scalp_enabled)
-                            self._earnings_iv_enabled  = _toggles.get("earnings_iv_harvest",self._earnings_iv_enabled)
-                            self._put_skew_enabled     = _toggles.get("put_skew",           self._put_skew_enabled)
-                            logger.debug(f"[AUTO_ROUTER] v2 toggles: {_toggles}")
+                            # CROP: solo Theta Harvest (sin VRP, 0DTE, Earnings, PutSkew)
+                            logger.debug(f"[AUTO_ROUTER] CROP (theta-only): {_toggles}")
             except Exception as _ar_e:
                 logger.debug(f"[AUTO_ROUTER] v2 skip: {_ar_e}")
 
         # Bot pausado desde el dashboard → skip
         if not self._active:
-            logger.debug(f"[EOLO v2] Bot pausado (dashboard) — skip {ticker}")
+            logger.debug(f"[CROP] Bot pausado (dashboard) — skip {ticker}")
             return
 
         # Ticker desactivado en los 3 grupos del selector → skip
         # Excepción: THETA_HARVEST_TICKERS siempre se procesan (aunque no estén en puts/calls/wheel)
         if ticker not in self._active_tickers and ticker not in THETA_HARVEST_TICKERS:
             logger.debug(
-                f"[EOLO v2] {ticker} desactivado en el selector del dashboard — skip"
+                f"[CROP] {ticker} desactivado en el selector del dashboard — skip"
             )
             return
 
         # No operar después de 15:27 ET
         if self._is_after_close_time():
-            logger.debug(f"[EOLO v2] Mercado cerca del cierre — sin nuevas órdenes")
+            logger.debug(f"[CROP] Mercado cerca del cierre — sin nuevas órdenes")
             return
 
         await self._run_analysis_cycle(ticker, chain)
@@ -807,7 +791,7 @@ class EoloV2:
         4. Consultar Claude
         5. Ejecutar decisión
         """
-        logger.info(f"[EOLO v2] ── Ciclo de análisis: {ticker} ──")
+        logger.info(f"[CROP] ── Ciclo de análisis: {ticker} ──")
 
         # 1. Señales técnicas Eolo v1
         signals = self._get_eolo_signals(ticker)
@@ -826,11 +810,8 @@ class EoloV2:
             "ts":          surface.ts,
         }
 
-        # 3. Mispricing
-        alerts = self.mispricing.scan(chain)
-        self._mispricing_data[ticker] = alerts[:20]
-        if alerts:
-            logger.info(f"[EOLO v2] {ticker} — {len(alerts)} alertas de mispricing")
+        # 3. CROP: Sin mispricing scanning (solo Theta Harvest)
+        alerts = []
 
         # 4. Quote del subyacente
         quote = self._quote_buffers.get(ticker) or chain.get("underlying", {})
@@ -844,7 +825,7 @@ class EoloV2:
         # No abrir más posiciones si ya tenemos el máximo
         if len(ticker_positions) >= self._max_positions:
             logger.info(
-                f"[EOLO v2] {ticker} — máx posiciones alcanzado "
+                f"[CROP] {ticker} — máx posiciones alcanzado "
                 f"({len(ticker_positions)}/{self._max_positions}), no abrir nuevas"
             )
             return
@@ -860,7 +841,7 @@ class EoloV2:
             if (now_ts - self._daily_loss_cap_log_ts) >= self._daily_loss_cap_log_dedup_s:
                 self._daily_loss_cap_log_ts = now_ts
                 logger.warning(
-                    f"[EOLO v2] 🛑 Daily loss cap HIT — "
+                    f"[CROP] 🛑 Daily loss cap HIT — "
                     f"pnl_pct={st.get('pnl_pct', 0):+.2f}% <= cap={st.get('cap', 0):.2f}% "
                     f"(realized=${st.get('realized', 0):+.2f}, "
                     f"unrealized=${st.get('unrealized', 0):+.2f}, "
@@ -886,7 +867,7 @@ class EoloV2:
             has_position   = bool(ticker_positions)
             if not (has_tech_signal or has_mispricing or has_position):
                 logger.debug(
-                    f"[EOLO v2] {ticker} — gate: sin señales/mispricing/posiciones, "
+                    f"[CROP] {ticker} — gate: sin señales/mispricing/posiciones, "
                     f"skip Claude (ahorro API)"
                 )
                 return
@@ -905,7 +886,7 @@ class EoloV2:
             # Éxito → resetear contador del circuit breaker de billing
             self._on_anthropic_success()
         except Exception as e:
-            logger.error(f"[EOLO v2] Error en OptionsBrain para {ticker}: {e}")
+            logger.error(f"[CROP] Error en OptionsBrain para {ticker}: {e}")
             # Circuit breaker: si es un error 400 billing, incrementa contador
             # y eventualmente pausa el bot + Telegram + Firestore flag.
             self._check_anthropic_billing_error(e)
@@ -942,7 +923,7 @@ class EoloV2:
                .document(today).collection("decisions").document(tsid) \
                .set({**decision_record, "recorded_ts": time.time()})
         except Exception as _e:
-            logger.warning(f"[EOLO v2] Firestore write de decisión falló: {_e}")
+            logger.warning(f"[CROP] Firestore write de decisión falló: {_e}")
 
         # 8. Ejecutar si hay señal
         action = decision.get("action", "HOLD")
@@ -950,7 +931,7 @@ class EoloV2:
             await self._execute_decision(decision)
         else:
             logger.info(
-                f"[EOLO v2] {ticker} → HOLD | {decision.get('reason','')[:100]}"
+                f"[CROP] {ticker} → HOLD | {decision.get('reason','')[:100]}"
             )
 
         # 9. Escribir estado al disco para el dashboard
@@ -999,117 +980,8 @@ class EoloV2:
         if daily_df is None or daily_df.empty:
             return
 
-        # ── VRP Carry ─────────────────────────────────────
-        if self._vrp_enabled:
-            try:
-                spy_trend = "NEUTRAL"
-                if len(daily_df) >= 20:
-                    ret = (float(daily_df["close"].iloc[-1]) - float(daily_df["close"].iloc[-20])) / float(daily_df["close"].iloc[-20]) * 100
-                    spy_trend = "UP" if ret > 2 else ("DOWN" if ret < -2 else "NEUTRAL")
-                sig: VRPSignal = scan_vrp_carry(
-                    ticker=ticker, daily_df=daily_df,
-                    vix_current=vix_current,
-                    spy_trend=spy_trend,
-                    macro_news_today=news_today,
-                )
-                if sig.signal != "HOLD":
-                    logger.info(
-                        f"[VRP_CARRY] {ticker} → {sig.signal} | "
-                        f"VRP={sig.vrp:+.1f} conf={sig.confidence:.2f} | {sig.reason}"
-                    )
-                    _send_telegram(
-                        f"📊 VRP Carry {ticker}: {sig.signal} | VRP={sig.vrp:+.1f}pts "
-                        f"(VIX={sig.vix:.1f} HV30={sig.hv_30d:.1f})"
-                    )
-                    if sig.signal == "OPEN_SPREAD":
-                        self._has_open_vrp[ticker] = True
-                    elif sig.signal == "CLOSE_SPREAD":
-                        self._has_open_vrp[ticker] = False
-            except Exception as e:
-                logger.debug(f"[VRP_CARRY] {ticker} error: {e}")
-
-        # ── 0DTE Gamma Scalp ──────────────────────────────
-        if self._gamma_scalp_enabled and ticker == "SPY":
-            try:
-                # Forzar cierre si ya pasó las 14:00 ET en viernes
-                if should_force_close(now_et) and self._has_open_0dte:
-                    logger.info("[0DTE_GAMMA] SPY → FORCE_CLOSE (14:00 ET viernes)")
-                    _send_telegram("🔔 0DTE Gamma Scalp SPY: FORCE CLOSE — 14:00 ET")
-                    self._has_open_0dte = False
-                else:
-                    gsig: GammaScalpSignal = scan_gamma_scalp(
-                        ticker=ticker,
-                        intraday_df=daily_df,
-                        vix_current=vix_current,
-                        now_et=now_et,
-                        has_open_0dte=self._has_open_0dte,
-                    )
-                    if gsig.signal in ("LONG_CALL", "LONG_PUT"):
-                        logger.info(
-                            f"[0DTE_GAMMA] SPY → {gsig.signal} | "
-                            f"RSI={gsig.rsi:.1f} strike={gsig.target_strike} "
-                            f"conf={gsig.confidence:.2f}"
-                        )
-                        _send_telegram(
-                            f"⚡ 0DTE Gamma Scalp SPY: {gsig.signal} | "
-                            f"RSI={gsig.rsi:.1f} ATM=${gsig.target_strike:.0f} "
-                            f"VIX={vix_current:.1f}"
-                        )
-                        self._has_open_0dte = True
-            except Exception as e:
-                logger.debug(f"[0DTE_GAMMA] SPY error: {e}")
-
-        # ── Earnings IV Harvest ───────────────────────────
-        if self._earnings_iv_enabled:
-            try:
-                esig: EarningsIVSignal = scan_earnings_iv(
-                    ticker=ticker,
-                    daily_df=daily_df,
-                    vix_current=vix_current,
-                    macro_news_today=news_today,
-                )
-                if esig.signal != "HOLD":
-                    logger.info(
-                        f"[EARNINGS_IV] {ticker} → {esig.signal} | "
-                        f"IV_rank={esig.iv_rank:.0f} days={esig.days_to_earnings} "
-                        f"| {esig.reason}"
-                    )
-                    _send_telegram(
-                        f"📅 Earnings IV {ticker}: {esig.signal} | "
-                        f"IV_rank={esig.iv_rank:.0f} "
-                        f"({esig.days_to_earnings}d para earnings)"
-                    )
-            except Exception as e:
-                logger.debug(f"[EARNINGS_IV] {ticker} error: {e}")
-
-        # ── Put Skew Normalization ────────────────────────
-        if self._put_skew_enabled:
-            try:
-                has_skew_pos = self._has_open_skew.get(ticker, False)
-                ssig: PutSkewSignal = scan_put_skew(
-                    ticker=ticker,
-                    daily_df=daily_df,
-                    vix_current=vix_current,
-                    macro_news_today=news_today,
-                    has_open_position=has_skew_pos,
-                )
-                if ssig.signal != "HOLD":
-                    logger.info(
-                        f"[PUT_SKEW] {ticker} → {ssig.signal} | "
-                        f"pct={ssig.skew_percentile:.0f} "
-                        f"skew={ssig.skew_value:+.2f} conf={ssig.confidence:.2f}"
-                    )
-                    _send_telegram(
-                        f"📉 Put Skew {ticker}: {ssig.signal} | "
-                        f"skew_pct={ssig.skew_percentile:.0f} "
-                        f"VIX={vix_current:.1f}"
-                    )
-                    if ssig.signal == "FADE_SKEW":
-                        self._has_open_skew[ticker] = True
-                    elif ssig.signal == "CLOSE_SKEW":
-                        self._has_open_skew[ticker] = False
-            except Exception as e:
-                logger.debug(f"[PUT_SKEW] {ticker} error: {e}")
+        # ── CROP: REMOVED VRP, 0DTE Gamma, Earnings IV, Put Skew ─────────────────
+        # (Theta Harvest only — see _theta_harvest_v2 below)
 
     # ── Theta Harvest v2 — Always-In Multi-DTE ────────────
 
@@ -1477,10 +1349,11 @@ class EoloV2:
                     pass
 
             for pos, exit_reason in to_close:
-                pos_ticker  = pos.get("ticker", "?")
-                dte_slot    = pos.get("dte_slot", pos.get("dte"))
-                spread_type = pos.get("spread_type", "")
                 try:
+                    pos_ticker  = pos.get("ticker", "?") or "?"
+                    dte_slot    = (pos.get("dte_slot") or pos.get("dte") or "?")
+                    spread_type = pos.get("spread_type", "") or ""
+                    exit_reason = exit_reason or "UNKNOWN"
                     close_decision = {
                         "action":       "CLOSE_SPREAD",
                         "ticker":       pos_ticker,
@@ -1489,7 +1362,7 @@ class EoloV2:
                         "short_strike": pos.get("short_strike"),
                         "long_strike":  pos.get("long_strike"),
                         "contracts":    pos.get("contracts", 1),
-                        "reason":       f"ThetaHarvest {exit_reason}",
+                        "reason":       f"ThetaHarvest {exit_reason or '?'}",
                     }
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
@@ -1507,14 +1380,17 @@ class EoloV2:
                         if not remaining_tranches and dte_slot is not None:
                             self._theta_free_slot(pos_ticker, dte_slot)
 
-                        tranche_id  = pos.get("tranche_id", "?")
+                        tranche_id  = pos.get("tranche_id") or "?"
                         t_target    = pos.get("tranche_target")
-                        t_label     = (
-                            f"T{tranche_id}={int(t_target*100)}%"
-                            if t_target is not None else f"T{tranche_id}=EXPIRY"
-                        )
-                        is_win = exit_reason in ("PROFIT", "EXPIRY")
-                        emoji  = "✅" if is_win else ("⏱️" if "TIME" in exit_reason else "🛑")
+                        try:
+                            t_label     = (
+                                f"T{tranche_id}={int(t_target*100)}%"
+                                if t_target is not None else f"T{tranche_id}=EXPIRY"
+                            )
+                        except (TypeError, ValueError):
+                            t_label = f"T{tranche_id}=?"
+                        is_win = (exit_reason or "") in ("PROFIT", "EXPIRY")
+                        emoji  = "✅" if is_win else ("⏱️" if "TIME" in (exit_reason or "") else "🛑")
                         still_open = len(remaining_tranches)
 
                         # ── Actualizar stats del día ──────────────────────
@@ -1533,17 +1409,26 @@ class EoloV2:
                         self._theta_stats["win_rate"] = round(
                             (self._theta_stats.get("_wins", 0) / total * 100) if total > 0 else 0, 1
                         )
-                        logger.info(
-                            f"[ThetaHarvest] Spread cerrado {pos_ticker} DTE={dte_slot} "
-                            f"[{t_label}] — motivo: {exit_reason} | "
-                            f"tranches restantes: {still_open} | order_id={order_id}"
-                        )
-                        _send_telegram(
-                            f"{emoji} ThetaHarvest {pos_ticker} DTE={dte_slot} [{t_label}] "
-                            f"cerrado ({exit_reason}) "
-                            f"K={pos.get('short_strike')}/{pos.get('long_strike')}"
-                            + (f" | {still_open} tranches aún abiertos" if still_open else " | DTE slot libre")
-                        )
+                        try:
+                            logger.info(
+                                f"[ThetaHarvest] Spread cerrado {pos_ticker} DTE={dte_slot} "
+                                f"[{t_label}] — motivo: {exit_reason or '?'} | "
+                                f"tranches restantes: {still_open} | order_id={order_id or '?'}"
+                            )
+                        except Exception as log_err:
+                            logger.warning(f"[ThetaHarvest] Error logging close: {log_err}")
+                        short_k = pos.get('short_strike') or "?"
+                        long_k  = pos.get('long_strike') or "?"
+                        try:
+                            msg = (
+                                f"{emoji} ThetaHarvest {pos_ticker} DTE={dte_slot} [{t_label}] "
+                                f"cerrado ({exit_reason or '?'}) "
+                                f"K={short_k}/{long_k}"
+                                + (f" | {still_open} tranches aún abiertos" if still_open else " | DTE slot libre")
+                            )
+                            _send_telegram(msg)
+                        except Exception as telegram_err:
+                            logger.warning(f"[ThetaHarvest] Error sending telegram: {telegram_err}")
                 except Exception as e:
                     logger.error(f"[ThetaHarvest] Error cerrando spread {pos_ticker}: {e}")
 
@@ -1561,7 +1446,7 @@ class EoloV2:
         reason    = decision.get("reason", "")
 
         logger.info(
-            f"[EOLO v2] EJECUTANDO: {action} {contracts}x "
+            f"[CROP] EJECUTANDO: {action} {contracts}x "
             f"{ticker} {opt_type} K={strike} exp={exp} "
             f"limit=${limit} | {reason[:80]}"
         )
@@ -1569,11 +1454,11 @@ class EoloV2:
         try:
             order_id = await self.trader.execute_decision(decision)
             if order_id:
-                logger.info(f"[EOLO v2] Orden ejecutada ✅ order_id={order_id}")
+                logger.info(f"[CROP] Orden ejecutada ✅ order_id={order_id}")
             else:
-                logger.warning(f"[EOLO v2] Orden no ejecutada para {ticker}")
+                logger.warning(f"[CROP] Orden no ejecutada para {ticker}")
         except Exception as e:
-            logger.error(f"[EOLO v2] Error ejecutando orden: {e}")
+            logger.error(f"[CROP] Error ejecutando orden: {e}")
 
     # ── Señales Eolo v1 ────────────────────────────────────
 
@@ -1591,7 +1476,7 @@ class EoloV2:
 
         if self._candle_buffer.size(ticker) < 20:
             logger.debug(
-                f"[EOLO v2] {ticker} — insuficientes velas "
+                f"[CROP] {ticker} — insuficientes velas "
                 f"({self._candle_buffer.size(ticker)}/20) para señales v1"
             )
             return {}
@@ -2088,14 +1973,14 @@ class EoloV2:
             try:
                 self._open_positions = await self.trader.get_positions()
                 logger.debug(
-                    f"[EOLO v2] Posiciones abiertas: {len(self._open_positions)}"
+                    f"[CROP] Posiciones abiertas: {len(self._open_positions)}"
                 )
 
                 # Verificar stop-loss y take-profit
                 await self._check_exit_conditions()
 
             except Exception as e:
-                logger.error(f"[EOLO v2] Error en monitor de posiciones: {e}")
+                logger.error(f"[CROP] Error en monitor de posiciones: {e}")
 
             await asyncio.sleep(60)
 
@@ -2173,7 +2058,7 @@ class EoloV2:
             self._daily_loss_cap_status = status
             return status["hit"]
         except Exception as e:
-            logger.debug(f"[EOLO v2] _is_daily_loss_cap_hit error: {e}")
+            logger.debug(f"[CROP] _is_daily_loss_cap_hit error: {e}")
             status["error"] = str(e)
             self._daily_loss_cap_status = status
             return False
@@ -2209,14 +2094,14 @@ class EoloV2:
 
             if pnl_pct <= sl_threshold:
                 logger.warning(
-                    f"[EOLO v2] STOP LOSS {pos['symbol']}: "
+                    f"[CROP] STOP LOSS {pos['symbol']}: "
                     f"P&L={pnl_pct:.1f}% ≤ {sl_threshold:.1f}% — cerrando posición"
                 )
                 await self._close_position(pos)
 
             elif pnl_pct >= tp_threshold:
                 logger.info(
-                    f"[EOLO v2] TAKE PROFIT {pos['symbol']}: "
+                    f"[CROP] TAKE PROFIT {pos['symbol']}: "
                     f"P&L={pnl_pct:.1f}% ≥ {tp_threshold:.1f}% — cerrando posición 🎯"
                 )
                 await self._close_position(pos)
@@ -2246,14 +2131,14 @@ class EoloV2:
             if self._should_auto_close():
                 today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 if self._auto_close_done_date != today:
-                    logger.info("[EOLO v2] 🕒 AUTO-CLOSE 15:27 ET — cerrando todas las posiciones")
+                    logger.info("[CROP] 🕒 AUTO-CLOSE 15:27 ET — cerrando todas las posiciones")
                     try:
                         closed = await self.trader.close_all_positions()
                         logger.info(
-                            f"[EOLO v2] Auto-close completado: {len(closed)} órdenes de cierre"
+                            f"[CROP] Auto-close completado: {len(closed)} órdenes de cierre"
                         )
                     except Exception as e:
-                        logger.error(f"[EOLO v2] Error en auto-close: {e}")
+                        logger.error(f"[CROP] Error en auto-close: {e}")
                     self._auto_close_done_date = today
 
             await asyncio.sleep(30)
@@ -2391,8 +2276,8 @@ class EoloV2:
         """
         Lee periódicamente los docs de Firestore que el dashboard usa para
         controlar el bot:
-          • eolo-options-config/commands  → órdenes puntuales (set_active, close_all)
-          • eolo-options-config/settings  → config persistente (budget, max_positions)
+          • eolo-crop-config/commands  → órdenes puntuales (set_active, close_all)
+          • eolo-crop-config/settings  → config persistente (budget, max_positions)
 
         Los cambios se aplican en caliente (no hace falta reiniciar el bot).
         """
@@ -2427,7 +2312,7 @@ class EoloV2:
         try:
             from google.cloud import firestore as _fs
             db  = _fs.Client()
-            doc = db.collection("eolo-options-config").document("commands").get()
+            doc = db.collection("eolo-crop-config").document("commands").get()
             if not doc.exists:
                 return
             cmd = doc.to_dict() or {}
@@ -2507,7 +2392,7 @@ class EoloV2:
 
             # Marcar consumido y actualizar timestamp
             self._last_command_ts = issued_ts
-            db.collection("eolo-options-config").document("commands").update({
+            db.collection("eolo-crop-config").document("commands").update({
                 "consumed":     True,
                 "consumed_ts":  time.time(),
                 "consumed_at":  time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -2521,7 +2406,7 @@ class EoloV2:
         try:
             from google.cloud import firestore as _fs
             db  = _fs.Client()
-            doc = db.collection("eolo-options-config").document("settings").get()
+            doc = db.collection("eolo-crop-config").document("settings").get()
             if not doc.exists:
                 return
             cfg = doc.to_dict() or {}
@@ -2769,7 +2654,7 @@ class EoloV2:
     def _write_state(self):
         """
         Escribe el estado completo del bot en:
-          1. eolo_state.json  (dashboard local)
+          1. crop_state.json  (dashboard local)
           2. Firestore eolo-options-state/current  (dashboard Cloud Run)
         """
         try:
@@ -2784,7 +2669,7 @@ class EoloV2:
             try:
                 self._is_daily_loss_cap_hit()
             except Exception as e:
-                logger.debug(f"[EOLO v2] dlc refresh en state publish falló: {e}")
+                logger.debug(f"[CROP] dlc refresh en state publish falló: {e}")
 
             # Schedule status — dashboard usa esto para mostrar el banner
             # "Pause time limit" cuando is_within_window=False.
@@ -2804,7 +2689,7 @@ class EoloV2:
                 "vix":          _vix_snap,
                 "vvix":         _vvix_snap,
 
-                # Control state (leído desde Firestore eolo-options-config)
+                # Control state (leído desde Firestore eolo-crop-config)
                 "active":       self._active,
                 "config": {
                     "budget_per_trade":        self._budget_per_trade,
@@ -2832,13 +2717,7 @@ class EoloV2:
                 "iv_surfaces":  self._iv_surfaces,
 
                 # Alertas de mispricing por ticker (top 10 por ticker para no exceder Firestore)
-                "mispricing": {
-                    t: [
-                        {k: v for k, v in a.items() if k not in ("chain",)}
-                        for a in alerts[:10]
-                    ]
-                    for t, alerts in self._mispricing_data.items()
-                },
+                # CROP: Sin mispricing data (solo Theta Harvest)
 
                 # Señales Eolo v1 por ticker
                 "signals":      self._signals_data,
@@ -2917,6 +2796,7 @@ class EoloV2:
                         k: v for k, v in self._theta_stats.items()
                         if not k.startswith("_")   # ocultar _wins/_losses del dashboard
                     },
+                    "pnl_today":    self._calc_theta_pnl_today(),  # Live P&L: realized + unrealized + credit_total
                     "pnl_history":  self._theta_pnl_history[-80:],
                     "macro":        self._theta_macro_status,
                     "pivots": {
@@ -3144,7 +3024,7 @@ class EoloV2:
                     dedup_key = normalized["order_id"] or doc_key
                     trades_by_key[dedup_key] = normalized
         except Exception as e:
-            logger.debug(f"[EOLO v2] _read_paper_trades Firestore read error: {e}")
+            logger.debug(f"[CROP] _read_paper_trades Firestore read error: {e}")
 
         # 2. CSV local (fallback para gap post-write local / pre-write FS)
         csv_path = os.path.join(BASE_DIR, "paper_trades_log.csv")
@@ -3163,7 +3043,7 @@ class EoloV2:
                         if dedup_key not in trades_by_key:
                             trades_by_key[dedup_key] = normalized
             except Exception as e:
-                logger.debug(f"[EOLO v2] _read_paper_trades CSV read error: {e}")
+                logger.debug(f"[CROP] _read_paper_trades CSV read error: {e}")
 
         trades = list(trades_by_key.values())
         trades.sort(key=lambda t: t.get("timestamp", ""))
@@ -3257,17 +3137,81 @@ class EoloV2:
             "closed":     closed[-30:],
         }
 
+    def _calc_theta_pnl_today(self) -> dict:
+        """
+        Calcula P&L LIVE de Theta Harvest: Realized (hoy) + Unrealized (abiertos)
+        + Crédito Total de posiciones abiertas.
+
+        Returns:
+            {
+                "realized_today":    float (P&L de spreads cerrados HOY),
+                "unrealized_today":  float (P&L de spreads abiertos),
+                "total_pnl_today":   float (realized + unrealized),
+                "credit_total":      float (crédito total de abiertos),
+                "positions_open":    int (count de spreads abiertos),
+                "positions_closed_today": int (spreads cerrados HOY),
+            }
+        """
+        try:
+            # 1. Realized: desde paper_trades cerrados HOY (CLOSE_SPREAD actions)
+            trades = self._read_paper_trades()
+            realized_today = 0.0
+            closed_count = 0
+
+            for t in trades:
+                if t.get("strategy") == "ThetaHarvest":
+                    action = t.get("action", "")
+                    if action == "BUY_TO_CLOSE_SPREAD":
+                        pnl = float(t.get("pnl_usd", 0) or 0)
+                        realized_today += pnl
+                        closed_count += 1
+
+            # 2. Unrealized: suma de unrealized_pnl desde posiciones abiertas
+            unrealized_today = 0.0
+            for pos in self._theta_positions:
+                unrealized = pos.get("unrealized_pnl", 0)
+                if unrealized:
+                    unrealized_today += float(unrealized)
+
+            # 3. Credit Total: suma de (net_credit × contracts × 100) de posiciones abiertas
+            credit_total = 0.0
+            for pos in self._theta_positions:
+                net_credit = pos.get("net_credit", 0) or 0
+                contracts = pos.get("contracts", 1) or 1
+                credit_total += float(net_credit) * int(contracts) * 100
+
+            total_pnl_today = realized_today + unrealized_today
+
+            return {
+                "realized_today":    round(realized_today, 2),
+                "unrealized_today":  round(unrealized_today, 2),
+                "total_pnl_today":   round(total_pnl_today, 2),
+                "credit_total":      round(credit_total, 2),
+                "positions_open":    len(self._theta_positions),
+                "positions_closed_today": closed_count,
+            }
+        except Exception as e:
+            logger.warning(f"[ThetaHarvest] Error calculating pnl_today: {e}")
+            return {
+                "realized_today":    0.0,
+                "unrealized_today":  0.0,
+                "total_pnl_today":   0.0,
+                "credit_total":      0.0,
+                "positions_open":    0,
+                "positions_closed_today": 0,
+            }
+
 
 # ── Entry point ────────────────────────────────────────────
 
 # Instancia global del bot (leída por main.py en /status para exponer
 # el estado del circuit breaker de billing al dashboard / curl).
-bot_instance: "EoloV2 | None" = None
+bot_instance: "CropBotTheta | None" = None
 
 
 async def main():
     global bot_instance
-    bot = EoloV2()
+    bot = CropBotTheta()
     bot_instance = bot
     try:
         await bot.start()

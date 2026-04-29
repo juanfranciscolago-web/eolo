@@ -3027,10 +3027,14 @@ function updateThetaHarvest() {
   }
 
   // ── KPIs ──────────────────────────────────────────────────
-  const pnlToday   = stats.pnl_today   ?? null;
+  // Live P&L from _calc_theta_pnl_today(): realized + unrealized + credit_total
+  const pnlData    = theta.pnl_today ?? {};
+  const pnlToday   = pnlData.total_pnl_today ?? null;
+  const realized   = pnlData.realized_today ?? 0;
+  const unrealized = pnlData.unrealized_today ?? 0;
+  const creditTot  = pnlData.credit_total ?? null;
+  const closedCount= pnlData.positions_closed_today ?? 0;
   const winRate    = stats.win_rate     ?? null;
-  const creditTot  = stats.credit_total ?? null;
-  const closedCount= stats.trades_closed ?? 0;
   const riskLevel  = pivots.SPY?.consensus_risk || pivots.TQQQ?.consensus_risk || null;
   const sectorDir  = sector.direction || null;
   const sectorScr  = sector.weighted_change_pct ?? null;
@@ -3039,7 +3043,12 @@ function updateThetaHarvest() {
     $th('th-pnl-today').textContent = pnlToday !== null ? fmtPnl(pnlToday) : '—';
     $th('th-pnl-today').className = 'val ' + (pnlToday > 0 ? 'green' : pnlToday < 0 ? 'red' : '');
   }
-  if ($th('th-pnl-sub'))      $th('th-pnl-sub').textContent = closedCount + ' tranches cerrados';
+  // Mostrar breakdown: Realized + Unrealized
+  if ($th('th-pnl-sub')) {
+    const realizStr = realized !== 0 ? fmtPnl(realized) : '+$0';
+    const unrealStr = unrealized !== 0 ? fmtPnl(unrealized) : '+$0';
+    $th('th-pnl-sub').textContent = `${realizStr} (hoy) + ${unrealStr} (abiertos)`;
+  }
   if ($th('th-winrate'))      $th('th-winrate').textContent = winRate !== null ? winRate.toFixed(0) + '%' : '—';
   if ($th('th-wr-sub'))       $th('th-wr-sub').textContent  = closedCount > 0 ? 'T0·35% | T1·65% | T2·EXP' : '3 tranches / spread';
   if ($th('th-credit-total')) $th('th-credit-total').textContent = creditTot !== null ? '$' + creditTot.toFixed(0) : '—';
