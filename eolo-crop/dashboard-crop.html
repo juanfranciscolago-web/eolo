@@ -106,14 +106,14 @@
     </div>
 
     <script>
-        const API_BASE = "https://eolo-bot-crop-nmjz4iwcea-ue.a.run.app";
-
+        // Usar URL relativa para que funcione desde cualquier origin
         async function fetchState() {
             try {
-                const response = await fetch(`${API_BASE}/api/state`);
+                const response = await fetch("/api/state");
                 if (!response.ok) throw new Error(`HTTP ${response.status}`);
                 return await response.json();
             } catch (error) {
+                console.error("Fetch error:", error);
                 showError(`Error conectando a CROP: ${error.message}`);
                 return null;
             }
