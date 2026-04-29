@@ -167,16 +167,45 @@ def api_state():
     """
     Retorna el estado completo del bot CROP (theta positions, P&L, stats, etc.)
     para que el dashboard lo consuma cada 60s.
+
+    Intenta leer el estado desde el archivo state.json local primero (fallback más rápido),
+    luego del bot_instance si está disponible.
     """
     bot = getattr(crop_main, "bot_instance", None)
-    if bot is None:
-        return jsonify({
-            "error": "bot_instance no disponible",
-            "status": "bot_not_started"
-        }), 503
 
     try:
-        # Exponemos el estado interno del bot
+        # Fallback 1: Leer state.json local si existe (más rápido que acceder al bot)
+        state_file = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "crop_state.json"
+        )
+        if os.path.exists(state_file):
+            try:
+                with open(state_file, 'r') as f:
+                    state = json.load(f)
+                    state["timestamp"] = datetime.utcnow().isoformat()
+                    state["_source"] = "local_state_file"
+                    return jsonify(state), 200
+            except Exception as e:
+                logger.debug(f"[API /state] Could not read state file: {e}")
+
+        # Fallback 2: Si bot no está disponible, devolver estado vacío
+        if bot is None:
+            return jsonify({
+                "timestamp": datetime.utcnow().isoformat(),
+                "status": "bot_not_started",
+                "theta": {
+                    "positions": [],
+                    "stats": {},
+                    "enabled": True,
+                    "pnl_today": {},
+                    "pnl_history": [],
+                    "macro": {},
+                    "pivots": {},
+                }
+            }), 200
+
+        # Fallback 3: Construir estado desde bot_instance
         state = {
             "timestamp": datetime.utcnow().isoformat(),
             "bot_status": {
@@ -185,7 +214,7 @@ def api_state():
                 "service": "eolo-bot-crop",
             },
             "theta": {
-                "positions": getattr(bot, "_theta_positions", {}),
+                "positions": list(getattr(bot, "_theta_positions", {}).values()) if hasattr(bot, "_theta_positions") else [],
                 "stats": {
                     k: v for k, v in getattr(bot, "_theta_stats", {}).items()
                     if not k.startswith("_")
@@ -194,24 +223,44 @@ def api_state():
                 "pnl_today": bot._calc_theta_pnl_today() if hasattr(bot, "_calc_theta_pnl_today") else {},
                 "pnl_history": getattr(bot, "_theta_pnl_history", [])[-80:],
                 "macro": getattr(bot, "_theta_macro_status", {}),
-                "pivots": {
-                    t: {
-                        "consensus_risk": getattr(r, "consensus_risk", None),
-                        "delta_min": getattr(r, "delta_min", None),
-                        "delta_max": getattr(r, "delta_max", None),
-                        "price": getattr(r, "price", None),
-                    }
-                    for t, r in getattr(bot, "_theta_pivot_cache", {}).items()
-                },
-            }
+                "pivots": {},
+            },
+            "_source": "bot_instance"
         }
+
+        # Intentar agregar pivots si existen
+        try:
+            pivot_cache = getattr(bot, "_theta_pivot_cache", {})
+            state["theta"]["pivots"] = {
+                t: {
+                    "consensus_risk": getattr(r, "consensus_risk", None),
+                    "delta_min": getattr(r, "delta_min", None),
+                    "delta_max": getattr(r, "delta_max", None),
+                    "price": getattr(r, "price", None),
+                }
+                for t, r in pivot_cache.items()
+            }
+        except Exception as pe:
+            logger.debug(f"[API /state] Could not build pivots: {pe}")
+
         return jsonify(state), 200
+
     except Exception as e:
         logger.error(f"[API /state] Error: {e}")
         return jsonify({
+            "timestamp": datetime.utcnow().isoformat(),
             "error": str(e),
-            "status": "error"
-        }), 500
+            "status": "error",
+            "theta": {
+                "positions": [],
+                "stats": {},
+                "enabled": True,
+                "pnl_today": {},
+                "pnl_history": [],
+                "macro": {},
+                "pivots": {},
+            }
+        }), 200  # Devolver 200 siempre para no romper el dashboard
 
 
 @app.route("/daily-open-reset", methods=["GET", "POST"])
