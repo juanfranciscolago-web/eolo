@@ -580,9 +580,13 @@ class OptionsTrader:
                 symbol=short_symbol,
                 ticker=ticker,
                 contracts=contracts,
-                price=net_debit or 0,
+                limit=net_debit or 0,
+                option_type="put" if "put" in short_symbol else "call",
+                expiration=expiration,
+                strike=short_strike,
                 strategy="theta_harvest",
                 reason=reason,
+                fill_price=net_debit or 0,
             )
             logger.info(f"[TRADER PAPER] {tag} | debit=${net_debit:.2f if net_debit else 0:.2f} | {reason[:80]}")
             return trade_id

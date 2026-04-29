@@ -1477,10 +1477,11 @@ class EoloV2:
                     pass
 
             for pos, exit_reason in to_close:
-                pos_ticker  = pos.get("ticker", "?")
-                dte_slot    = pos.get("dte_slot", pos.get("dte"))
-                spread_type = pos.get("spread_type", "")
                 try:
+                    pos_ticker  = pos.get("ticker", "?") or "?"
+                    dte_slot    = (pos.get("dte_slot") or pos.get("dte") or "?")
+                    spread_type = pos.get("spread_type", "") or ""
+                    exit_reason = exit_reason or "UNKNOWN"
                     close_decision = {
                         "action":       "CLOSE_SPREAD",
                         "ticker":       pos_ticker,
@@ -1489,7 +1490,7 @@ class EoloV2:
                         "short_strike": pos.get("short_strike"),
                         "long_strike":  pos.get("long_strike"),
                         "contracts":    pos.get("contracts", 1),
-                        "reason":       f"ThetaHarvest {exit_reason}",
+                        "reason":       f"ThetaHarvest {exit_reason or '?'}",
                     }
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
@@ -1507,14 +1508,17 @@ class EoloV2:
                         if not remaining_tranches and dte_slot is not None:
                             self._theta_free_slot(pos_ticker, dte_slot)
 
-                        tranche_id  = pos.get("tranche_id", "?")
+                        tranche_id  = pos.get("tranche_id") or "?"
                         t_target    = pos.get("tranche_target")
-                        t_label     = (
-                            f"T{tranche_id}={int(t_target*100)}%"
-                            if t_target is not None else f"T{tranche_id}=EXPIRY"
-                        )
-                        is_win = exit_reason in ("PROFIT", "EXPIRY")
-                        emoji  = "✅" if is_win else ("⏱️" if "TIME" in exit_reason else "🛑")
+                        try:
+                            t_label     = (
+                                f"T{tranche_id}={int(t_target*100)}%"
+                                if t_target is not None else f"T{tranche_id}=EXPIRY"
+                            )
+                        except (TypeError, ValueError):
+                            t_label = f"T{tranche_id}=?"
+                        is_win = (exit_reason or "") in ("PROFIT", "EXPIRY")
+                        emoji  = "✅" if is_win else ("⏱️" if "TIME" in (exit_reason or "") else "🛑")
                         still_open = len(remaining_tranches)
 
                         # ── Actualizar stats del día ──────────────────────
@@ -1533,17 +1537,26 @@ class EoloV2:
                         self._theta_stats["win_rate"] = round(
                             (self._theta_stats.get("_wins", 0) / total * 100) if total > 0 else 0, 1
                         )
-                        logger.info(
-                            f"[ThetaHarvest] Spread cerrado {pos_ticker} DTE={dte_slot} "
-                            f"[{t_label}] — motivo: {exit_reason} | "
-                            f"tranches restantes: {still_open} | order_id={order_id}"
-                        )
-                        _send_telegram(
-                            f"{emoji} ThetaHarvest {pos_ticker} DTE={dte_slot} [{t_label}] "
-                            f"cerrado ({exit_reason}) "
-                            f"K={pos.get('short_strike')}/{pos.get('long_strike')}"
-                            + (f" | {still_open} tranches aún abiertos" if still_open else " | DTE slot libre")
-                        )
+                        try:
+                            logger.info(
+                                f"[ThetaHarvest] Spread cerrado {pos_ticker} DTE={dte_slot} "
+                                f"[{t_label}] — motivo: {exit_reason or '?'} | "
+                                f"tranches restantes: {still_open} | order_id={order_id or '?'}"
+                            )
+                        except Exception as log_err:
+                            logger.warning(f"[ThetaHarvest] Error logging close: {log_err}")
+                        short_k = pos.get('short_strike') or "?"
+                        long_k  = pos.get('long_strike') or "?"
+                        try:
+                            msg = (
+                                f"{emoji} ThetaHarvest {pos_ticker} DTE={dte_slot} [{t_label}] "
+                                f"cerrado ({exit_reason or '?'}) "
+                                f"K={short_k}/{long_k}"
+                                + (f" | {still_open} tranches aún abiertos" if still_open else " | DTE slot libre")
+                            )
+                            _send_telegram(msg)
+                        except Exception as telegram_err:
+                            logger.warning(f"[ThetaHarvest] Error sending telegram: {telegram_err}")
                 except Exception as e:
                     logger.error(f"[ThetaHarvest] Error cerrando spread {pos_ticker}: {e}")
 
@@ -2917,6 +2930,7 @@ class EoloV2:
                         k: v for k, v in self._theta_stats.items()
                         if not k.startswith("_")   # ocultar _wins/_losses del dashboard
                     },
+                    "pnl_today":    self._calc_theta_pnl_today(),  # Live P&L: realized + unrealized + credit_total
                     "pnl_history":  self._theta_pnl_history[-80:],
                     "macro":        self._theta_macro_status,
                     "pivots": {
@@ -3256,6 +3270,70 @@ class EoloV2:
             "open_list":  open_list,
             "closed":     closed[-30:],
         }
+
+    def _calc_theta_pnl_today(self) -> dict:
+        """
+        Calcula P&L LIVE de Theta Harvest: Realized (hoy) + Unrealized (abiertos)
+        + Crédito Total de posiciones abiertas.
+
+        Returns:
+            {
+                "realized_today":    float (P&L de spreads cerrados HOY),
+                "unrealized_today":  float (P&L de spreads abiertos),
+                "total_pnl_today":   float (realized + unrealized),
+                "credit_total":      float (crédito total de abiertos),
+                "positions_open":    int (count de spreads abiertos),
+                "positions_closed_today": int (spreads cerrados HOY),
+            }
+        """
+        try:
+            # 1. Realized: desde paper_trades cerrados HOY (CLOSE_SPREAD actions)
+            trades = self._read_paper_trades()
+            realized_today = 0.0
+            closed_count = 0
+
+            for t in trades:
+                if t.get("strategy") == "ThetaHarvest":
+                    action = t.get("action", "")
+                    if action == "BUY_TO_CLOSE_SPREAD":
+                        pnl = float(t.get("pnl_usd", 0) or 0)
+                        realized_today += pnl
+                        closed_count += 1
+
+            # 2. Unrealized: suma de unrealized_pnl desde posiciones abiertas
+            unrealized_today = 0.0
+            for pos in self._theta_positions:
+                unrealized = pos.get("unrealized_pnl", 0)
+                if unrealized:
+                    unrealized_today += float(unrealized)
+
+            # 3. Credit Total: suma de (net_credit × contracts × 100) de posiciones abiertas
+            credit_total = 0.0
+            for pos in self._theta_positions:
+                net_credit = pos.get("net_credit", 0) or 0
+                contracts = pos.get("contracts", 1) or 1
+                credit_total += float(net_credit) * int(contracts) * 100
+
+            total_pnl_today = realized_today + unrealized_today
+
+            return {
+                "realized_today":    round(realized_today, 2),
+                "unrealized_today":  round(unrealized_today, 2),
+                "total_pnl_today":   round(total_pnl_today, 2),
+                "credit_total":      round(credit_total, 2),
+                "positions_open":    len(self._theta_positions),
+                "positions_closed_today": closed_count,
+            }
+        except Exception as e:
+            logger.warning(f"[ThetaHarvest] Error calculating pnl_today: {e}")
+            return {
+                "realized_today":    0.0,
+                "unrealized_today":  0.0,
+                "total_pnl_today":   0.0,
+                "credit_total":      0.0,
+                "positions_open":    0,
+                "positions_closed_today": 0,
+            }
 
 
 # ── Entry point ────────────────────────────────────────────

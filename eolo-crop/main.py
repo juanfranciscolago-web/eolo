@@ -15,7 +15,7 @@ import threading
 import time
 from datetime import datetime
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, send_file
 from loguru import logger
 
 import crop_main
@@ -147,6 +147,71 @@ def billing():
         "bot_active":               bool(getattr(bot, "_active", True)),
         "bot_started":              True,
     }), 200
+
+
+@app.route("/dashboard")
+def dashboard():
+    """Sirve el dashboard HTML estático."""
+    try:
+        dashboard_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "dashboard-crop.html"
+        )
+        return send_file(dashboard_path, mimetype='text/html')
+    except Exception as e:
+        return jsonify({"error": f"Dashboard not found: {e}"}), 404
+
+
+@app.route("/api/state")
+def api_state():
+    """
+    Retorna el estado completo del bot CROP (theta positions, P&L, stats, etc.)
+    para que el dashboard lo consuma cada 60s.
+    """
+    bot = getattr(crop_main, "bot_instance", None)
+    if bot is None:
+        return jsonify({
+            "error": "bot_instance no disponible",
+            "status": "bot_not_started"
+        }), 503
+
+    try:
+        # Exponemos el estado interno del bot
+        state = {
+            "timestamp": datetime.utcnow().isoformat(),
+            "bot_status": {
+                "active": getattr(bot, "_active", True),
+                "mode": "PAPER",
+                "service": "eolo-bot-crop",
+            },
+            "theta": {
+                "positions": getattr(bot, "_theta_positions", {}),
+                "stats": {
+                    k: v for k, v in getattr(bot, "_theta_stats", {}).items()
+                    if not k.startswith("_")
+                },
+                "enabled": getattr(bot, "_theta_harvest_enabled", True),
+                "pnl_today": bot._calc_theta_pnl_today() if hasattr(bot, "_calc_theta_pnl_today") else {},
+                "pnl_history": getattr(bot, "_theta_pnl_history", [])[-80:],
+                "macro": getattr(bot, "_theta_macro_status", {}),
+                "pivots": {
+                    t: {
+                        "consensus_risk": getattr(r, "consensus_risk", None),
+                        "delta_min": getattr(r, "delta_min", None),
+                        "delta_max": getattr(r, "delta_max", None),
+                        "price": getattr(r, "price", None),
+                    }
+                    for t, r in getattr(bot, "_theta_pivot_cache", {}).items()
+                },
+            }
+        }
+        return jsonify(state), 200
+    except Exception as e:
+        logger.error(f"[API /state] Error: {e}")
+        return jsonify({
+            "error": str(e),
+            "status": "error"
+        }), 500
 
 
 @app.route("/daily-open-reset", methods=["GET", "POST"])
