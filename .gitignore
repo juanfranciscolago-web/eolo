@@ -38,3 +38,4 @@ trades_log.csv
 /tmp/
 runcycle.log
 *_mock.json
+*-test.html
