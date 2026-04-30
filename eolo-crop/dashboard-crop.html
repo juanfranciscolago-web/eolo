@@ -1676,7 +1676,6 @@
 <div id="statusbar">
   <span><span class="dot dot-yellow" id="dot-stream"></span>Stream</span>
   <span><span class="dot dot-yellow" id="dot-chain"></span>Chains</span>
-  <span><span class="dot dot-yellow" id="dot-claude"></span>Claude</span>
   <span id="sb-updated">Última actualización: --</span>
   <span id="sb-pos"></span>
   <span style="margin-left:auto">EOLO Theta Harvest · <span id="clock">--:--:--</span> ET</span>
@@ -2662,10 +2661,8 @@ function updateStatusbar() {
   document.getElementById('sb-updated').textContent = 'Última act.: ' + (state.updated_at || '–');
   const hasQuotes = Object.keys(state.quotes || {}).length > 0;
   const hasChains = Object.keys(state.iv_surfaces || {}).length > 0;
-  const hasClaude = Object.keys(state.claude_last || {}).length > 0;
   setDot('dot-stream', hasQuotes ? 'green' : 'yellow');
   setDot('dot-chain',  hasChains ? 'green' : 'yellow');
-  setDot('dot-claude', hasClaude ? 'green' : 'yellow');
 }
 function setDot(id, color) { document.getElementById(id).className = `dot dot-${color}`; }
 
@@ -3028,7 +3025,7 @@ function updateThetaHarvest() {
 
   // ── KPIs ──────────────────────────────────────────────────
   // Live P&L from _calc_theta_pnl_today(): realized + unrealized + credit_total
-  const pnlData    = theta.pnl_today ?? {};
+  const pnlData    = th.pnl_today ?? {};
   const pnlToday   = pnlData.total_pnl_today ?? null;
   const realized   = pnlData.realized_today ?? 0;
   const unrealized = pnlData.unrealized_today ?? 0;
@@ -3036,8 +3033,9 @@ function updateThetaHarvest() {
   const closedCount= pnlData.positions_closed_today ?? 0;
   const winRate    = stats.win_rate     ?? null;
   const riskLevel  = pivots.SPY?.consensus_risk || pivots.TQQQ?.consensus_risk || null;
-  const sectorDir  = sector.direction || null;
-  const sectorScr  = sector.weighted_change_pct ?? null;
+  const _sEntry    = sector.SPY || sector.QQQ || Object.values(sector)[0] || {};
+  const sectorDir  = _sEntry.direction || null;
+  const sectorScr  = _sEntry.weighted_change_pct ?? null;
 
   if ($th('th-pnl-today')) {
     $th('th-pnl-today').textContent = pnlToday !== null ? fmtPnl(pnlToday) : '—';
@@ -3185,7 +3183,7 @@ function updateThetaHarvest() {
       ] : [
         {label:'SPY PUT 0DTE',  color:TH_COLORS_PUT[0],  vals:[null,0,4,10,16,21,24,28,32,34,37,null,null]},
         {label:'SPY PUT 1DTE',  color:TH_COLORS_PUT[1],  vals:[null,0,3,6,9,11,14,16,19,21,23,25,26]},
-        {label:'SPY CALL 2DTE', color:TH_COLORS_CALL[0], vals:[null,0,1,−1,3,5,8,12,15,18,20,22,23]},
+        {label:'SPY CALL 2DTE', color:TH_COLORS_CALL[0], vals:[null,0,1,-1,3,5,8,12,15,18,20,22,23]},
         {label:'TQQQ PUT 0DTE', color:TH_COLORS_PUT[2],  vals:[null,0,5,11,16,19,24,31,37,41,45,null,null]},
         {label:'TQQQ PUT 1DTE', color:TH_COLORS_PUT[3],  vals:[null,0,2,5,8,10,13,16,19,22,25,27,28]},
       ];
@@ -3269,7 +3267,8 @@ function updateThetaHarvest() {
   // ── Sector bars ───────────────────────────────────────────
   const sectorBarsEl = $th('th-sector-bars');
   if (sectorBarsEl) {
-    const movers = sector.top_movers || Object.entries(SECTOR_WEIGHTS).slice(0,7).map(([s,w])=>({symbol:s,change_pct:0,weight:w}));
+    const _sMovers = sector.SPY || sector.QQQ || Object.values(sector)[0] || {};
+    const movers = _sMovers.top_movers || Object.entries(SECTOR_WEIGHTS).slice(0,7).map(([s,w])=>({symbol:s,change_pct:0,weight:w}));
     const maxAbs  = Math.max(...movers.map(m => Math.abs(m.change_pct || 0)), 1);
     sectorBarsEl.innerHTML = movers.slice(0,8).map(m => {
       const pct  = m.change_pct || 0;
@@ -3331,7 +3330,7 @@ function updateThetaHarvest() {
         </div>
         <div class="th-gauge-labels"><span style="color:var(--red)">NO_TRADE</span><span style="color:var(--yellow)">MID</span><span style="color:var(--blue)">LOW</span><span style="color:var(--green)">VERY_LOW</span></div>
         <div style="font-size:.62rem;color:var(--dim);margin-top:2px">
-          dist PP: ${distPct.toFixed(2)}% · δ ${delta} · ATR ${pv.atr_gate ? '⚠️ GATE' : 'ok'}
+          dist PP: ${distPct.toFixed(2)}% · δ ${delta} · ATR ${pv.atr_gate_hit ? '⚠️ GATE' : 'ok'}
         </div>
       </div>`;
     }).join('');
@@ -3360,10 +3359,11 @@ function updateThetaHarvest() {
 
   // ── Flow nodes ────────────────────────────────────────────
   const isNewsDay = macro.is_news_day || false;
-  const atrGate   = (pivots.SPY?.atr_gate || pivots.TQQQ?.atr_gate) || false;
+  const atrGate   = (pivots.SPY?.atr_gate_hit || pivots.TQQQ?.atr_gate_hit) || false;
   const noTrade   = (pivots.SPY?.consensus_risk === 'NO_TRADE' || pivots.TQQQ?.consensus_risk === 'NO_TRADE');
   const tickConf  = tick_ad.confirmation || 'neutral';
-  const openSlots = (10 - pos.length);
+  const maxSlots  = (state.config?.max_positions ?? 2) * ((state.tickers || []).length || 4);
+  const openSlots = maxSlots - pos.length;
 
   function setFlow(id, statusId, cls, status) {
     const el = $th(id);

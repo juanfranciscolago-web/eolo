@@ -37,3 +37,4 @@ trades_log.csv
 # ── Cowork / scratch temporales ────────────────────────────
 /tmp/
 runcycle.log
+*_mock.json
