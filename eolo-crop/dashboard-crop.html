@@ -65,7 +65,7 @@
     color: var(--blue);
     letter-spacing: -0.02em;
   }
-  header h1 .badge-v2 {
+  header h1 .badge-crop {
     font-size: 0.7rem;
     color: var(--purple);
     background: rgba(210,168,255,.12);
@@ -470,44 +470,6 @@
   .consensus-sell { color: var(--red);   font-weight: 700; font-size: 0.78rem; }
   .consensus-hold { color: var(--muted); font-size: 0.78rem; }
 
-  /* ══════════════════════════════════════════
-     IV SURFACE CARDS
-  ══════════════════════════════════════════ */
-  #iv-grid {
-    display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px;
-  }
-  .iv-card {
-    background: #0d1117; border: 1px solid var(--border);
-    border-radius: 8px; padding: 12px;
-  }
-  .iv-card .iv-ticker { font-weight: 700; font-size: 0.9rem; margin-bottom: 8px; }
-  .iv-term-row {
-    display: flex; gap: 8px; margin-bottom: 3px;
-    font-size: 0.72rem; align-items: center;
-    font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace;
-  }
-  .iv-term-bar {
-    height: 6px; border-radius: 3px;
-    background: var(--purple); opacity: 0.7; min-width: 4px;
-  }
-  .iv-term-label { color: var(--muted); width: 85px; }
-  .iv-term-val   { color: var(--purple); width: 48px; text-align: right; }
-
-  /* ══════════════════════════════════════════
-     HEATMAP IV — ticker × expiración
-  ══════════════════════════════════════════ */
-  .heat-iv-table { width: 100%; border-collapse: collapse; font-size: 0.72rem;
-                   font-family: 'SF Mono', 'JetBrains Mono', Menlo, monospace; }
-  .heat-iv-table th, .heat-iv-table td {
-    padding: 5px 6px; text-align: center;
-    border: 1px solid var(--border);
-  }
-  .heat-iv-table th { color: var(--muted); font-weight: 600; background: #0d1117; }
-  .heat-iv-table td.ticker { text-align: left; font-weight: 700; background: #0d1117; }
-  .heat-iv-cell {
-    color: var(--text);
-    background-color: rgba(210,168,255,0.1);
-  }
 
   /* ══════════════════════════════════════════
      CLAUDE DECISIONS
@@ -960,30 +922,17 @@
 
 <!-- Header -->
 <header>
-  <h1>⚡ EOLO <span class="badge-v2">v2 OPTIONS</span></h1>
+  <h1>⚡ EOLO <span class="badge-crop">CROP</span> — Theta Harvest</h1>
   <div class="header-controls">
-
-    <!-- Budget input -->
-    <div class="budget-wrap" title="Máximo capital (USD) por contrato">
-      <label>$ / trade</label>
-      <input type="number" id="budget-input" class="budget-input"
-             min="50" max="10000" step="50" value="200">
-      <button class="budget-save" onclick="saveBudget()">Guardar</button>
-    </div>
 
     <!-- Close All -->
     <button id="btn-close-all" onclick="confirmCloseAll()">
       🚨 Cerrar todo
     </button>
 
-    <!-- Claude toggles: Options + Theta Harvest -->
-    <button id="btn-claude-options" class="on" onclick="toggleClaudeOptions()">
-      <div class="dot"></div>
-      <span id="btn-claude-options-label">📊 Opciones</span>
-    </button>
-    <button id="btn-claude-theta" class="on" onclick="toggleClaudeTheta()">
-      <div class="dot"></div>
-      <span id="btn-claude-theta-label">⚡ Theta</span>
+    <!-- Config modal -->
+    <button onclick="openConfig()" style="background:#21262d;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.82rem">
+      ⚙ Configuración
     </button>
 
     <span id="mode-badge">📄 PAPER</span>
@@ -1012,427 +961,23 @@
 <div class="grid">
   <div class="card">
     <h3>P&L del Día</h3>
-    <div class="value pnl-val" id="pnl">$0.00</div>
-    <div class="sub" id="pnl-sub">–</div>
+    <div class="value pnl-val" id="kpi-pnl">$0.00</div>
+    <div class="sub" id="kpi-pnl-sub">– realizados + no realizados</div>
   </div>
   <div class="card">
-    <h3>Operaciones</h3>
-    <div class="value blue" id="rounds">0</div>
-    <div class="sub">round-trips cerrados</div>
+    <h3>Crédito Total</h3>
+    <div class="value green" id="kpi-credit">$0.00</div>
+    <div class="sub">cobrado hoy</div>
   </div>
   <div class="card">
     <h3>Win Rate</h3>
-    <div class="value" id="winrate">0%</div>
-    <div class="sub"><span class="green" id="wins">0</span> / <span class="red" id="losses">0</span></div>
+    <div class="value" id="kpi-winrate">—%</div>
+    <div class="sub" id="kpi-winrate-sub">–</div>
   </div>
   <div class="card">
-    <h3>Prima Invertida</h3>
-    <div class="value purple" id="prima">$0</div>
-    <div class="sub" id="prima-sub">–</div>
-  </div>
-  <div class="card">
-    <h3>Calls Claude</h3>
-    <div class="value yellow" id="claude-calls">0</div>
-    <div class="sub" id="cycles-sub">0 ciclos</div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     SEMÁFORO — POSICIONES POR TICKER
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>🔴🟡🟢 Posiciones Abiertas por Ticker</h2>
-  <div class="semaphore-grid" id="semaphore-grid">
-    <div style="color:var(--muted);font-size:0.82rem;padding:8px">Cargando...</div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     GREEKS PORTFOLIO
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>Σ Greeks Agregados del Portfolio
-    <span class="hint">suma ponderada por contratos</span>
-  </h2>
-  <div class="greeks-grid">
-    <div class="greek-card">
-      <div class="label">Δ Delta</div>
-      <div class="value" id="greek-delta">0.00</div>
-      <div class="explain">Exposición direccional al subyacente</div>
-    </div>
-    <div class="greek-card">
-      <div class="label">Γ Gamma</div>
-      <div class="value" id="greek-gamma">0.00</div>
-      <div class="explain">Aceleración de Δ por cada $1 del subyacente</div>
-    </div>
-    <div class="greek-card">
-      <div class="label">Θ Theta</div>
-      <div class="value" id="greek-theta">0.00</div>
-      <div class="explain">Pérdida/día por time decay</div>
-    </div>
-    <div class="greek-card">
-      <div class="label">ν Vega</div>
-      <div class="value" id="greek-vega">0.00</div>
-      <div class="explain">Sensibilidad a cambios de IV (1%)</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     TICKER SELECTOR (Puts / Calls / Wheel)
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>🎯 Tickers a Operar <span class="hint">Click en un ticker para activar/desactivar. Cambios en vivo.</span></h2>
-  <div id="ticker-selector">
-    <div class="tsel-group" data-group="puts">
-      <div class="tsel-head">
-        <span class="tsel-title">🔻 Puts <span class="hint">— venta de puts</span></span>
-        <button class="tsel-btn-all on"  onclick="setAllTickers('puts', true)">Todas ON</button>
-        <button class="tsel-btn-all off" onclick="setAllTickers('puts', false)">Todas OFF</button>
-      </div>
-      <div class="tsel-chips" id="tsel-chips-puts"></div>
-    </div>
-
-    <div class="tsel-group" data-group="calls">
-      <div class="tsel-head">
-        <span class="tsel-title">🟢 Covered Calls <span class="hint">— venta de calls cubiertas</span></span>
-        <button class="tsel-btn-all on"  onclick="setAllTickers('calls', true)">Todas ON</button>
-        <button class="tsel-btn-all off" onclick="setAllTickers('calls', false)">Todas OFF</button>
-      </div>
-      <div class="tsel-chips" id="tsel-chips-calls"></div>
-    </div>
-
-    <div class="tsel-group" data-group="wheel">
-      <div class="tsel-head">
-        <span class="tsel-title">🔁 Wheel / Ambas <span class="hint">— puts + calls combinados</span></span>
-        <button class="tsel-btn-all on"  onclick="setAllTickers('wheel', true)">Todas ON</button>
-        <button class="tsel-btn-all off" onclick="setAllTickers('wheel', false)">Todas OFF</button>
-      </div>
-      <div class="tsel-chips" id="tsel-chips-wheel"></div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     ESTRATEGIAS — PANEL DE CONTROL
-══════════════════════════════════════════ -->
-<div class="section" id="strat-control-section">
-  <h2>🎛️ Estrategias Activas <span class="hint">Click para activar/desactivar. Cambios en vivo sin reinicio.</span></h2>
-  <div id="strat-groups-wrap"></div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     TICKER STRIP
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>📊 Market Data — Tickers Activos</h2>
-  <div id="ticker-strip">
-    <!-- JS -->
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     SEÑALES v1
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>📡 Señales Eolo v1 <span class="hint">13 estrategias técnicas, timeframe 1 min</span></h2>
-  <div class="card" style="padding:14px;overflow-x:auto">
-    <table id="signals-grid">
-      <thead>
-        <tr>
-          <th style="text-align:left">Ticker</th>
-          <th>EMA</th><th>GAP</th><th>VWAP</th><th>BOLL</th>
-          <th>ORB</th><th>RSI</th><th>SUPERT</th><th>HA</th>
-          <th>SQUEEZE</th><th>MACD</th><th>HH_LL</th><th>TSI</th><th>PIVOT</th>
-          <th>Consenso</th>
-        </tr>
-      </thead>
-      <tbody id="signals-body">
-        <tr><td colspan="15" style="color:var(--muted);text-align:center;padding:20px">Esperando señales del bot...</td></tr>
-      </tbody>
-    </table>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     IV SURFACE + HEATMAP IV
-══════════════════════════════════════════ -->
-<div class="grid-2col">
-  <div class="card">
-    <h3 style="margin-bottom:12px">📈 IV Surface — Term Structure por Ticker</h3>
-    <div id="iv-grid">
-      <!-- JS -->
-    </div>
-  </div>
-  <div class="card">
-    <h3 style="margin-bottom:12px">🔥 Heatmap IV — ticker × expiración (ATM IV %)</h3>
-    <div style="overflow-x:auto">
-      <table class="heat-iv-table" id="heat-iv-table">
-        <thead><tr id="heat-iv-head"><th>Ticker</th></tr></thead>
-        <tbody id="heat-iv-body">
-          <tr><td colspan="10" style="color:var(--muted);padding:16px">Sin datos IV todavía</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     CLAUDE — DECISIONES
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>🧠 Claude — Última Decisión por Ticker <span class="hint">razonamiento completo</span></h2>
-  <div id="claude-grid">
-    <div style="color:var(--muted);text-align:center;padding:20px;grid-column:1/-1">
-      Esperando primer análisis de Claude...
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     HISTORY + MISPRICING
-══════════════════════════════════════════ -->
-<div class="grid-2col">
-  <div class="card">
-    <h3 style="margin-bottom:12px">📋 Historial de Decisiones Claude <span style="font-weight:400;color:var(--muted)">— últimas 30</span></h3>
-    <div style="display:flex;gap:8px;padding:6px 2px;font-size:0.64rem;color:var(--muted);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">
-      <span style="width:56px">Hora</span>
-      <span style="width:44px">Tick</span>
-      <span style="width:90px">Acción</span>
-      <span style="flex:1">Contrato</span>
-      <span style="width:58px;text-align:right">Conf</span>
-      <span style="flex:2">Razón</span>
-    </div>
-    <div class="list-wrap" id="history-list">
-      <div style="color:var(--muted);text-align:center;padding:16px">Sin historial aún</div>
-    </div>
-  </div>
-  <div class="card">
-    <h3 style="margin-bottom:12px">🔍 Mispricing Scanner <span style="font-weight:400;color:var(--muted)">— anomalías ordenadas por severidad</span></h3>
-    <div style="display:flex;gap:8px;padding:6px 2px;font-size:0.64rem;color:var(--muted);border-bottom:1px solid var(--border);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">
-      <span style="width:46px">Sev</span>
-      <span style="width:38px">Tick</span>
-      <span style="width:140px">Tipo</span>
-      <span style="width:64px;text-align:right">Edge</span>
-      <span style="flex:1">Descripción</span>
-    </div>
-    <div class="list-wrap" id="mispricing-list">
-      <div style="color:var(--muted);text-align:center;padding:16px">Sin alertas</div>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     IV SKEW + TERM STRUCTURE CHARTS
-══════════════════════════════════════════ -->
-<div class="grid-2col">
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="margin:0">📉 IV Skew (Smile) — primera expiración</h3>
-      <select id="skew-ticker-sel" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:0.72rem;font-family:inherit">
-        <option>SOXL</option><option>TSLL</option><option>SPY</option><option>QQQ</option>
-      </select>
-    </div>
-    <div class="chart-wrap chart-wrap-tall"><canvas id="skew-chart"></canvas></div>
-  </div>
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-      <h3 style="margin:0">📊 Term Structure (IV vs DTE)</h3>
-      <select id="term-ticker-sel" style="background:#21262d;color:var(--text);border:1px solid var(--border);padding:3px 8px;border-radius:4px;font-size:0.72rem;font-family:inherit">
-        <option>SOXL</option><option>TSLL</option><option>SPY</option><option>QQQ</option>
-      </select>
-    </div>
-    <div class="chart-wrap chart-wrap-tall"><canvas id="term-chart"></canvas></div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     P&L INTRADAY CURVE
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>📈 Curva P&L Intradía <span class="hint">round-trips cerrados en orden cronológico</span></h2>
-  <div class="card">
-    <div class="chart-wrap chart-wrap-hist"><canvas id="pnl-chart"></canvas></div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     PERFORMANCE SECTION
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>🏆 Performance — análisis de operaciones cerradas</h2>
-
-  <!-- KPI row -->
-  <div class="perf-kpi-row">
-    <div class="perf-kpi">
-      <div class="lbl">P&L Total</div>
-      <div class="val" id="perf-pnl">$0.00</div>
-      <div class="sub" id="perf-pnl-sub">–</div>
-    </div>
-    <div class="perf-kpi">
-      <div class="lbl">Avg Ganancia</div>
-      <div class="val green" id="perf-avg-win">$0.00</div>
-      <div class="sub" id="perf-avg-win-sub">–</div>
-    </div>
-    <div class="perf-kpi">
-      <div class="lbl">Avg Pérdida</div>
-      <div class="val red" id="perf-avg-loss">$0.00</div>
-      <div class="sub" id="perf-avg-loss-sub">–</div>
-    </div>
-    <div class="perf-kpi">
-      <div class="lbl">Profit Factor</div>
-      <div class="val" id="perf-pf">0.00</div>
-      <div class="sub">wins $ / losses $</div>
-    </div>
-  </div>
-
-  <!-- Donut + tabla estrategias -->
-  <div class="perf-grid-top">
-    <div class="perf-card">
-      <h3>Win Rate (donut)</h3>
-      <div class="donut-wrap">
-        <canvas id="donut-chart"></canvas>
-        <div class="donut-center">
-          <div class="big" id="donut-center-big">0%</div>
-          <div class="small">WIN RATE</div>
-        </div>
-      </div>
-      <div class="perf-legend" id="perf-legend"></div>
-    </div>
-    <div class="perf-card">
-      <h3>P&L por Estrategia</h3>
-      <table class="strat-table" id="strat-table">
-        <thead>
-          <tr>
-            <th>Estrategia</th>
-            <th style="text-align:right">Ops</th>
-            <th style="text-align:right">Win Rate</th>
-            <th style="text-align:right">P&L Total</th>
-            <th style="text-align:right">Avg</th>
-          </tr>
-        </thead>
-        <tbody id="strat-tbody">
-          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Sin datos aún</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Heatmap P&L por ticker + Ranking -->
-  <div class="perf-grid-bot">
-    <div class="perf-card">
-      <h3>Heatmap P&L por Ticker</h3>
-      <div class="heat-grid" id="heat-pnl-grid">
-        <div style="color:var(--muted);font-size:0.8rem;grid-column:1/-1">Sin datos</div>
-      </div>
-    </div>
-    <div class="perf-card">
-      <h3>Ranking Top 5 / Bottom 5</h3>
-      <table class="rank-table" id="rank-table">
-        <thead>
-          <tr>
-            <th>Pos</th><th>Ticker</th><th>Tipo</th><th>Strike</th>
-            <th style="text-align:right">P&L $</th><th style="text-align:right">%</th>
-          </tr>
-        </thead>
-        <tbody id="rank-tbody">
-          <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Sin datos aún</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</div>
-
-<!-- ══════════════════════════════════════════
-     PAPER TRADES — tabla full-width con filtros
-══════════════════════════════════════════ -->
-<div class="section">
-  <h2>📝 Paper Trades — historial completo del día</h2>
-  <div class="card" style="padding:16px">
-
-    <!-- Toolbar filtros + export -->
-    <div class="trades-toolbar">
-      <label>Ticker</label>
-      <select id="filter-ticker">
-        <option value="">Todos</option>
-      </select>
-      <label>Acción</label>
-      <select id="filter-action">
-        <option value="">Todas</option>
-        <option value="BUY_TO_OPEN">BUY_TO_OPEN</option>
-        <option value="SELL_TO_CLOSE">SELL_TO_CLOSE</option>
-      </select>
-      <label>Estrategia</label>
-      <select id="filter-strategy">
-        <option value="">Todas</option>
-      </select>
-      <button class="btn-export" onclick="exportTradesCSV()">⬇ Exportar CSV</button>
-    </div>
-
-    <!-- Tabs -->
-    <div class="trade-tabs">
-      <div class="trade-tab active" id="tab-open" onclick="showTab('open')">
-        Posiciones Abiertas <span class="tab-count" id="count-open">0</span>
-      </div>
-      <div class="trade-tab" id="tab-closed" onclick="showTab('closed')">
-        Operaciones Cerradas <span class="tab-count" id="count-closed">0</span>
-      </div>
-      <div class="trade-tab" id="tab-all" onclick="showTab('all')">
-        Todos los Trades <span class="tab-count" id="count-all">0</span>
-      </div>
-    </div>
-
-    <!-- Pane: Abiertas -->
-    <div id="pane-open" style="overflow-x:auto">
-      <table class="trade-table">
-        <thead>
-          <tr>
-            <th>Entrada</th><th>Ticker</th><th>Tipo</th><th>Strike</th><th>Exp</th>
-            <th>Qty</th><th>Precio Entrada</th><th>Costo Total</th>
-            <th>Estrategia</th><th>Razón</th>
-          </tr>
-        </thead>
-        <tbody id="open-body">
-          <tr class="empty-row"><td colspan="10">Sin posiciones abiertas</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Pane: Cerradas -->
-    <div id="pane-closed" style="display:none;overflow-x:auto">
-      <table class="trade-table">
-        <thead>
-          <tr>
-            <th>Entrada</th><th>Salida</th><th>Ticker</th><th>Tipo</th>
-            <th>Strike</th><th>Exp</th><th>Qty</th>
-            <th>$ Entrada</th><th>$ Salida</th>
-            <th>P&L $</th><th>P&L %</th>
-            <th>Estrategia Entrada</th><th>Estrategia Salida</th><th>Razón</th>
-          </tr>
-        </thead>
-        <tbody id="closed-body">
-          <tr class="empty-row"><td colspan="14">Sin operaciones cerradas</td></tr>
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Pane: Todos -->
-    <div id="pane-all" style="display:none;overflow-x:auto;max-height:420px;overflow-y:auto">
-      <table class="trade-table">
-        <thead>
-          <tr>
-            <th>Hora</th><th>Acción</th><th>Ticker</th><th>Tipo</th>
-            <th>Strike</th><th>Exp</th><th>Qty</th><th>Precio</th><th>Total est.</th>
-            <th>P&L $</th><th>P&L %</th>
-            <th>Estrategia Entrada</th><th>Estrategia Salida</th><th>Razón</th>
-          </tr>
-        </thead>
-        <tbody id="all-body">
-          <tr class="empty-row"><td colspan="14">Sin trades aún</td></tr>
-        </tbody>
-      </table>
-    </div>
-
+    <h3>Spreads Abiertos</h3>
+    <div class="value blue" id="kpi-spreads">0</div>
+    <div class="sub" id="kpi-spreads-sub">posiciones abiertas</div>
   </div>
 </div>
 
@@ -1672,6 +1217,305 @@
 
 </div><!-- /theta-section -->
 
+<!-- ══════════════════════════════════════════
+     GREEKS PORTFOLIO
+══════════════════════════════════════════ -->
+<div class="section">
+  <h2>Σ Greeks Agregados del Portfolio
+    <span class="hint">suma ponderada por contratos</span>
+  </h2>
+  <div class="greeks-grid">
+    <div class="greek-card">
+      <div class="label">Δ Delta</div>
+      <div class="value" id="greek-delta">0.00</div>
+      <div class="explain">Exposición direccional al subyacente</div>
+    </div>
+    <div class="greek-card">
+      <div class="label">Γ Gamma</div>
+      <div class="value" id="greek-gamma">0.00</div>
+      <div class="explain">Aceleración de Δ por cada $1 del subyacente</div>
+    </div>
+    <div class="greek-card">
+      <div class="label">Θ Theta</div>
+      <div class="value" id="greek-theta">0.00</div>
+      <div class="explain">Pérdida/día por time decay</div>
+    </div>
+    <div class="greek-card">
+      <div class="label">ν Vega</div>
+      <div class="value" id="greek-vega">0.00</div>
+      <div class="explain">Sensibilidad a cambios de IV (1%)</div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     TICKER SELECTOR (Puts / Calls / Wheel)
+══════════════════════════════════════════ -->
+<div class="section">
+  <h2>🎯 Tickers a Operar <span class="hint">Click en un ticker para activar/desactivar. Cambios en vivo.</span></h2>
+  <div id="ticker-selector">
+    <div class="tsel-group" data-group="puts">
+      <div class="tsel-head">
+        <span class="tsel-title">🔻 Puts <span class="hint">— venta de puts</span></span>
+        <button class="tsel-btn-all on"  onclick="setAllTickers('puts', true)">Todas ON</button>
+        <button class="tsel-btn-all off" onclick="setAllTickers('puts', false)">Todas OFF</button>
+      </div>
+      <div class="tsel-chips" id="tsel-chips-puts"></div>
+    </div>
+
+  </div>
+</div>
+
+
+
+
+<!-- ══════════════════════════════════════════
+     P&L INTRADAY CURVE
+══════════════════════════════════════════ -->
+<div class="section">
+  <h2>📈 Curva P&L Intradía <span class="hint">round-trips cerrados en orden cronológico</span></h2>
+  <div class="card">
+    <div class="chart-wrap chart-wrap-hist"><canvas id="pnl-chart"></canvas></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PERFORMANCE SECTION
+══════════════════════════════════════════ -->
+<div class="section">
+  <h2>🏆 Performance — análisis de operaciones cerradas</h2>
+
+  <!-- KPI row -->
+  <div class="perf-kpi-row">
+    <div class="perf-kpi">
+      <div class="lbl">P&L Total</div>
+      <div class="val" id="perf-pnl">$0.00</div>
+      <div class="sub" id="perf-pnl-sub">–</div>
+    </div>
+    <div class="perf-kpi">
+      <div class="lbl">Avg Ganancia</div>
+      <div class="val green" id="perf-avg-win">$0.00</div>
+      <div class="sub" id="perf-avg-win-sub">–</div>
+    </div>
+    <div class="perf-kpi">
+      <div class="lbl">Avg Pérdida</div>
+      <div class="val red" id="perf-avg-loss">$0.00</div>
+      <div class="sub" id="perf-avg-loss-sub">–</div>
+    </div>
+    <div class="perf-kpi">
+      <div class="lbl">Profit Factor</div>
+      <div class="val" id="perf-pf">0.00</div>
+      <div class="sub">wins $ / losses $</div>
+    </div>
+  </div>
+
+  <!-- Donut + tabla estrategias -->
+  <div class="perf-grid-top">
+    <div class="perf-card">
+      <h3>Win Rate (donut)</h3>
+      <div class="donut-wrap">
+        <canvas id="donut-chart"></canvas>
+        <div class="donut-center">
+          <div class="big" id="donut-center-big">0%</div>
+          <div class="small">WIN RATE</div>
+        </div>
+      </div>
+      <div class="perf-legend" id="perf-legend"></div>
+    </div>
+    <div class="perf-card">
+      <h3>P&L por DTE / Tranche</h3>
+      <table class="strat-table" id="strat-table">
+        <thead>
+          <tr>
+            <th>DTE · Tranche</th>
+            <th style="text-align:right">Ops</th>
+            <th style="text-align:right">Win Rate</th>
+            <th style="text-align:right">P&L Total</th>
+            <th style="text-align:right">Avg</th>
+          </tr>
+        </thead>
+        <tbody id="strat-tbody">
+          <tr><td colspan="5" style="color:var(--muted);text-align:center;padding:20px">Sin operaciones cerradas</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Heatmap P&L por ticker + Ranking -->
+  <div class="perf-grid-bot">
+    <div class="perf-card">
+      <h3>Heatmap P&L por Ticker</h3>
+      <div class="heat-grid" id="heat-pnl-grid">
+        <div style="color:var(--muted);font-size:0.8rem;grid-column:1/-1">Sin datos</div>
+      </div>
+    </div>
+    <div class="perf-card">
+      <h3>Ranking Top 5 / Bottom 5</h3>
+      <table class="rank-table" id="rank-table">
+        <thead>
+          <tr>
+            <th>Pos</th><th>Ticker</th><th>Tipo</th><th>Strike</th>
+            <th style="text-align:right">P&L $</th><th style="text-align:right">%</th>
+          </tr>
+        </thead>
+        <tbody id="rank-tbody">
+          <tr><td colspan="6" style="color:var(--muted);text-align:center;padding:20px">Sin datos aún</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     PAPER TRADES — tabla full-width con filtros
+══════════════════════════════════════════ -->
+<div class="section">
+  <h2>📝 Paper Trades — historial completo del día</h2>
+  <div class="card" style="padding:16px">
+
+    <!-- Toolbar filtros + export -->
+    <div class="trades-toolbar">
+      <label>Ticker</label>
+      <select id="filter-ticker">
+        <option value="">Todos</option>
+      </select>
+      <label>Acción</label>
+      <select id="filter-action">
+        <option value="">Todas</option>
+        <option value="BUY_TO_OPEN">BUY_TO_OPEN</option>
+        <option value="SELL_TO_CLOSE">SELL_TO_CLOSE</option>
+      </select>
+      <button class="btn-export" onclick="exportTradesCSV()">⬇ Exportar CSV</button>
+    </div>
+
+    <!-- Tabs -->
+    <div class="trade-tabs">
+      <div class="trade-tab active" id="tab-open" onclick="showTab('open')">
+        Posiciones Abiertas <span class="tab-count" id="count-open">0</span>
+      </div>
+      <div class="trade-tab" id="tab-closed" onclick="showTab('closed')">
+        Operaciones Cerradas <span class="tab-count" id="count-closed">0</span>
+      </div>
+      <div class="trade-tab" id="tab-all" onclick="showTab('all')">
+        Todos los Trades <span class="tab-count" id="count-all">0</span>
+      </div>
+    </div>
+
+    <!-- Pane: Abiertas -->
+    <div id="pane-open" style="overflow-x:auto">
+      <table class="trade-table">
+        <thead>
+          <tr>
+            <th>Entrada</th><th>Ticker</th><th>Tipo</th><th>Strike</th><th>Exp</th>
+            <th>Qty</th><th>Precio Entrada</th><th>Costo Total</th>
+            <th>Estrategia</th><th>Razón</th>
+          </tr>
+        </thead>
+        <tbody id="open-body">
+          <tr class="empty-row"><td colspan="10">Sin posiciones abiertas</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pane: Cerradas -->
+    <div id="pane-closed" style="display:none;overflow-x:auto">
+      <table class="trade-table">
+        <thead>
+          <tr>
+            <th>Entrada</th><th>Salida</th><th>Ticker</th><th>Tipo</th>
+            <th>Strike</th><th>Exp</th><th>Qty</th>
+            <th>$ Entrada</th><th>$ Salida</th>
+            <th>P&L $</th><th>P&L %</th>
+            <th>Estrategia Entrada</th><th>Estrategia Salida</th><th>Razón</th>
+          </tr>
+        </thead>
+        <tbody id="closed-body">
+          <tr class="empty-row"><td colspan="14">Sin operaciones cerradas</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pane: Todos -->
+    <div id="pane-all" style="display:none;overflow-x:auto;max-height:420px;overflow-y:auto">
+      <table class="trade-table">
+        <thead>
+          <tr>
+            <th>Hora</th><th>Acción</th><th>Ticker</th><th>Tipo</th>
+            <th>Strike</th><th>Exp</th><th>Qty</th><th>Precio</th><th>Total est.</th>
+            <th>P&L $</th><th>P&L %</th>
+            <th>Estrategia Entrada</th><th>Estrategia Salida</th><th>Razón</th>
+          </tr>
+        </thead>
+        <tbody id="all-body">
+          <tr class="empty-row"><td colspan="14">Sin trades aún</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     CONFIG MODAL (oculto por defecto)
+══════════════════════════════════════════ -->
+<div id="config-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center">
+  <div style="background:var(--panel);border:1px solid var(--border-strong);border-radius:12px;padding:28px 32px;width:420px;max-width:95vw;box-shadow:0 20px 60px rgba(0,0,0,.6)">
+    <h3 style="margin-bottom:20px;font-size:1rem;color:var(--blue)">⚙ Configuración — Theta Harvest</h3>
+
+    <div style="display:grid;gap:14px">
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <label style="font-size:.78rem;color:var(--muted)">Budget por trade (USD)
+          <input id="cfg-budget" type="number" min="50" max="50000" step="50"
+            style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+        </label>
+        <label style="font-size:.78rem;color:var(--muted)">Max posiciones / ticker
+          <input id="cfg-max-pos" type="number" min="1" max="10" step="1"
+            style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+        </label>
+      </div>
+
+      <label style="font-size:.78rem;color:var(--muted)">Daily loss cap % (valor negativo, ej: -2)
+        <input id="cfg-daily-cap" type="number" min="-50" max="0" step="0.5"
+          style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+      </label>
+
+      <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:10px;cursor:pointer">
+        <input id="cfg-macro" type="checkbox" style="width:16px;height:16px;accent-color:var(--blue)">
+        Filtro macro habilitado (bloquea entradas en días con noticias)
+      </label>
+
+      <div style="font-size:.78rem;color:var(--muted);border-top:1px solid var(--border);padding-top:12px">Horario de trading (ET)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+        <label style="font-size:.78rem;color:var(--muted)">Start
+          <input id="cfg-start" type="time"
+            style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+        </label>
+        <label style="font-size:.78rem;color:var(--muted)">End
+          <input id="cfg-end" type="time"
+            style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+        </label>
+        <label style="font-size:.78rem;color:var(--muted)">Auto-close
+          <input id="cfg-autoclose" type="time"
+            style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+        </label>
+      </div>
+
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:24px">
+      <button onclick="closeConfig()"
+        style="background:transparent;border:1px solid var(--border);color:var(--muted);padding:8px 18px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:.85rem">
+        Cancelar
+      </button>
+      <button onclick="saveConfig()"
+        style="background:var(--blue);border:none;color:#0d1117;padding:8px 18px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:.85rem;font-weight:700">
+        Guardar
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Status bar -->
 <div id="statusbar">
   <span><span class="dot dot-yellow" id="dot-stream"></span>Stream</span>
@@ -1691,7 +1535,7 @@ const STRAT_ORDER = ['ema','gap','vwap_rsi','bollinger','orb','rsi_sma200','supe
                      'ha_cloud','squeeze','macd_bb','hh_ll','ema_tsi','vela_pivot'];
 
 let state = {};
-let skewChart = null, termChart = null, pnlChart = null, donutChart = null;
+let pnlChart = null, donutChart = null;
 let thPnlChart   = null;
 let thChartMode  = 'price';  // 'price' | 'pnl'
 
@@ -1730,8 +1574,7 @@ function setThChartMode(mode) {
 }
 let activeTab = 'open';
 let filteredTrades = [];
-let claudeOptionsEnabled = true;
-let claudeThetaEnabled = true;
+
 
 // ══════════════════════════════════════════
 // CHART INIT
@@ -1747,24 +1590,6 @@ function initCharts() {
     }
   };
 
-  // Skew
-  skewChart = new Chart(document.getElementById('skew-chart'), {
-    type: 'line',
-    data: { labels: [], datasets: [
-      { label: 'Calls IV', data: [], borderColor: '#3fb950', backgroundColor: 'rgba(63,185,80,0.1)', tension: 0.3, spanGaps: true },
-      { label: 'Puts IV',  data: [], borderColor: '#f85149', backgroundColor: 'rgba(248,81,73,0.1)', tension: 0.3, spanGaps: true },
-    ]},
-    options: baseOpts,
-  });
-
-  // Term structure
-  termChart = new Chart(document.getElementById('term-chart'), {
-    type: 'line',
-    data: { labels: [], datasets: [
-      { label: 'ATM IV (%)', data: [], borderColor: '#d2a8ff', backgroundColor: 'rgba(210,168,255,0.15)', tension: 0.3, fill: true },
-    ]},
-    options: baseOpts,
-  });
 
   // P&L curve
   pnlChart = new Chart(document.getElementById('pnl-chart'), {
@@ -1864,23 +1689,12 @@ function setStale() {
 function render() {
   updateHeader();
   updateKPIs();
-  updateSemaphore();
   updateGreeks();
-  updateTickers();
-  updateSignals();
-  updateIvSurface();
-  updateHeatmapIV();
-  updateClaude();
-  updateHistory();
-  updateMispricing();
-  updateSkewChart();
-  updateTermChart();
   updatePnLChart();
   updatePerformance();
   populateFilters();
   updateTrades();
   updateThetaHarvest();
-  renderStratPanel();
   updateStatusbar();
 }
 
@@ -1892,45 +1706,13 @@ function updateHeader() {
   document.getElementById('updated').textContent = '⟳ ' + (state.updated_at || '–');
   document.getElementById('updated').style.color = 'var(--muted)';
 
-  // Claude Bot toggles: Options + Theta Harvest
-  if (state.config) {
-    // Options
-    const optionsEnabled = state.config.claude_options_enabled !== undefined
-      ? state.config.claude_options_enabled
-      : true;
-    claudeOptionsEnabled = !!optionsEnabled;
-    const btnOpt = document.getElementById('btn-claude-options');
-    const lblOpt = document.getElementById('btn-claude-options-label');
-    if (btnOpt) btnOpt.className = claudeOptionsEnabled ? 'on' : 'off';
-    if (lblOpt) lblOpt.textContent = claudeOptionsEnabled ? '📊 Opciones' : '📊 Pausado';
-
-    // Theta Harvest
-    const thetaEnabled = state.config.claude_theta_harvest_enabled !== undefined
-      ? state.config.claude_theta_harvest_enabled
-      : true;
-    claudeThetaEnabled = !!thetaEnabled;
-    const btnTheta = document.getElementById('btn-claude-theta');
-    const lblTheta = document.getElementById('btn-claude-theta-label');
-    if (btnTheta) btnTheta.className = claudeThetaEnabled ? 'on' : 'off';
-    if (lblTheta) lblTheta.textContent = claudeThetaEnabled ? '⚡ Theta' : '⚡ Pausado';
-  }
-
-  // Config persistente (budget, max_positions, ticker_selection)
-  if (state.config) {
-    const b = document.getElementById('budget-input');
-    if (b && state.config.budget_per_trade != null && document.activeElement !== b) {
-      b.value = state.config.budget_per_trade;
+  // Sync ticker selection (puts only)
+  if (state.config && state.config.ticker_selection) {
+    const remote = state.config.ticker_selection['puts'];
+    if (remote && typeof remote === 'object') {
+      tickerSelection['puts'] = { ...tickerSelection['puts'], ...remote };
     }
-    if (state.config.ticker_selection) {
-      // Merge por grupo — respeta tickers que añada el user
-      for (const group of ['puts', 'calls', 'wheel']) {
-        const remote = state.config.ticker_selection[group];
-        if (remote && typeof remote === 'object') {
-          tickerSelection[group] = { ...tickerSelection[group], ...remote };
-        }
-      }
-      renderTickerSelector();
-    }
+    renderTickerSelector();
   }
 }
 
@@ -1947,69 +1729,36 @@ function tickClock() {
 // KPI CARDS
 // ══════════════════════════════════════════
 function updateKPIs() {
-  const p = state.pnl || {};
-  const s = state.stats || {};
+  const th      = state.theta || {};
+  const stats   = th.stats   || {};
+  const pnlData = th.pnl_today || {};
+  const pos     = th.positions || [];
 
-  const pnl = p.total_pnl || 0;
-  const pnlEl = document.getElementById('pnl');
-  pnlEl.textContent = (pnl >= 0 ? '+' : '') + '$' + pnl.toFixed(2);
-  pnlEl.className = 'value pnl-val ' + (pnl >= 0 ? 'green' : 'red');
-  document.getElementById('pnl-sub').textContent = `${p.open_count || 0} abiertas, ${p.rounds || 0} cerradas`;
+  const pnl = pnlData.total_pnl_today ?? null;
+  const pnlEl = document.getElementById('kpi-pnl');
+  pnlEl.textContent = pnl !== null ? (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2) : '—';
+  pnlEl.className = 'value pnl-val ' + (pnl === null ? '' : pnl >= 0 ? 'green' : 'red');
+  const realized   = pnlData.realized_today ?? 0;
+  const unrealized = pnlData.unrealized_today ?? 0;
+  document.getElementById('kpi-pnl-sub').textContent =
+    `$${realized >= 0 ? '+' : ''}${realized.toFixed(0)} realiz. · $${unrealized >= 0 ? '+' : ''}${unrealized.toFixed(0)} no realiz.`;
 
-  document.getElementById('rounds').textContent = p.rounds || 0;
-  document.getElementById('winrate').textContent = (p.win_rate || 0) + '%';
-  document.getElementById('winrate').className = 'value ' + ((p.win_rate || 0) >= 50 ? 'green' : 'yellow');
-  document.getElementById('wins').textContent = p.wins || 0;
-  document.getElementById('losses').textContent = p.losses || 0;
+  const credit = stats.credit_total ?? pnlData.credit_total ?? null;
+  const creditEl = document.getElementById('kpi-credit');
+  creditEl.textContent = credit !== null ? '$' + credit.toFixed(2) : '—';
 
-  // Prima invertida (suma de costos de las posiciones abiertas)
-  const openList = p.open_list || [];
-  const prima = openList.reduce((acc, pos) => acc + (pos.entry_price || 0) * (pos.qty || 1) * 100, 0);
-  document.getElementById('prima').textContent = '$' + prima.toFixed(0);
-  document.getElementById('prima-sub').textContent = openList.length
-    ? `${openList.length} contrato${openList.length !== 1 ? 's' : ''}`
-    : 'sin exposición';
+  const wr = stats.win_rate ?? null;
+  const wrEl = document.getElementById('kpi-winrate');
+  wrEl.textContent = wr !== null ? wr.toFixed(0) + '%' : '—%';
+  wrEl.className = 'value ' + (wr === null ? '' : wr >= 60 ? 'green' : wr >= 40 ? 'yellow' : 'red');
+  const closed = stats.trades_closed ?? pnlData.positions_closed_today ?? 0;
+  document.getElementById('kpi-winrate-sub').textContent = `${closed} cerrados hoy`;
 
-  document.getElementById('claude-calls').textContent = s.claude_calls || 0;
-  document.getElementById('cycles-sub').textContent = `${s.analysis_count || 0} ciclos de análisis`;
-}
-
-// ══════════════════════════════════════════
-// SEMAFORO
-// ══════════════════════════════════════════
-function updateSemaphore() {
-  const tickers = state.tickers || [];
-  const openList = (state.pnl || {}).open_list || [];
-  const byTicker = {};
-  openList.forEach(p => {
-    const t = p.ticker || '';
-    if (!byTicker[t]) byTicker[t] = [];
-    byTicker[t].push(p);
-  });
-
-  const grid = document.getElementById('semaphore-grid');
-  grid.innerHTML = tickers.map(t => {
-    const positions = byTicker[t] || [];
-    const count = positions.length;
-    const isOpen = count > 0;
-    const cls = isOpen ? 'sem-card open' : 'sem-card';
-    const dotCls = isOpen ? 'sem-dot green' : 'sem-dot gray';
-    const types = positions.map(p => (p.option_type || '').toUpperCase()).filter(Boolean);
-    const typeSummary = types.length
-      ? [...new Set(types)].join(' / ')
-      : 'sin posición';
-    const primaTot = positions.reduce((acc, p) => acc + (p.entry_price || 0) * (p.qty || 1) * 100, 0);
-    return `<div class="${cls}">
-      <div class="sem-top"><span class="${dotCls}"></span><span class="sem-name">${t}</span></div>
-      <div class="sem-count">${count}</div>
-      <div class="sem-label">${typeSummary}</div>
-      ${isOpen ? `<div class="sem-sub">Prima: $${primaTot.toFixed(0)}</div>` : `<div class="sem-sub">–</div>`}
-    </div>`;
-  }).join('');
-
-  // Status bar
-  const openCount = openList.length;
-  document.getElementById('sb-pos').textContent = `Posiciones: ${openCount}`;
+  const openCount = pos.length || pnlData.positions_open || 0;
+  document.getElementById('kpi-spreads').textContent = openCount;
+  const maxSlots = (state.config?.max_positions ?? 2) * ((state.tickers || []).length || 4);
+  document.getElementById('kpi-spreads-sub').textContent =
+    `${maxSlots - openCount} slot${maxSlots - openCount !== 1 ? 's' : ''} disponible${maxSlots - openCount !== 1 ? 's' : ''}`;
 }
 
 // ══════════════════════════════════════════
@@ -2042,305 +1791,9 @@ function updateGreeks() {
 }
 
 // ══════════════════════════════════════════
-// TICKER STRIP
-// ══════════════════════════════════════════
-function updateTickers() {
-  const tickers = state.tickers || [];
-  const quotes  = state.quotes  || {};
-  const ivs     = state.iv_surfaces || {};
-  const strip   = document.getElementById('ticker-strip');
 
-  strip.innerHTML = tickers.map(t => {
-    const q  = quotes[t] || {};
-    const iv = ivs[t]    || {};
-    const last  = q.last || q.mark || q.ask || 0;
-    const open  = q.open || last;
-    const chg   = open ? ((last - open) / open * 100) : 0;
-    const chgCls = chg >= 0 ? 'chg-up' : 'chg-dn';
-    const chgSign = chg >= 0 ? '+' : '';
-    const atmIv = iv.atm_iv ? `IV ${iv.atm_iv}%` : 'IV –';
-    const skew  = iv.skew_index;
-    const skewCls = skew == null ? '' : (skew > 0 ? 'skew-pos' : 'skew-neg');
-    const skewTxt = skew != null ? `Skew ${skew > 0 ? '+' : ''}${skew}pts` : '';
-    const slopeTxt = iv.term_slope != null
-      ? (iv.term_slope < 0 ? '▼ Back.' : '▲ Cont.')
-      : '';
-    const slopeCls = iv.term_slope != null
-      ? (iv.term_slope < 0 ? 'skew-pos' : 'skew-neg') : '';
 
-    return `<div class="ticker-card">
-      <div class="sym">${t}</div>
-      <div class="price">${last ? '$' + last.toFixed(2) : '–'}</div>
-      <div class="meta-row">
-        <span class="${chgCls}">${chgSign}${chg.toFixed(2)}%</span>
-        <span>Vol ${fmtVol(q.volume)}</span>
-      </div>
-      <div class="iv-row">
-        <span class="iv-pill">${atmIv}</span>
-        ${skewTxt ? `<span class="skew-pill ${skewCls}">${skewTxt}</span>` : ''}
-        ${slopeTxt ? `<span class="skew-pill ${slopeCls}">${slopeTxt}</span>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-}
 
-// ══════════════════════════════════════════
-// SIGNALS (matriz)
-// ══════════════════════════════════════════
-function updateSignals() {
-  const sigs = state.signals || {};
-  const tickers = state.tickers || [];
-  const tbody = document.getElementById('signals-body');
-  if (!tickers.length) return;
-
-  tbody.innerHTML = tickers.map(t => {
-    const ts = sigs[t] || {};
-    let buys = 0, sells = 0;
-    const cells = STRAT_ORDER.map(s => {
-      const d = ts[s];
-      if (!d) return `<td class="sig-none">–</td>`;
-      const sig = d.signal;
-      if (sig === 'BUY')  { buys++;  return `<td class="sig-buy">BUY</td>`; }
-      if (sig === 'SELL') { sells++; return `<td class="sig-sell">SELL</td>`; }
-      return `<td class="sig-hold">hold</td>`;
-    }).join('');
-
-    let cons, consCls;
-    if (buys > sells && buys >= 3)       { cons = `↑ ${buys}B/${sells}S`; consCls = 'consensus-buy'; }
-    else if (sells > buys && sells >= 3) { cons = `↓ ${sells}S/${buys}B`; consCls = 'consensus-sell'; }
-    else                                 { cons = `– ${buys}B/${sells}S`; consCls = 'consensus-hold'; }
-
-    return `<tr><td class="ticker-col">${t}</td>${cells}<td><span class="${consCls}">${cons}</span></td></tr>`;
-  }).join('');
-}
-
-// ══════════════════════════════════════════
-// IV SURFACE
-// ══════════════════════════════════════════
-function updateIvSurface() {
-  const ivs = state.iv_surfaces || {};
-  const tickers = state.tickers || [];
-  const grid = document.getElementById('iv-grid');
-
-  grid.innerHTML = tickers.map(t => {
-    const iv = ivs[t];
-    if (!iv) return `<div class="iv-card"><div class="iv-ticker">${t}</div><div style="color:var(--muted);font-size:0.75rem">Sin datos IV</div></div>`;
-    const ts = (iv.term_structure || []).slice(0, 6);
-    const maxIv = Math.max(...ts.map(r => r.atm_iv), 1);
-    const tsHtml = ts.map(r => {
-      const w = Math.round((r.atm_iv / maxIv) * 100);
-      return `<div class="iv-term-row">
-        <span class="iv-term-label">${r.expiration.slice(5)} (${r.dte}d)</span>
-        <div class="iv-term-bar" style="width:${w}px"></div>
-        <span class="iv-term-val">${r.atm_iv}%</span>
-      </div>`;
-    }).join('');
-    const slopeIcon = iv.term_slope != null && iv.term_slope < 0 ? '▼ Back.' : '▲ Cont.';
-    const slopeCol  = iv.term_slope != null && iv.term_slope < 0 ? 'var(--red)' : 'var(--green)';
-
-    return `<div class="iv-card">
-      <div class="iv-ticker">${t}
-        <span style="font-size:0.72rem;font-weight:400;color:var(--purple);margin-left:8px">ATM ${iv.atm_iv || '–'}%</span>
-        <span style="font-size:0.72rem;font-weight:400;color:var(--muted);margin-left:8px">Skew ${iv.skew_index != null ? (iv.skew_index > 0 ? '+' : '') + iv.skew_index : '–'}pts</span>
-        <span style="font-size:0.72rem;color:${slopeCol};margin-left:8px">${iv.term_slope != null ? slopeIcon : ''}</span>
-      </div>
-      ${tsHtml || '<div style="color:var(--muted);font-size:0.7rem">Sin term structure</div>'}
-    </div>`;
-  }).join('');
-}
-
-// ══════════════════════════════════════════
-// HEATMAP IV (ticker × exp)
-// ══════════════════════════════════════════
-function updateHeatmapIV() {
-  const ivs = state.iv_surfaces || {};
-  const tickers = state.tickers || [];
-
-  // Colectar todas las expiraciones (union) de las term_structures
-  const allExps = new Set();
-  tickers.forEach(t => {
-    ((ivs[t] || {}).term_structure || []).forEach(r => allExps.add(r.expiration));
-  });
-  const exps = [...allExps].sort().slice(0, 10);
-
-  const head = document.getElementById('heat-iv-head');
-  head.innerHTML = '<th>Ticker</th>' + exps.map(e => `<th>${e.slice(5)}</th>`).join('');
-
-  // Min/max para normalizar color
-  let minIv = Infinity, maxIv = -Infinity;
-  tickers.forEach(t => {
-    ((ivs[t] || {}).term_structure || []).forEach(r => {
-      if (r.atm_iv < minIv) minIv = r.atm_iv;
-      if (r.atm_iv > maxIv) maxIv = r.atm_iv;
-    });
-  });
-  if (!isFinite(minIv)) { minIv = 0; maxIv = 100; }
-
-  const body = document.getElementById('heat-iv-body');
-  body.innerHTML = tickers.map(t => {
-    const ts = (ivs[t] || {}).term_structure || [];
-    const byExp = Object.fromEntries(ts.map(r => [r.expiration, r.atm_iv]));
-    const cells = exps.map(e => {
-      const v = byExp[e];
-      if (v == null) return `<td style="color:var(--dim)">–</td>`;
-      const norm = maxIv > minIv ? (v - minIv) / (maxIv - minIv) : 0.5;
-      const alpha = 0.08 + norm * 0.5;
-      return `<td class="heat-iv-cell" style="background-color:rgba(210,168,255,${alpha.toFixed(2)})">${v.toFixed(1)}</td>`;
-    }).join('');
-    return `<tr><td class="ticker">${t}</td>${cells}</tr>`;
-  }).join('');
-}
-
-// ══════════════════════════════════════════
-// CLAUDE
-// ══════════════════════════════════════════
-function updateClaude() {
-  const decisions = state.claude_last || {};
-  const tickers = state.tickers || [];
-  const container = document.getElementById('claude-grid');
-
-  if (!Object.keys(decisions).length) {
-    container.innerHTML = `<div style="color:var(--muted);text-align:center;padding:20px;grid-column:1/-1">Esperando primer análisis de Claude...</div>`;
-    return;
-  }
-
-  container.innerHTML = tickers.map(t => {
-    const d = decisions[t];
-    if (!d) return '';
-    const action = d.action || 'HOLD';
-    const actionCls = action === 'BUY' ? 'buy' : action === 'SELL_TO_CLOSE' ? 'sell' : 'hold';
-    const cardCls = `action-${actionCls}`;
-    const conf = d.confidence || 'LOW';
-    const confCls = conf === 'HIGH' ? 'conf-high' : conf === 'MEDIUM' ? 'conf-medium' : 'conf-low';
-    const inputs = d.inputs || {};
-
-    let contractLine = '';
-    if (action !== 'HOLD' && d.option_type) {
-      contractLine = `${(d.option_type || '').toUpperCase()} K${d.strike || ''} ${d.expiration || ''} × ${d.contracts || 1} @ $${d.limit_price || '?'}`;
-    }
-
-    const time = d.ts_str || '–';
-    const isMisprice = d.mispricing ? `<span class="c-chip" style="color:var(--orange)">⚡ ${d.mispricing_type || 'MISPRICE'}</span>` : '';
-
-    return `<div class="claude-card ${cardCls}">
-      <div class="c-header">
-        <span class="c-ticker">${t}</span>
-        <span style="color:var(--muted);font-size:0.68rem">${time}</span>
-        <span class="c-action ${actionCls}">${action}</span>
-      </div>
-      ${contractLine ? `<div class="c-contract">${contractLine}</div>` : ''}
-      <div class="c-inputs">
-        ${inputs.buy_signals > 0 ? `<span class="c-chip buy-sig">▲ ${inputs.buy_signals}B</span>` : ''}
-        ${inputs.sell_signals > 0 ? `<span class="c-chip sell-sig">▼ ${inputs.sell_signals}S</span>` : ''}
-        ${inputs.atm_iv ? `<span class="c-chip high-iv">IV ${inputs.atm_iv}%</span>` : ''}
-        ${inputs.skew_index != null ? `<span class="c-chip">Skew ${inputs.skew_index > 0 ? '+' : ''}${inputs.skew_index}</span>` : ''}
-        ${inputs.mispricing_count > 0 ? `<span class="c-chip" style="color:var(--orange)">${inputs.mispricing_count} alerts</span>` : ''}
-        <span class="${confCls}" style="font-size:0.65rem;margin-left:auto">${conf}</span>
-        ${isMisprice}
-      </div>
-      <div class="c-reason">${d.reason || '–'}</div>
-    </div>`;
-  }).filter(Boolean).join('');
-}
-
-// ══════════════════════════════════════════
-// HISTORIAL
-// ══════════════════════════════════════════
-function updateHistory() {
-  const history = state.claude_history || [];
-  const list = document.getElementById('history-list');
-  if (!history.length) { list.innerHTML = `<div style="color:var(--muted);text-align:center;padding:16px;font-size:0.75rem">Sin historial aún</div>`; return; }
-
-  list.innerHTML = history.map(d => {
-    const action = d.action || 'HOLD';
-    const actionCls = action === 'BUY' ? 'sig-buy' : action === 'SELL_TO_CLOSE' ? 'sig-sell' : 'sig-hold';
-    const contract = action !== 'HOLD' && d.option_type
-      ? `${(d.option_type || '').toUpperCase()} K${d.strike} ${d.expiration} ×${d.contracts}`
-      : '–';
-    const conf = d.confidence || '–';
-    const confCls = conf === 'HIGH' ? 'conf-high' : conf === 'MEDIUM' ? 'conf-medium' : 'conf-low';
-
-    return `<div class="list-row">
-      <span class="h-time">${d.ts_str || '–'}</span>
-      <span class="h-ticker">${d.ticker || '–'}</span>
-      <span class="h-action ${actionCls}">${action}</span>
-      <span class="h-contract">${contract}</span>
-      <span class="h-conf ${confCls}">${conf}</span>
-      <span class="h-reason">${d.reason || '–'}</span>
-    </div>`;
-  }).join('');
-}
-
-// ══════════════════════════════════════════
-// MISPRICING
-// ══════════════════════════════════════════
-function updateMispricing() {
-  const mp = state.mispricing || {};
-  const all = [];
-  Object.entries(mp).forEach(([ticker, alerts]) => {
-    (alerts || []).forEach(a => all.push({ ...a, _ticker: ticker }));
-  });
-  all.sort((a, b) => {
-    const order = { HIGH: 0, MEDIUM: 1, LOW: 2 };
-    const sev = (order[a.severity] || 2) - (order[b.severity] || 2);
-    if (sev !== 0) return sev;
-    return Math.abs(b.edge || 0) - Math.abs(a.edge || 0);
-  });
-
-  const list = document.getElementById('mispricing-list');
-  if (!all.length) { list.innerHTML = `<div style="color:var(--muted);text-align:center;padding:16px;font-size:0.75rem">Sin alertas</div>`; return; }
-
-  list.innerHTML = all.slice(0, 40).map(a => {
-    const sev = a.severity || 'LOW';
-    const edge = a.edge || 0;
-    return `<div class="list-row">
-      <span class="sev-${sev}">${sev}</span>
-      <span class="h-ticker mp-ticker">${a._ticker}</span>
-      <span class="mp-type">${a.type || '–'}</span>
-      <span class="mp-edge">$${Math.abs(edge).toFixed(3)}</span>
-      <span class="mp-desc">${a.description || '–'}</span>
-    </div>`;
-  }).join('');
-}
-
-// ══════════════════════════════════════════
-// CHARTS UPDATES
-// ══════════════════════════════════════════
-function updateSkewChart() {
-  if (!skewChart) return;
-  const t = document.getElementById('skew-ticker-sel').value;
-  const iv = (state.iv_surfaces || {})[t];
-  if (!iv || !iv.skew) {
-    skewChart.data.labels = [];
-    skewChart.data.datasets.forEach(d => d.data = []);
-    skewChart.update(); return;
-  }
-  const calls = (iv.skew.calls || []).sort((a, b) => a.strike - b.strike);
-  const puts  = (iv.skew.puts  || []).sort((a, b) => a.strike - b.strike);
-  const strikes = [...new Set([...calls.map(c => c.strike), ...puts.map(p => p.strike)])].sort((a, b) => a - b);
-  const callMap = Object.fromEntries(calls.map(c => [c.strike, c.iv]));
-  const putMap  = Object.fromEntries(puts.map(p  => [p.strike, p.iv]));
-
-  skewChart.data.labels = strikes.map(s => `$${s}`);
-  skewChart.data.datasets[0].data = strikes.map(s => callMap[s] ?? null);
-  skewChart.data.datasets[1].data = strikes.map(s => putMap[s]  ?? null);
-  skewChart.update('none');
-}
-
-function updateTermChart() {
-  if (!termChart) return;
-  const t = document.getElementById('term-ticker-sel').value;
-  const iv = (state.iv_surfaces || {})[t];
-  if (!iv || !iv.term_structure) {
-    termChart.data.labels = [];
-    termChart.data.datasets[0].data = [];
-    termChart.update(); return;
-  }
-  const ts = (iv.term_structure || []).sort((a, b) => a.dte - b.dte);
-  termChart.data.labels = ts.map(r => `${r.dte}d`);
-  termChart.data.datasets[0].data = ts.map(r => r.atm_iv);
-  termChart.update('none');
-}
 
 function updatePnLChart() {
   if (!pnlChart) return;
@@ -2408,16 +1861,22 @@ function updatePerformance() {
       <span class="perf-legend-name">Losses</span><span class="perf-legend-val red">${losses.length}</span></div>
   `;
 
-  // Tabla por estrategia (usando c.strategy como entrada)
-  const byStrat = {};
+  // Tabla por DTE / Tranche
+  const byDteTranche = {};
   closed.forEach(c => {
-    const s = c.exit_reason || c.strategy || 'UNK';
-    if (!byStrat[s]) byStrat[s] = { pnl: 0, count: 0, wins: 0 };
-    byStrat[s].pnl += c.pnl || 0;
-    byStrat[s].count += 1;
-    if ((c.pnl || 0) >= 0) byStrat[s].wins += 1;
+    const dte   = c.dte_slot   != null ? c.dte_slot   : (c.dte   != null ? c.dte   : '?');
+    const tr    = c.tranche_id != null ? c.tranche_id : '?';
+    const key   = `DTE ${dte} · T${tr}`;
+    if (!byDteTranche[key]) byDteTranche[key] = { pnl: 0, count: 0, wins: 0 };
+    byDteTranche[key].pnl   += c.pnl || 0;
+    byDteTranche[key].count += 1;
+    if ((c.pnl || 0) >= 0) byDteTranche[key].wins += 1;
   });
-  const stratArr = Object.entries(byStrat).sort((a, b) => b[1].pnl - a[1].pnl);
+  const stratArr = Object.entries(byDteTranche).sort((a, b) => {
+    const [da, ta] = a[0].replace('DTE ','').replace(' · T','|').split('|').map(Number);
+    const [db, tb] = b[0].replace('DTE ','').replace(' · T','|').split('|').map(Number);
+    return da !== db ? da - db : ta - tb;
+  });
   const stratTbody = document.getElementById('strat-tbody');
   if (!stratArr.length) {
     stratTbody.innerHTML = `<tr><td colspan="5" style="color:var(--muted);text-align:center;padding:16px">Sin operaciones cerradas</td></tr>`;
@@ -2426,7 +1885,7 @@ function updatePerformance() {
       const wr = s.count ? (s.wins / s.count * 100) : 0;
       const wrColor = wr >= 50 ? 'var(--green)' : 'var(--yellow)';
       return `<tr>
-        <td style="font-family:inherit">${fmtStrategy(name)}</td>
+        <td style="font-family:inherit;color:var(--blue)">${name}</td>
         <td style="text-align:right">${s.count}</td>
         <td style="text-align:right">
           <div class="win-bar-wrap" style="justify-content:flex-end">
@@ -2501,30 +1960,22 @@ function rankRow(pos, c, cls, emoji) {
 function populateFilters() {
   const trades = state.paper_trades || [];
   const tickers = [...new Set(trades.map(t => t.ticker))].filter(Boolean).sort();
-  const strats  = [...new Set(trades.map(t => t.strategy))].filter(Boolean).sort();
-
   const tSel = document.getElementById('filter-ticker');
-  const sSel = document.getElementById('filter-strategy');
-  const curT = tSel.value, curS = sSel.value;
-
+  const curT = tSel.value;
   tSel.innerHTML = '<option value="">Todos</option>' + tickers.map(t => `<option value="${t}">${t}</option>`).join('');
-  sSel.innerHTML = '<option value="">Todas</option>' + strats.map(s => `<option value="${s}">${fmtStrategy(s)}</option>`).join('');
   tSel.value = curT;
-  sSel.value = curS;
 }
 
 function getFilters() {
   return {
-    ticker:   document.getElementById('filter-ticker').value,
-    action:   document.getElementById('filter-action').value,
-    strategy: document.getElementById('filter-strategy').value,
+    ticker: document.getElementById('filter-ticker').value,
+    action: document.getElementById('filter-action').value,
   };
 }
 
 function applyFilter(t, f) {
-  if (f.ticker   && t.ticker   !== f.ticker)   return false;
-  if (f.action   && t.action   !== f.action)   return false;
-  if (f.strategy && t.strategy !== f.strategy) return false;
+  if (f.ticker && t.ticker !== f.ticker) return false;
+  if (f.action && t.action !== f.action) return false;
   return true;
 }
 
@@ -2541,7 +1992,7 @@ function updateTrades() {
 
   // ── Posiciones abiertas ──
   const openRaw = (state.pnl || {}).open_list || [];
-  const open = openRaw.filter(p => (!f.ticker || p.ticker === f.ticker) && (!f.strategy || p.strategy === f.strategy));
+  const open = openRaw.filter(p => (!f.ticker || p.ticker === f.ticker));
   document.getElementById('count-open').textContent = open.length;
   const openBody = document.getElementById('open-body');
   openBody.innerHTML = !open.length
@@ -2564,8 +2015,7 @@ function updateTrades() {
 
   // ── Operaciones cerradas ──
   const closedRaw = (state.pnl || {}).closed || [];
-  const closed = closedRaw.filter(c => (!f.ticker || c.ticker === f.ticker) &&
-    (!f.strategy || c.strategy === f.strategy || c.exit_reason === f.strategy));
+  const closed = closedRaw.filter(c => (!f.ticker || c.ticker === f.ticker));
   document.getElementById('count-closed').textContent = closed.length;
   const closedBody = document.getElementById('closed-body');
   closedBody.innerHTML = !closed.length
@@ -2725,96 +2175,36 @@ async function executeCloseAll() {
   } catch (e) { toast('Error de red: ' + e.message, 'error'); }
 }
 
-async function toggleClaudeOptions() {
-  try {
-    const next = !claudeOptionsEnabled;
-    const r = await fetch('/api/toggle-claude-options', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: next }),
-    });
-    const res = await r.json();
-    if (r.ok) {
-      claudeOptionsEnabled = next;
-      const btn = document.getElementById('btn-claude-options');
-      const lbl = document.getElementById('btn-claude-options-label');
-      btn.className = next ? 'on' : 'off';
-      lbl.textContent = next ? '📊 Opciones' : '📊 Pausado';
-      toast(next ? '▶ Claude Options habilitado' : '⏸ Claude Options pausado', 'info');
-    } else { toast('Error: ' + (res.error || 'no se pudo'), 'error'); }
-  } catch (e) { toast('Error de red: ' + e.message, 'error'); }
-}
-
-async function toggleClaudeTheta() {
-  try {
-    const next = !claudeThetaEnabled;
-    const r = await fetch('/api/toggle-claude-theta', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ enabled: next }),
-    });
-    const res = await r.json();
-    if (r.ok) {
-      claudeThetaEnabled = next;
-      const btn = document.getElementById('btn-claude-theta');
-      const lbl = document.getElementById('btn-claude-theta-label');
-      btn.className = next ? 'on' : 'off';
-      lbl.textContent = next ? '⚡ Theta' : '⚡ Pausado';
-      toast(next ? '▶ Claude Theta habilitado' : '⏸ Claude Theta pausado', 'info');
-    } else { toast('Error: ' + (res.error || 'no se pudo'), 'error'); }
-  } catch (e) { toast('Error de red: ' + e.message, 'error'); }
-}
-
-async function saveBudget() {
-  const val = parseFloat(document.getElementById('budget-input').value);
-  if (!val || val < 50) { toast('Presupuesto inválido (mín $50)', 'error'); return; }
-  try {
-    const r = await fetch('/api/config', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ budget_per_trade: val }),
-    });
-    if (r.ok) toast(`💰 Budget $${val} guardado`, 'info');
-    else toast('Error al guardar', 'error');
-  } catch (e) { toast('Error de red: ' + e.message, 'error'); }
-}
-
 // ══════════════════════════════════════════
 // TICKER SELECTOR (Puts / Calls / Wheel)
 // ══════════════════════════════════════════
 // Ranking inicial (el que Juan definió):
 const TICKER_RANKINGS = {
-  puts:  ['SPY', 'QQQ', 'MSFT', 'AAPL', 'IWM', 'NVDA'],
-  calls: ['SPY', 'QQQ', 'AAPL', 'MSFT', 'NVDA', 'TSLA'],
-  wheel: ['SPY', 'QQQ', 'MSFT', 'AAPL', 'IWM', 'NVDA'],
+  puts: ['SPY', 'QQQ', 'IWM', 'TQQQ'],
 };
 
 // Estado local (espejo de lo que está en Firestore):
 // { puts: {SPY: true, QQQ: true, ...}, calls: {...}, wheel: {...} }
 let tickerSelection = {
-  puts:  Object.fromEntries(TICKER_RANKINGS.puts.map(t => [t, true])),
-  calls: Object.fromEntries(TICKER_RANKINGS.calls.map(t => [t, true])),
-  wheel: Object.fromEntries(TICKER_RANKINGS.wheel.map(t => [t, true])),
+  puts: Object.fromEntries(TICKER_RANKINGS.puts.map(t => [t, true])),
 };
 
 function renderTickerSelector() {
-  for (const group of ['puts', 'calls', 'wheel']) {
-    const el = document.getElementById(`tsel-chips-${group}`);
-    if (!el) continue;
-    const order = TICKER_RANKINGS[group];
-    const sel   = tickerSelection[group] || {};
-    el.innerHTML = order.map((sym, i) => {
-      const active = !!sel[sym];
-      return `
-        <div class="tsel-chip ${active ? 'active' : ''}"
-             onclick="toggleTicker('${group}','${sym}')"
-             title="${active ? 'Activo' : 'Pausado'} — click para alternar">
-          <span class="rank">#${i + 1}</span>
-          <span class="dot"></span>
-          <span>${sym}</span>
-        </div>`;
-    }).join('');
-  }
+  const el = document.getElementById('tsel-chips-puts');
+  if (!el) return;
+  const order = TICKER_RANKINGS['puts'];
+  const sel   = tickerSelection['puts'] || {};
+  el.innerHTML = order.map((sym, i) => {
+    const active = !!sel[sym];
+    return `
+      <div class="tsel-chip ${active ? 'active' : ''}"
+           onclick="toggleTicker('puts','${sym}')"
+           title="${active ? 'Activo' : 'Pausado'} — click para alternar">
+        <span class="rank">#${i + 1}</span>
+        <span class="dot"></span>
+        <span>${sym}</span>
+      </div>`;
+  }).join('');
 }
 
 async function toggleTicker(group, sym) {
@@ -2858,67 +2248,6 @@ async function setAllTickers(group, value) {
 }
 
 // ══════════════════════════════════════════
-// ESTRATEGIAS — PANEL DE CONTROL
-// ══════════════════════════════════════════
-const STRAT_GROUPS = [
-  { label: '⚡ Clásicas',    keys: ['ema_crossover','gap_fade','rsi_sma200','hh_ll','ema_tsi','vwap_rsi','bollinger','orb','supertrend','ha_cloud','squeeze','macd_bb','vela_pivot'] },
-  { label: '📊 Nivel 1',     keys: ['rvol_breakout','stop_run','vwap_zscore','volume_reversal_bar','anchor_vwap','obv_mtf','tsv','vw_macd','opening_drive'] },
-  { label: '🌐 Nivel 2 (Macro)', keys: ['vix_mean_rev','vix_correlation','vix_squeeze','tick_trin_fade','vrp_intraday'] },
-  { label: '🔷 Suite v3',    keys: ['ema_3_8','ema_8_21','macd_accel','volume_breakout','buy_pressure','sell_pressure','vwap_momentum','orb_v3','donchian_turtle','bulls_bsp','net_bsv'] },
-  { label: '🏆 Combos',      keys: ['combo1_ema_scalper','combo2_rubber_band','combo3_nino_squeeze','combo4_slimribbon','combo5_btd','combo6_fractalccix','combo7_campbell'] },
-  { label: '🌾 Theta Harvest', keys: ['theta_harvest'] },
-];
-
-let stratEnabled = {};   // copia local del estado
-
-function renderStratPanel() {
-  const wrap = document.getElementById('strat-groups-wrap');
-  if (!wrap) return;
-  const enabled = state.strategies_enabled || {};
-  // actualizar copia local solo si viene del state (para no sobreescribir optimistic updates)
-  Object.assign(stratEnabled, enabled);
-
-  wrap.innerHTML = STRAT_GROUPS.map(g => `
-    <div class="strat-group-block">
-      <div class="strat-group-title">${g.label}</div>
-      <div class="strat-chips">
-        ${g.keys.map(k => {
-          const on = stratEnabled[k] !== false;   // default true si no está en el dict
-          return `<div class="strat-chip ${on ? 'on' : 'off'}" onclick="toggleStrategy('${k}')">
-            <div class="s-dot"></div>${k.replace(/_/g,' ')}
-          </div>`;
-        }).join('')}
-      </div>
-    </div>
-  `).join('');
-}
-
-async function toggleStrategy(key) {
-  const cur = stratEnabled[key] !== false;
-  const next = !cur;
-  stratEnabled[key] = next;
-  renderStratPanel();   // optimistic update
-  try {
-    const r = await fetch('/api/toggle-strategy', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ strategy: key, enabled: next }),
-    });
-    if (r.ok) {
-      toast(`${next ? '🟢' : '⚫'} ${key.replace(/_/g,' ')} ${next ? 'activada' : 'desactivada'}`, 'info');
-    } else {
-      stratEnabled[key] = cur;   // revertir
-      renderStratPanel();
-      toast('Error guardando estrategia', 'error');
-    }
-  } catch (e) {
-    stratEnabled[key] = cur;
-    renderStratPanel();
-    toast('Error de red: ' + e.message, 'error');
-  }
-}
-
-// ══════════════════════════════════════════
 // EXPORT CSV
 // ══════════════════════════════════════════
 function exportTradesCSV() {
@@ -2947,15 +2276,73 @@ function exportTradesCSV() {
 // ══════════════════════════════════════════
 // EVENT LISTENERS
 // ══════════════════════════════════════════
-['filter-ticker', 'filter-action', 'filter-strategy'].forEach(id => {
+['filter-ticker', 'filter-action'].forEach(id => {
   document.getElementById(id).addEventListener('change', updateTrades);
 });
-document.getElementById('skew-ticker-sel').addEventListener('change', updateSkewChart);
-document.getElementById('term-ticker-sel').addEventListener('change', updateTermChart);
 
 // Confirm overlay: click fuera cierra
 document.getElementById('confirm-overlay').addEventListener('click', (e) => {
   if (e.target.id === 'confirm-overlay') closeOverlay();
+});
+
+
+// ══════════════════════════════════════════
+// CONFIG MODAL
+// ══════════════════════════════════════════
+function openConfig() {
+  const cfg = state.config || {};
+  const el = id => document.getElementById(id);
+  el('cfg-budget').value    = cfg.budget_per_trade     ?? 200;
+  el('cfg-max-pos').value   = cfg.max_positions        ?? 2;
+  el('cfg-daily-cap').value = cfg.daily_loss_cap_pct   ?? -2;
+  el('cfg-macro').checked   = cfg.macro_filter_enabled !== false;
+  el('cfg-start').value     = cfg.trading_start_et     || '09:45';
+  el('cfg-end').value       = cfg.trading_end_et       || '15:30';
+  el('cfg-autoclose').value = cfg.auto_close_et        || '15:27';
+  const overlay = document.getElementById('config-overlay');
+  overlay.style.display = 'flex';
+}
+
+function closeConfig() {
+  document.getElementById('config-overlay').style.display = 'none';
+}
+
+async function saveConfig() {
+  const el = id => document.getElementById(id);
+  const budget = parseFloat(el('cfg-budget').value);
+  if (!budget || budget < 50) { toast('Budget inválido (mín $50)', 'error'); return; }
+  const cap = parseFloat(el('cfg-daily-cap').value);
+  if (isNaN(cap) || cap > 0) { toast('Daily loss cap debe ser negativo', 'error'); return; }
+
+  const payload = {
+    budget_per_trade:     budget,
+    max_positions:        parseInt(el('cfg-max-pos').value) || 2,
+    daily_loss_cap_pct:   cap,
+    macro_filter_enabled: el('cfg-macro').checked,
+    trading_start_et:     el('cfg-start').value,
+    trading_end_et:       el('cfg-end').value,
+    auto_close_et:        el('cfg-autoclose').value,
+  };
+
+  try {
+    const r = await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) {
+      toast('✅ Configuración guardada', 'info');
+      closeConfig();
+    } else {
+      const res = await r.json().catch(() => ({}));
+      toast('Error: ' + (res.error || 'no se pudo guardar'), 'error');
+    }
+  } catch (e) { toast('Error de red: ' + e.message, 'error'); }
+}
+
+// Click fuera del modal cierra
+document.getElementById('config-overlay').addEventListener('click', e => {
+  if (e.target.id === 'config-overlay') closeConfig();
 });
 
 // ══════════════════════════════════════════
