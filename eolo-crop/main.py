@@ -15,7 +15,7 @@ import threading
 import time
 from datetime import datetime
 
-from flask import Flask, jsonify, send_file
+from flask import Flask, jsonify, request, send_file
 from loguru import logger
 
 import crop_main
@@ -149,6 +149,40 @@ def billing():
     }), 200
 
 
+@app.route("/api/config", methods=["POST"])
+def api_config():
+    """
+    Persiste la config del modal Theta Harvest a eolo-crop-config/settings.
+    El backend la lee cada ciclo vía _poll_settings().
+    """
+    import json as _json
+    from google.cloud import firestore as _fs
+    import time as _time
+
+    try:
+        data = request.get_json(force=True) or {}
+        allowed = {
+            "budget_per_trade", "max_positions", "daily_loss_cap_pct",
+            "macro_filter_enabled", "trading_start_et", "trading_end_et",
+            "auto_close_et",
+        }
+        payload = {k: v for k, v in data.items() if k in allowed}
+        if not payload:
+            return jsonify({"error": "No valid fields"}), 400
+
+        payload["updated_ts"] = _time.time()
+        project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
+        db = _fs.Client(project=project_id)
+        db.collection("eolo-crop-config").document("settings").set(
+            payload, merge=True
+        )
+        logger.info(f"[API /config] Config updated: {list(payload.keys())}")
+        return jsonify({"ok": True, "updated": list(payload.keys())}), 200
+    except Exception as e:
+        logger.error(f"[API /config] Error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/dashboard")
 def dashboard():
     """Sirve el dashboard HTML estático."""
@@ -160,6 +194,20 @@ def dashboard():
         return send_file(dashboard_path, mimetype='text/html')
     except Exception as e:
         return jsonify({"error": f"Dashboard not found: {e}"}), 404
+
+
+def _pnl_from_bot(bot):
+    """Map bot._theta_positions → state.pnl for dashboard Greeks/Charts/Performance/Trades."""
+    return {
+        "open_list": [{
+            "ticker": p.get("ticker"), "option_type": "put" if "put" in (p.get("spread_type") or "") else "call",
+            "strike": p.get("short_strike"), "expiration": p.get("expiration"), "qty": p.get("contracts", 1),
+            "entry_ts": datetime.utcfromtimestamp(p.get("opened_at") or 0).isoformat(), "entry_price": p.get("net_credit") or 0,
+            "strategy": "THETA_HARVEST", "reason": p.get("reason", ""), "dte_slot": p.get("dte_slot"), "tranche_id": p.get("tranche_id"),
+            "greeks": {"delta": p.get("short_delta") or 0, "gamma": 0, "theta": 0, "vega": 0},
+        } for p in getattr(bot, "_theta_positions", [])],
+        "closed": list(getattr(bot, "_theta_closed_positions", [])),
+    }
 
 
 @app.route("/api/state")
@@ -185,6 +233,8 @@ def api_state():
                     state = json.load(f)
                     state["timestamp"] = datetime.utcnow().isoformat()
                     state["_source"] = "local_state_file"
+                    if bot is not None:
+                        state["pnl"] = _pnl_from_bot(bot)
                     return jsonify(state), 200
             except Exception as e:
                 logger.debug(f"[API /state] Could not read state file: {e}")
@@ -243,6 +293,7 @@ def api_state():
         except Exception as pe:
             logger.debug(f"[API /state] Could not build pivots: {pe}")
 
+        state["pnl"] = _pnl_from_bot(bot)
         return jsonify(state), 200
 
     except Exception as e:
@@ -304,6 +355,7 @@ def daily_open_reset():
         bot._theta_positions.clear()
         bot._theta_slots.clear()
         bot._theta_stats = {"credit_total": 0, "closed_pnl": 0}
+        bot._theta_closed_positions = []
         results["theta_reset"] = "ok"
     except Exception as e:
         results["theta_reset"] = f"error: {e}"

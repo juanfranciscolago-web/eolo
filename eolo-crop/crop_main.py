@@ -390,6 +390,7 @@ class CropBotTheta:
         # Dashboard: historial intraday de P&L [{time, datasets:[{label,pnl}], vix}]
         self._theta_pnl_history: list[dict] = []
         self._theta_last_history_ts: float = 0.0   # último snapshot (cada 5 min)
+        self._theta_closed_positions: list[dict] = []
         # Stats acumuladas del día
         self._theta_stats: dict = {
             "pnl_today": 0.0, "win_rate": 0.0,
@@ -1368,6 +1369,21 @@ class CropBotTheta:
                     if order_id:
                         self._theta_positions.remove(pos)
                         self._save_theta_positions_to_firestore()
+                        try:
+                            _nc = pos.get("net_credit") or None
+                            _cv = pos.get("current_value") or 0
+                            self._theta_closed_positions.append({
+                                "ticker": pos.get("ticker"), "option_type": "put" if "put" in (pos.get("spread_type") or "") else "call",
+                                "strike": pos.get("short_strike"), "expiration": pos.get("expiration"), "qty": pos.get("contracts", 1),
+                                "entry_ts": datetime.utcfromtimestamp(pos.get("opened_at") or 0).isoformat(),
+                                "exit_ts": datetime.utcnow().isoformat(), "entry_price": _nc or 0, "exit_price": _cv,
+                                "pnl": round(pos.get("unrealized_pnl") or 0, 2),
+                                "pnl_pct": round((_nc - _cv) / _nc * 100, 1) if _nc else 0,
+                                "strategy": "THETA_HARVEST", "exit_reason": exit_reason,
+                                "reason": pos.get("reason", ""), "dte_slot": pos.get("dte_slot"), "tranche_id": pos.get("tranche_id"),
+                            })
+                        except Exception as _e:
+                            logger.warning(f"[ThetaHarvest] closed_positions snapshot failed: {_e}")
 
                         # Liberar el DTE slot solo cuando TODOS los tranches del
                         # mismo DTE están cerrados. T0 cierra antes (35% target)
@@ -2703,6 +2719,7 @@ class CropBotTheta:
                     "trading_end_et":          self._schedule.end.strftime("%H:%M"),
                     "auto_close_et":           self._schedule.auto_close.strftime("%H:%M"),
                     "trading_hours_enabled":   self._schedule.enabled,
+                    "macro_filter_enabled":    self._macro_filter_enabled,
                 },
                 # Daily loss cap snapshot — dashboard lo usa para mostrar
                 # pnl real vs cap + estado (HIT / armed / disabled).
