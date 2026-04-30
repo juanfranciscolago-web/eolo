@@ -214,7 +214,7 @@ def api_state():
                 "service": "eolo-bot-crop",
             },
             "theta": {
-                "positions": list(getattr(bot, "_theta_positions", {}).values()) if hasattr(bot, "_theta_positions") else [],
+                "positions": list(getattr(bot, "_theta_positions", [])),
                 "stats": {
                     k: v for k, v in getattr(bot, "_theta_stats", {}).items()
                     if not k.startswith("_")

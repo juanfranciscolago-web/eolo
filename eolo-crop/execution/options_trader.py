@@ -77,7 +77,7 @@ PAPER_LOG_FILE = os.path.join(os.path.dirname(__file__), "..", "paper_trades_log
 # Firestore — persistencia de trades (sobrevive reinicios de Cloud Run,
 # feed autoritativo para el dashboard y para eolo-sheets-sync).
 # Patrón idéntico a v1 (eolo-trades/YYYY-MM-DD con key = {ts}_{ticker}_{action}).
-FIRESTORE_TRADES_COLLECTION = "eolo-options-trades"
+FIRESTORE_TRADES_COLLECTION = "eolo-crop-trades"
 
 # Telegram — mismo token/chat que V1 y Crypto
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN", "8207559403:AAGwiQS15APh3ivFsAUUu_DCMbltMoDYV-o")
@@ -588,7 +588,7 @@ class OptionsTrader:
                 reason=reason,
                 fill_price=net_debit or 0,
             )
-            logger.info(f"[TRADER PAPER] {tag} | debit=${net_debit:.2f if net_debit else 0:.2f} | {reason[:80]}")
+            logger.info(f"[TRADER PAPER] {tag} | debit=${net_debit or 0:.2f} | {reason[:80]}")
             return trade_id
 
         # ── Live ──────────────────────────────────────────

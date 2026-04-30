@@ -685,14 +685,14 @@ class CropBotTheta:
         try:
             from google.cloud import firestore as _fs
             _db = _fs.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent"))
-            _db.collection("eolo-options-state").document("billing").set({
+            _db.collection("eolo-crop-state").document("billing").set({
                 "anthropic_billing_paused": paused,
                 "errors_streak": self._anthropic_billing_errors,
                 "threshold":     self._anthropic_billing_threshold,
                 "last_error":    self._anthropic_billing_last_err[:300],
                 "last_ts":       self._anthropic_billing_last_ts,
                 "updated_at":    time.time(),
-                "service":       "eolo-bot-v2",
+                "service":       "eolo-bot-crop",
             }, merge=True)
         except Exception as e:
             logger.warning(f"[BILLING-BREAKER] Firestore write falló: {e}")
@@ -2863,7 +2863,7 @@ class CropBotTheta:
                 return
 
             db  = _fs.Client()
-            doc = db.collection("eolo-options-state").document("current")
+            doc = db.collection("eolo-crop-state").document("current")
             doc.set(clean)
             logger.debug("[DASHBOARD] State escrito en Firestore ✅")
 
@@ -2879,7 +2879,7 @@ class CropBotTheta:
                     clean = _sanitize_for_firestore(state_no_stats)
                     if clean:
                         db  = _fs.Client()
-                        doc = db.collection("eolo-options-state").document("current")
+                        doc = db.collection("eolo-crop-state").document("current")
                         doc.set(clean)
                         logger.info("[DASHBOARD] State escrito sin stats field ✅")
                         return
@@ -2895,7 +2895,7 @@ class CropBotTheta:
 
     # ── Persistencia de theta positions (sobrevive reinicios) ─────────────
 
-    _THETA_POS_COLL = "eolo-options-state"
+    _THETA_POS_COLL = "eolo-crop-state"
     _THETA_POS_DOC  = "theta-positions"
 
     def _load_theta_positions_from_firestore(self):
@@ -3013,7 +3013,7 @@ class CropBotTheta:
             project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
             db = _fs.Client(project=project_id)
             today = datetime.now().strftime("%Y-%m-%d")
-            doc = db.collection("eolo-options-trades").document(today).get()
+            doc = db.collection("eolo-crop-trades").document(today).get()
             if doc.exists:
                 for doc_key, t in (doc.to_dict() or {}).items():
                     if not isinstance(t, dict):
