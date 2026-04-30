@@ -384,8 +384,9 @@ class EoloV2:
         self._theta_pivot_date:  dict[str, str]    = {}    # ticker → fecha del cache
         # SPY price history para calcular caída 30 min
         self._spy_price_history: list[tuple[float, float]] = []  # (timestamp, price)
-        # Habilitado/deshabilitado desde Firestore (toggle en dashboard)
-        self._theta_harvest_enabled: bool = True
+        # Apagado: scan autónomo de Theta Harvest deshabilitado.
+        # CROP (eolo-bot-crop) corre Theta Harvest stand-alone desde 2026-04-30.
+        self._theta_harvest_enabled: bool = False
         # Flag force_entry (set por comando Firestore, permite saltear ventana horaria)
         self._theta_force_entry: bool = False
         # Último chain recibido por ticker (para force_theta_entry)
