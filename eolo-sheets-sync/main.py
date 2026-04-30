@@ -420,17 +420,24 @@ def _recent_daily_docs(collection: str) -> list[str]:
 
 def _read_v1_v2(collection: str) -> list[tuple[str, dict]]:
     """Lee colecciones con patrón de daily doc (v1 y v2). Devuelve lista de
-    (doc_id, trade_dict) donde doc_id = '{YYYY-MM-DD}/{field_key}' — único."""
+    (doc_id, trade_dict) donde doc_id = '{YYYY-MM-DD}/{field_key}' — único.
+    También lee de {collection}-archive si existe (docs saturados/archivados)."""
     out: list[tuple[str, dict]] = []
+    seen: set[str] = set()
+    archive = f"{collection}-archive"
     for day in _recent_daily_docs(collection):
-        snap = db().collection(collection).document(day).get()
-        if not snap.exists:
-            continue
-        data = snap.to_dict() or {}
-        for field_key, trade in data.items():
-            if not isinstance(trade, dict):
+        for coll in (collection, archive):
+            snap = db().collection(coll).document(day).get()
+            if not snap.exists:
                 continue
-            out.append((f"{day}/{field_key}", trade))
+            data = snap.to_dict() or {}
+            for field_key, trade in data.items():
+                if not isinstance(trade, dict):
+                    continue
+                doc_id = f"{day}/{field_key}"
+                if doc_id not in seen:
+                    seen.add(doc_id)
+                    out.append((doc_id, trade))
     return out
 
 
