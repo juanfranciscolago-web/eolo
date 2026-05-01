@@ -26,7 +26,7 @@ from datetime import datetime, timezone
 from loguru import logger
 
 import settings
-from helpers import binance_get
+from helpers import binance_get, firestore_read, firestore_client
 from buffer_market_data import MarketDataBuffer
 from stream.binance_stream import BinanceStream
 from stream.binance_screener import BinanceScreener
@@ -563,6 +563,68 @@ class EoloCryptoOrchestrator:
                 self.state.inc_errors()
             await asyncio.sleep(CONFIG_REFRESH_SEC)
 
+    # ── Commands loop (close_all et al.) ─────────────────
+
+    async def _commands_loop(self):
+        """
+        Cada 15s lee eolo-crypto-config/commands desde Firestore.
+        Si encuentra type=close_all con consumed=False: cierra todas
+        las posiciones abiertas y marca consumed=True con timestamp.
+        El dashboard escribe ese doc cuando el usuario pulsa "Close All".
+        """
+        POLL_SEC = 15
+
+        while not self._stopping:
+            try:
+                loop = asyncio.get_event_loop()
+                cmd = await loop.run_in_executor(
+                    None,
+                    lambda: firestore_read("eolo-crypto-config", "commands"),
+                )
+                if (
+                    cmd
+                    and cmd.get("type") == "close_all"
+                    and not cmd.get("consumed", True)
+                ):
+                    positions = self.executor.get_open_positions()
+                    logger.warning(
+                        f"[CMD] close_all recibido — cerrando {len(positions)} posición(es)"
+                    )
+                    for sym in list(positions.keys()):
+                        try:
+                            self.executor.close_long(
+                                symbol=sym,
+                                price=0.0,
+                                strategy="manual_command",
+                                reason="close_all dashboard command",
+                            )
+                        except Exception as ce:
+                            logger.warning(f"[CMD] close_all {sym} falló: {ce}")
+
+                    self.state.set_positions(self.executor.get_open_positions())
+                    self.state.set_balance(self.executor.get_balance_usdt())
+
+                    # Marcar consumed=True sin pisar otros campos del doc
+                    await loop.run_in_executor(
+                        None,
+                        lambda: firestore_client()
+                            .collection("eolo-crypto-config")
+                            .document("commands")
+                            .set(
+                                {
+                                    "consumed": True,
+                                    "consumed_at": datetime.now(timezone.utc).isoformat(),
+                                },
+                                merge=True,
+                            ),
+                    )
+                    logger.info("[CMD] close_all ejecutado — consumed=True escrito en Firestore")
+
+            except Exception as e:
+                logger.warning(f"[CMD] commands_loop: {e}")
+
+            await asyncio.sleep(POLL_SEC)
+
     # ── Main ──────────────────────────────────────────────
 
     async def run(self):
@@ -603,6 +665,7 @@ class EoloCryptoOrchestrator:
             asyncio.create_task(self.state.start(),            name="state"),
             asyncio.create_task(self._state_refresher(),       name="state-refresh"),
             asyncio.create_task(self._config_refresher(),      name="config-refresh"),
+            asyncio.create_task(self._commands_loop(),         name="commands"),
             asyncio.create_task(self._auto_close_loop(),       name="auto-close"),
             asyncio.create_task(self._reconcile_loop(),        name="reconcile"),
             asyncio.create_task(self._btc_dominance_loop(),    name="btc-dominance"),
