@@ -170,24 +170,22 @@ DECISIONS_COLL  = "eolo-crypto-claude-decisions"
 CONFIG_COLL     = "eolo-crypto-config"
 CONFIG_DOC      = "settings"
 COMMANDS_DOC    = "commands"
-
-# Whitelist de strategies conocidas (espejo de settings.STRATEGIES_ENABLED)
+# Whitelist de strategies conocidas (espejo de eolo-crypto-config/settings)
+# Cleanup 2026-05-01: solo estrategias que existen en Firestore.
+# Sacadas: gap, base (deprecated), 10 v3 (ema_3_8, ema_8_21, macd_accel,
+# volume_breakout, buy_pressure, sell_pressure, vwap_momentum,
+# donchian_turtle, bulls_bsp, net_bsv) y 6 combos (combo1-7).
+# Agregadas: bollinger_rsi_sensitive, macd_confluence_fase7a,
+# momentum_score_fase7a, xom_30m.
 KNOWN_STRATEGIES = {
-    # Clásicas (13 de v1, portadas a crypto)
-    "rsi_sma200", "bollinger", "macd_bb", "supertrend", "vwap_rsi",
-    "orb", "squeeze", "hh_ll", "ha_cloud", "ema_tsi", "vela_pivot",
-    "gap", "base",
-    # Nivel 1 — trading_strategies_v2.md (las 7 aplicables a crypto 24/7,
-    # excluye las que dependen de sesión US / VIX / TICK / TRIN).
-    "rvol_breakout", "stop_run", "vwap_zscore", "volume_reversal_bar",
-    "obv_mtf", "tsv", "vw_macd",
-    # EMA 3/8 y MACD — suite v3 (10 en crypto; orb_v3 es equity-only).
-    "ema_3_8", "ema_8_21", "macd_accel", "volume_breakout",
-    "buy_pressure", "sell_pressure", "vwap_momentum",
-    "donchian_turtle", "bulls_bsp", "net_bsv",
-    # Combos Ganadores (2026-04) — 6 en crypto (combo2_rubber_band es equity-only).
-    "combo1_ema_scalper", "combo3_nino_squeeze", "combo4_slimribbon",
-    "combo5_btd", "combo6_fractalccix", "combo7_campbell",
+    # Activas en Firestore (17 de 22):
+    "bollinger", "bollinger_rsi_sensitive", "ha_cloud",
+    "macd_confluence_fase7a", "momentum_score_fase7a",
+    "obv_mtf", "orb", "rvol_breakout", "stop_run",
+    "supertrend", "tsv", "vela_pivot", "vw_macd", "vwap_rsi",
+    "vwap_zscore", "volume_reversal_bar", "xom_30m",
+    # Apagadas pero presentes en Firestore (5 de 22):
+    "ema_tsi", "hh_ll", "macd_bb", "rsi_sma200", "squeeze",
 }
 
 
