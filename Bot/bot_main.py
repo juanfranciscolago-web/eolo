@@ -667,7 +667,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [GAP] Tickers: {tickers_ema_gap}")
         for ticker in tickers_ema_gap:
             # FASE 6: gap only works on 1h+ (skip 30m)
-            if should_run_strategy("gap_fade", ticker, CANDLE_MINUTES):
+            if should_run_strategy("gap_fade", ticker, timeframe):
                 result = gap_strategy.analyze(market_data, ticker)
             else:
                 result = {"ticker": ticker, "signal": "HOLD", "strategy": "GAP", "reason": "below_1h_tf"}
@@ -716,7 +716,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [SUPERTREND] Tickers: {tickers_leveraged}")
         for ticker in tickers_leveraged:
             # FASE 6 Tier 2: Asset-specific ATR tuning (QQQ=7, UNH=6)
-            if should_run_strategy("supertrend", ticker, CANDLE_MINUTES):
+            if should_run_strategy("supertrend", ticker, timeframe):
                 result = supertrend_strategy.analyze(market_data, ticker)
             else:
                 result = {"ticker": ticker, "signal": "HOLD", "strategy": "SUPERTREND", "reason": "not_in_tier2_map"}
@@ -748,7 +748,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [MACD_BB] Tickers: {tickers_leveraged}")
         for ticker in tickers_leveraged:
             # FASE 6 Tier 2: Asset/TF specific routing
-            if should_run_strategy("macd_bb", ticker, CANDLE_MINUTES):
+            if should_run_strategy("macd_bb", ticker, timeframe):
                 result = macd_bb_strategy.analyze(market_data, ticker)
             else:
                 result = {"ticker": ticker, "signal": "HOLD", "strategy": "MACD_BB", "reason": "not_in_tier2_map"}
@@ -788,7 +788,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [STOP_RUN] Tickers: {tickers_all}")
         for ticker in tickers_all:
             # FASE 6 Tier 2: Asset-specific lookback (JPM=20, XOM=10)
-            if should_run_strategy("stop_run", ticker, CANDLE_MINUTES):
+            if should_run_strategy("stop_run", ticker, timeframe):
                 entry = trader.entry_prices.get(ticker)
                 result = stop_run_strategy.analyze(market_data, ticker, entry)
             else:
@@ -800,7 +800,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [VWAP_ZSCORE] Tickers: {tickers_all}")
         for ticker in tickers_all:
             # FASE 6 Tier 2: Tighter Z-score for JPM (1.2 instead of 2.5)
-            if should_run_strategy("vwap_zscore", ticker, CANDLE_MINUTES):
+            if should_run_strategy("vwap_zscore", ticker, timeframe):
                 entry = trader.entry_prices.get(ticker)
                 result = vwap_z_strategy.analyze(market_data, ticker, entry)
             else:
@@ -812,7 +812,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         print(f"\n  [VOL_REVERSAL_BAR] Tickers: {tickers_all}")
         for ticker in tickers_all:
             # FASE 6 Tier 2: Higher vol multiplier for TSLA (2.0 vs 1.5)
-            if should_run_strategy("volume_reversal_bar", ticker, CANDLE_MINUTES):
+            if should_run_strategy("volume_reversal_bar", ticker, timeframe):
                 entry = trader.entry_prices.get(ticker)
                 result = vrb_strategy.analyze(market_data, ticker, entry)
             else:
