@@ -135,11 +135,6 @@ except ImportError as e:
 
 # ── Configuración ──────────────────────────────────────────
 
-# Tickers a operar (superset — el universo del que el dashboard puede
-# activar/desactivar por estrategia: puts / covered calls / wheel).
-# La selección real se lee en caliente desde Firestore
-# (eolo-crop-config/settings.ticker_selection) y se cachea en
-# self._ticker_selection / self._active_tickers.
 TICKERS = ["SPY", "QQQ", "IWM", "TQQQ"]
 
 # Tickers habilitados para Theta Harvest (credit spreads 0-5 DTE)
@@ -422,7 +417,7 @@ class CropBotTheta:
         # ── Control remoto desde el dashboard ─────────────
         # El dashboard Cloud Run escribe en:
         #   eolo-crop-config/commands → órdenes puntuales (toggle, close_all)
-        #   eolo-crop-config/settings → config persistente (budget, max_positions, ticker_selection)
+        #   eolo-crop-config/settings → config persistente (budget, max_positions)
         # Este bot las lee en _command_watcher_loop() cada 5s.
         self._active:               bool         = True
         self._budget_per_trade:     float | None = None
@@ -447,17 +442,6 @@ class CropBotTheta:
         self._last_command_ts:      float        = 0.0
         self._last_settings_ts:     float        = 0.0
         self._command_poll_interval = 5          # segundos
-
-        # Selección de tickers por estrategia (puts/calls/wheel) — defaults
-        # iniciales; el dashboard los puede cambiar en vivo.
-        self._ticker_selection: dict[str, dict[str, bool]] = {
-            "puts":  {t: True for t in ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA"]},
-            "calls": {t: True for t in ["SPY", "QQQ", "AAPL", "MSFT", "NVDA", "TSLA"]},
-            "wheel": {t: True for t in ["SPY", "QQQ", "MSFT", "AAPL", "IWM", "NVDA"]},
-        }
-        # Derivado: set de tickers activos (unión OR sobre los 3 grupos)
-        self._active_tickers: set[str] = set(TICKERS)
-        self._recompute_active_tickers()
 
         # ── Claude Bot state ─────────────────────────────────
         # Corre en su propio loop (independiente de _on_chain_update).
@@ -767,12 +751,7 @@ class CropBotTheta:
             logger.debug(f"[CROP] Bot pausado (dashboard) — skip {ticker}")
             return
 
-        # Ticker desactivado en los 3 grupos del selector → skip
-        # Excepción: THETA_HARVEST_TICKERS siempre se procesan (aunque no estén en puts/calls/wheel)
-        if ticker not in self._active_tickers and ticker not in THETA_HARVEST_TICKERS:
-            logger.debug(
-                f"[CROP] {ticker} desactivado en el selector del dashboard — skip"
-            )
+        if ticker not in THETA_HARVEST_TICKERS:
             return
 
         # No operar después de 15:27 ET
@@ -935,48 +914,6 @@ class CropBotTheta:
         # 10. Theta Harvest scan — independiente de Claude
         if ticker in THETA_HARVEST_TICKERS and self._theta_harvest_enabled:
             await self._run_theta_harvest(ticker, chain)
-
-        # 11. Nuevas estrategias v2 (2026-04-27)
-        await self._run_v2_extra_strategies(ticker, chain)
-
-    # ── Nuevas estrategias v2 extras ──────────────────────
-
-    async def _run_v2_extra_strategies(self, ticker: str, chain: dict):
-        """
-        Corre las 4 estrategias nuevas de v2:
-          - VRP Carry        (OPEN_SPREAD si VIX - HV > 5pts)
-          - 0DTE Gamma Scalp (LONG_CALL/PUT los viernes, RSI extremo)
-          - Earnings IV      (OPEN_SPREAD si earnings en 2-5d y IV_rank > 70)
-          - Put Skew Fade    (FADE_SKEW si percentil skew > 90)
-
-        Todas son "signal only" — el orchestrator loggea y notifica pero
-        la ejecución real va por OptionsTrader (TODO fase siguiente).
-        """
-        from datetime import datetime, timezone
-        import pytz
-
-        if ticker not in THETA_HARVEST_TICKERS:
-            return  # solo SPY, QQQ, IWM, TQQQ
-
-        vix_val, _ = self._theta_get_macro_context()
-        vix_current = float(vix_val) if vix_val else 20.0
-        news_today  = is_news_day(enabled_override=self._macro_filter_enabled)
-        now_et      = datetime.now(pytz.timezone("America/New_York"))
-
-        # Obtener daily_df desde el buffer de candles (si disponible)
-        daily_df = None
-        try:
-            if hasattr(self, "_candle_buffers") and ticker in self._candle_buffers:
-                buf = self._candle_buffers[ticker]
-                daily_df = buf.to_dataframe() if hasattr(buf, "to_dataframe") else None
-        except Exception:
-            pass
-
-        if daily_df is None or daily_df.empty:
-            return
-
-        # ── CROP: REMOVED VRP, 0DTE Gamma, Earnings IV, Put Skew ─────────────────
-        # (Theta Harvest only — see _theta_harvest_v2 below)
 
     # ── Theta Harvest v2 — Always-In Multi-DTE ────────────
 
@@ -1861,7 +1798,7 @@ class CropBotTheta:
         from zoneinfo import ZoneInfo
         et_now = datetime.now(ZoneInfo("America/New_York"))
 
-        tickers = sorted(self._active_tickers) or TICKERS
+        tickers = sorted(TICKERS)
 
         # prices: mark > last > mid(bid,ask) por ticker
         prices: dict[str, float | None] = {}
@@ -2588,22 +2525,6 @@ class CropBotTheta:
                 if strat_changes:
                     changed.append(f"strategies=[{', '.join(strat_changes)}]")
 
-            if "ticker_selection" in cfg and isinstance(cfg["ticker_selection"], dict):
-                remote = cfg["ticker_selection"]
-                for group in ("puts", "calls", "wheel"):
-                    src = remote.get(group)
-                    if isinstance(src, dict):
-                        # Merge: respeta defaults + aplica lo que vino
-                        self._ticker_selection.setdefault(group, {})
-                        for sym, val in src.items():
-                            self._ticker_selection[group][str(sym).upper()] = bool(val)
-                prev_active = self._active_tickers.copy()
-                self._recompute_active_tickers()
-                if prev_active != self._active_tickers:
-                    changed.append(
-                        f"tickers_activos={sorted(self._active_tickers)}"
-                    )
-
             # ── Macro filter enabled (dashboard toggle) ────
             if "macro_filter_enabled" in cfg:
                 try:
@@ -2631,22 +2552,6 @@ class CropBotTheta:
 
         except Exception as e:
             logger.debug(f"[COMMANDS] poll_settings error: {e}")
-
-    def _recompute_active_tickers(self):
-        """Unión OR: un ticker está activo si cualquier grupo lo habilita."""
-        active: set[str] = set()
-        for group in ("puts", "calls", "wheel"):
-            for sym, on in self._ticker_selection.get(group, {}).items():
-                if on:
-                    active.add(str(sym).upper())
-        self._active_tickers = active
-
-    def _ticker_strategies(self, ticker: str) -> list[str]:
-        """Devuelve los grupos (puts/calls/wheel) en los que el ticker está ON."""
-        return [
-            g for g in ("puts", "calls", "wheel")
-            if self._ticker_selection.get(g, {}).get(ticker, False)
-        ]
 
     async def _execute_close_all(self, reason: str = "dashboard"):
         """Cierra todas las posiciones abiertas (invocado por close_all)."""
@@ -2707,7 +2612,6 @@ class CropBotTheta:
                     "default_stop_loss_pct":   self._default_stop_loss_pct,
                     "default_take_profit_pct": self._default_take_profit_pct,
                     "daily_loss_cap_pct":      self._daily_loss_cap_pct,
-                    "ticker_selection":        self._ticker_selection,
                     # Schedule (editable desde el dashboard)
                     "trading_start_et":        self._schedule.start.strftime("%H:%M"),
                     "trading_end_et":          self._schedule.end.strftime("%H:%M"),
@@ -2719,7 +2623,7 @@ class CropBotTheta:
                 # pnl real vs cap + estado (HIT / armed / disabled).
                 # Poblado en cada _is_daily_loss_cap_hit() call.
                 "daily_loss_cap": self._daily_loss_cap_status or {},
-                "active_tickers": sorted(self._active_tickers),
+                "active_tickers": sorted(TICKERS),
 
                 # Quotes en tiempo real
                 "quotes":       self._quotes,
