@@ -52,6 +52,7 @@ from stream.options_stream import SchwabStream
 from stream.options_chain  import OptionChainFetcher
 from analysis.greeks       import enrich_contract
 from claude.options_brain  import OptionsBrain
+from claude.claude_bot     import ClaudeBotEngine
 from execution.options_trader import OptionsTrader, _send_telegram
 from theta_harvest import scan_theta_harvest_tranches, ThetaHarvestSignal
 from theta_harvest.theta_harvest_strategy import (
@@ -748,10 +749,7 @@ class CropBotTheta:
                     _vix_val, _ = self._theta_get_macro_context()
                     if _vix_val is not None:
                         # Obtener daily_df de SPY desde los candle buffers
-                        _spy_df = None
-                        if hasattr(self, "_candle_buffers") and "SPY" in self._candle_buffers:
-                            _buf = self._candle_buffers["SPY"]
-                            _spy_df = _buf.to_dataframe() if hasattr(_buf, "to_dataframe") else None
+                        _spy_df = self._candle_buffer.as_df_1min("SPY")
                         if _spy_df is not None and len(_spy_df) >= 20:
                             _toggles = self._auto_router.update(
                                 vix=float(_vix_val), spy_df=_spy_df, save_firestore=False
