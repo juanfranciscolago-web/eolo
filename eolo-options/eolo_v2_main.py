@@ -760,10 +760,7 @@ class EoloV2:
                     _vix_val, _ = self._theta_get_macro_context()
                     if _vix_val is not None:
                         # Obtener daily_df de SPY desde los candle buffers
-                        _spy_df = None
-                        if hasattr(self, "_candle_buffers") and "SPY" in self._candle_buffers:
-                            _buf = self._candle_buffers["SPY"]
-                            _spy_df = _buf.to_dataframe() if hasattr(_buf, "to_dataframe") else None
+                        _spy_df = self._candle_buffer.as_df_1min("SPY")
                         if _spy_df is not None and len(_spy_df) >= 20:
                             _toggles = self._auto_router.update(
                                 vix=float(_vix_val), spy_df=_spy_df, save_firestore=False
@@ -991,9 +988,7 @@ class EoloV2:
         # Obtener daily_df desde el buffer de candles (si disponible)
         daily_df = None
         try:
-            if hasattr(self, "_candle_buffers") and ticker in self._candle_buffers:
-                buf = self._candle_buffers[ticker]
-                daily_df = buf.to_dataframe() if hasattr(buf, "to_dataframe") else None
+            daily_df = self._candle_buffer.as_df_1min(ticker)
         except Exception:
             pass
 
