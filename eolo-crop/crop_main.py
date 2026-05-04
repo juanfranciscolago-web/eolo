@@ -137,7 +137,7 @@ except ImportError as e:
 # La selección real se lee en caliente desde Firestore
 # (eolo-crop-config/settings.ticker_selection) y se cachea en
 # self._ticker_selection / self._active_tickers.
-TICKERS = ["SPY", "QQQ", "IWM", "MSFT", "AAPL", "NVDA", "TSLA", "TQQQ"]
+TICKERS = ["SPY", "QQQ", "IWM", "TQQQ"]
 
 # Tickers habilitados para Theta Harvest (credit spreads 0-5 DTE)
 THETA_HARVEST_TICKERS = ["SPY", "QQQ", "IWM", "TQQQ"]
