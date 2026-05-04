@@ -357,7 +357,6 @@ def test_options_brain_prompt(chain: dict, surface, alerts: list, signals: dict,
         chain             = chain,
         surface           = surface,
         mispricing_alerts = alerts,
-        eolo_signals      = signals,
         open_positions    = [],
     )
 

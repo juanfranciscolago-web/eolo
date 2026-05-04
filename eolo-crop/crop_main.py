@@ -63,6 +63,8 @@ from theta_harvest.theta_harvest_strategy import (
     FORCE_CLOSE_HOUR_0DTE,
     FORCE_CLOSE_HOUR_1TO4DTE,
     _determine_spread_type,
+    ENTRY_HOUR_ET,
+    ENTRY_WINDOW_MINUTES,
 )
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
@@ -859,15 +861,12 @@ class CropBotTheta:
         # llamadas en sesiones tranquilas. Override: set _claude_gate_enabled=False
         # para deshabilitar (o CLAUDE_GATE=0 en env al arrancar).
         if getattr(self, "_claude_gate_enabled", True):
-            has_tech_signal = any(
-                (s or {}).get("signal") in ("BUY", "SELL")
-                for s in (signals or {}).values()
-            )
-            has_mispricing = bool(alerts)
-            has_position   = bool(ticker_positions)
-            if not (has_tech_signal or has_mispricing or has_position):
+            now_h      = now_et()
+            hour_frac  = now_h.hour + now_h.minute / 60.0
+            window_end = ENTRY_HOUR_ET + ENTRY_WINDOW_MINUTES / 60.0
+            if not (ENTRY_HOUR_ET <= hour_frac <= window_end):
                 logger.debug(
-                    f"[CROP] {ticker} — gate: sin señales/mispricing/posiciones, "
+                    f"[CROP] {ticker} — gate: fuera de ventana {ENTRY_HOUR_ET:.2f}-{window_end:.2f} ET, "
                     f"skip Claude (ahorro API)"
                 )
                 return
@@ -880,7 +879,6 @@ class CropBotTheta:
                 chain          = chain,
                 surface        = surface,
                 mispricing_alerts = alerts,
-                eolo_signals   = signals,
                 open_positions = ticker_positions,
             )
             # Éxito → resetear contador del circuit breaker de billing
@@ -900,9 +898,6 @@ class CropBotTheta:
             "ticker": ticker,
             # Guardar inputs que usó Claude (para trazabilidad)
             "inputs": {
-                "buy_signals":  sum(1 for s in signals.values() if s.get("signal") == "BUY"),
-                "sell_signals": sum(1 for s in signals.values() if s.get("signal") == "SELL"),
-                "total_signals": len(signals),
                 "mispricing_count": len(alerts),
                 "atm_iv": self._iv_surfaces.get(ticker, {}).get("atm_iv"),
                 "skew_index": self._iv_surfaces.get(ticker, {}).get("skew_index"),

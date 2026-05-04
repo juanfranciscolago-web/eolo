@@ -131,7 +131,6 @@ class OptionsBrain:
         chain:              dict,           # cadena de opciones normalizada
         surface:            "IVSurface",    # superficie IV
         mispricing_alerts:  list[dict],     # alertas de mispricing
-        eolo_signals:       dict,           # señales de las 13 estrategias de Eolo v1
         open_positions:     list[dict] | None = None,  # posiciones abiertas actualmente
     ) -> dict:
         """
@@ -144,7 +143,7 @@ class OptionsBrain:
         loop = asyncio.get_event_loop()
         prompt = self._build_prompt(
             ticker, quote, chain, surface,
-            mispricing_alerts, eolo_signals, open_positions
+            mispricing_alerts, open_positions
         )
 
         logger.info(f"[BRAIN] Consultando Claude para {ticker}...")
@@ -171,7 +170,7 @@ class OptionsBrain:
     def _build_prompt(
         self,
         ticker, quote, chain, surface,
-        mispricing_alerts, eolo_signals, open_positions
+        mispricing_alerts, open_positions
     ) -> str:
         now_et = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M ET")
 
@@ -201,18 +200,7 @@ class OptionsBrain:
         else:
             misprice_text = "  Ninguna anomalía detectada."
 
-        # ── Sección 4: Señales Eolo v1
-        signal_lines = []
-        for strategy, data in eolo_signals.items():
-            sig  = data.get("signal", "HOLD")
-            icon = "🟢" if sig == "BUY" else "🔴" if sig == "SELL" else "⚪"
-            signal_lines.append(f"  {icon} {strategy}: {sig}")
-        signals_text = "\n".join(signal_lines) if signal_lines else "  Sin señales disponibles."
-
-        buy_count  = sum(1 for d in eolo_signals.values() if d.get("signal") == "BUY")
-        sell_count = sum(1 for d in eolo_signals.values() if d.get("signal") == "SELL")
-
-        # ── Sección 5: Posiciones abiertas
+        # ── Sección 4: Posiciones abiertas
         if open_positions:
             pos_lines = [
                 f"  {p.get('ticker')} {p.get('option_type','').upper()} "
@@ -242,10 +230,6 @@ Volumen       : {vol_u}
 
 ══════ VOLATILIDAD IMPLÍCITA ══════
 {iv_summary}
-
-══════ SEÑALES TÉCNICAS EOLO v1 (de 13 estrategias) ══════
-{signals_text}
-Resumen: {buy_count} BUY | {sell_count} SELL | {13 - buy_count - sell_count} HOLD
 
 ══════ ANOMALÍAS DE PRECIO DETECTADAS ══════
 {misprice_text}
