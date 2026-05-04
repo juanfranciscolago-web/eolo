@@ -51,6 +51,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, "..", "Bot")) # estrategias v1
 from stream.options_stream import SchwabStream
 from stream.options_chain  import OptionChainFetcher
 from analysis.greeks       import enrich_contract
+from analysis.iv_surface   import IVSurface
 from claude.options_brain  import OptionsBrain
 from claude.claude_bot     import ClaudeBotEngine
 from execution.options_trader import OptionsTrader, _send_telegram
