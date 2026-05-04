@@ -24,7 +24,7 @@ VOL_MULTIPLIER_BY_ASSET = {
 }
 
 
-def calculate_volume_profile(df: pd.DataFrame) -> pd.DataFrame:
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
     """Agrega avg_vol al DataFrame."""
     df = df.copy()
     df["avg_vol"] = df["volume"].rolling(AVG_VOL_PERIOD).mean()
@@ -78,7 +78,7 @@ def analyze(market_data, ticker: str, entry=None) -> dict:
         return {"ticker": ticker, "signal": "ERROR", "strategy": STRATEGY_NAME,
                 "price": None, "volume": None, "avg_vol": None}
 
-    df     = calculate_volume_profile(df)
+    df     = calculate_indicators(df)
     signal = detect_signal(df, ticker)  # Pass ticker for asset-specific tuning
     last   = df.iloc[-1]
 

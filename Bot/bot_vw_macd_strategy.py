@@ -37,7 +37,7 @@ def calculate_vw_macd(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def detect_signal(df: pd.DataFrame) -> str:
+def detect_signal(df: pd.DataFrame, ticker=None) -> str:
     if len(df) < MACD_SLOW + 2:
         return "HOLD"
 
