@@ -102,7 +102,7 @@ def _send_telegram(message: str):
 
 def _persist_trade_to_firestore(trade: dict) -> None:
     """
-    Persiste el trade en Firestore (collection eolo-options-trades).
+    Persiste el trade en Firestore (collection eolo-crop-trades).
     Mismo patrón que v1 (eolo-trades): un doc por día, key de campo = {ts}_{ticker}_{action}.
     Se escribe con merge=True para que múltiples trades del día coexistan en el mismo doc.
 

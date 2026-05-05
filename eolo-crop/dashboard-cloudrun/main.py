@@ -3,7 +3,7 @@
 #
 #  Lee el estado del bot desde Firestore y lo sirve al browser.
 #  El bot (corriendo localmente) escribe en:
-#    Firestore: eolo-options-state / current
+#    Firestore: eolo-crop-state / current
 #
 #  Deploy:
 #    gcloud builds submit --config dashboard-cloudrun/cloudbuild.yaml \
@@ -149,11 +149,12 @@ def logout():
 # ─────────────────────────────────────────────────────────
 
 GCP_PROJECT      = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
-STATE_COLL       = "eolo-options-state"
+STATE_COLL       = "eolo-crop-state"
 STATE_DOC        = "current"
-CONFIG_COLL      = "eolo-options-config"
+CONFIG_COLL      = "eolo-crop-config"
 CONFIG_DOC       = "settings"
 COMMANDS_DOC     = "commands"
+TRADES_COLL      = "eolo-crop-trades"
 
 # Mismo set canónico que Bot/bot_main.py::DEFAULT_STRATEGIES y v2 EoloV2
 # .__init__._strategies_enabled. Whitelist: el endpoint /api/toggle-strategy
@@ -237,7 +238,7 @@ def api_state():
 def api_billing():
     """
     Estado del circuit breaker de billing de Anthropic (v2).
-    El bot lo escribe en `eolo-options-state/billing` cuando trip-ea el breaker
+    El bot lo escribe en `eolo-crop-state/billing` cuando trip-ea el breaker
     (o cuando lo limpia al recuperarse). El dashboard usa esto para prender un
     semáforo visible en el header.
     """
@@ -276,8 +277,8 @@ def health():
 
 # ── Control endpoints ──────────────────────────────────────
 # NOTA: estos endpoints escriben a Firestore en
-#   eolo-options-config/commands  (orden puntual)
-#   eolo-options-config/settings  (config persistente)
+#   eolo-crop-config/commands  (orden puntual)
+#   eolo-crop-config/settings  (config persistente)
 # El bot (eolo_v2_main.py) debe leer estos docs al inicio
 # de cada ciclo y actuar en consecuencia.
 
@@ -435,8 +436,8 @@ def api_config():
 def api_schedule_status():
     """
     Estado de trading_hours para el bot v2.
-    El bot publica el payload en eolo-options-state/current.schedule;
-    si no existe lo re-computamos desde eolo-options-config/settings
+    El bot publica el payload en eolo-crop-state/current.schedule;
+    si no existe lo re-computamos desde eolo-crop-config/settings
     para que el front siempre tenga algo.
     """
     try:
@@ -511,7 +512,7 @@ def toggle_strategy():
     Activa/desactiva una estrategia por nombre canónico.
     Body: { "strategy": "rvol_breakout", "enabled": true }
 
-    Persiste en eolo-options-config/settings.strategies_enabled (merge).
+    Persiste en eolo-crop-config/settings.strategies_enabled (merge).
     El bot lo recoge en _poll_settings() cada 5s.
     """
     try:
@@ -563,7 +564,7 @@ def api_strategies():
 @require_auth
 def api_strategy_stats():
     """
-    Agrega stats por estrategia leyendo eolo-options-trades (daily docs).
+    Agrega stats por estrategia leyendo eolo-crop-trades (daily docs).
     Schema por subfield: {action, strategy, pnl_usd (solo SELL_TO_CLOSE), ...}
     Retorna para cada strategy:
       h24:  {trades, wins, losses, net_pnl, series: [{ts, cum_pnl}, ...]}
@@ -590,7 +591,7 @@ def api_strategy_stats():
         }
 
         for doc_id in doc_ids:
-            doc = db.collection("eolo-options-trades").document(doc_id).get()
+            doc = db.collection(TRADES_COLL).document(doc_id).get()
             if not doc.exists:
                 continue
             data = doc.to_dict() or {}
