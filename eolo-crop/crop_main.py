@@ -318,7 +318,7 @@ class CropBotTheta:
         self.brain         = OptionsBrain()
         self.trader        = OptionsTrader(paper=PAPER_TRADING)
         # Auto-Router — actualiza toggles de estrategias según régimen cada 30 min
-        self._auto_router  = _AutoRouter(bot_id="v2", update_interval_min=30)
+        self._auto_router  = _AutoRouter(bot_id="crop", update_interval_min=30)
 
         # Claude Bot — estrategia #14 sobre acciones del underlying.
         # Corre en paralelo con OptionsBrain (que opera opciones).
