@@ -44,7 +44,7 @@ steps:
       - '--max-instances=5'
       - '--port=8080'
       - '--service-account=995870841941-compute@developer.gserviceaccount.com'
-      - '--set-env-vars=^@^GOOGLE_CLOUD_PROJECT=$PROJECT_ID@ALLOWED_EMAILS=juanfranciscolago@gmail.com,lago.ezequiel@gmail.com'
+      - '--set-env-vars=^|^GOOGLE_CLOUD_PROJECT=$PROJECT_ID|ALLOWED_EMAILS=juanfranciscolago@gmail.com,lago.ezequiel@gmail.com'
       - '--set-secrets=GOOGLE_CLIENT_ID=google-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret:latest,FLASK_SECRET_KEY=flask-secret-key:latest'
 
 images:
