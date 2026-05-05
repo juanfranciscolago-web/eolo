@@ -1239,6 +1239,11 @@ class CropBotTheta:
                             (net_credit - cur_val) * contracts * 100, 2
                         )
                         pos["current_value"] = cur_val
+                        # Persistir greeks del short leg para el dashboard
+                        pos["delta"] = short_c.get("delta") or 0
+                        pos["theta"] = short_c.get("theta") or 0
+                        pos["gamma"] = short_c.get("gamma") or 0
+                        pos["vega"]  = short_c.get("vega")  or 0
                     except Exception:
                         pass
 
@@ -2570,7 +2575,7 @@ class CropBotTheta:
         """
         Escribe el estado completo del bot en:
           1. crop_state.json  (dashboard local)
-          2. Firestore eolo-options-state/current  (dashboard Cloud Run)
+          2. Firestore eolo-crop-state/current  (dashboard Cloud Run)
         """
         try:
             from zoneinfo import ZoneInfo
@@ -2649,8 +2654,8 @@ class CropBotTheta:
                 # Paper trades del día (últimos 50)
                 "paper_trades": paper_trades[-50:],
 
-                # P&L calculado
-                "pnl":          self._calc_pnl(paper_trades),
+                # P&L calculado — usa theta positions/closed (CROP no usa paper_trades)
+                "pnl":          self._calc_theta_pnl_for_dashboard(),
 
                 # Stats del bot
                 "stats": {
@@ -2963,6 +2968,73 @@ class CropBotTheta:
         trades = list(trades_by_key.values())
         trades.sort(key=lambda t: t.get("timestamp", ""))
         return trades
+
+    def _calc_theta_pnl_for_dashboard(self) -> dict:
+        """
+        Construye el dict state["pnl"] con datos de Theta Harvest para el
+        dashboard. Reemplaza el output de _calc_pnl() en CROP porque
+        paper_trades está vacío (CROP no usa BUY_TO_OPEN/SELL_TO_CLOSE).
+
+        Schema esperado por el JS del dashboard:
+        - open_list: posiciones abiertas con greeks, entry_price, current value
+        - closed:    trades cerrados del día (en memoria, no persistente)
+        - total_pnl, wins, losses, rounds, win_rate, open_count
+        """
+        # ── open_list desde _theta_positions ──────────────────────────
+        open_list = []
+        for pos in self._theta_positions:
+            spread_type = pos.get("spread_type", "")
+            option_type = "put" if "put" in spread_type else "call"
+            opened_at_ts = pos.get("opened_at") or 0
+            try:
+                entry_ts = datetime.utcfromtimestamp(opened_at_ts).isoformat()
+            except (ValueError, OSError):
+                entry_ts = ""
+
+            open_list.append({
+                "ticker":      pos.get("ticker", ""),
+                "option_type": option_type,
+                "strike":      pos.get("short_strike", ""),
+                "expiration":  pos.get("expiration", ""),
+                "symbol":      f"{pos.get('ticker','')} {option_type.upper()} "
+                               f"{pos.get('short_strike','')} "
+                               f"{pos.get('expiration','')}",
+                "entry_price": pos.get("net_credit", 0),
+                "exit_price":  pos.get("current_value", 0),
+                "qty":         pos.get("contracts", 1),
+                "strategy":    "THETA_HARVEST",
+                "reason":      pos.get("reason", ""),
+                "entry_ts":    entry_ts,
+                "dte_slot":    pos.get("dte_slot"),
+                "tranche_id":  pos.get("tranche_id"),
+                "greeks": {
+                    "delta":   pos.get("delta") or 0,
+                    "theta":   pos.get("theta") or 0,
+                    "gamma":   pos.get("gamma") or 0,
+                    "vega":    pos.get("vega") or 0,
+                },
+            })
+
+        # ── closed desde _theta_closed_positions (últimos 30) ─────────
+        closed = list(self._theta_closed_positions[-30:])
+
+        # ── stats agregados ───────────────────────────────────────────
+        wins   = sum(1 for c in closed if (c.get("pnl") or 0) > 0)
+        losses = sum(1 for c in closed if (c.get("pnl") or 0) < 0)
+        rounds = wins + losses
+        total_pnl = round(sum(float(c.get("pnl") or 0) for c in closed), 2)
+        win_rate  = round(wins / rounds * 100, 1) if rounds > 0 else 0
+
+        return {
+            "total_pnl":  total_pnl,
+            "wins":       wins,
+            "losses":     losses,
+            "rounds":     rounds,
+            "win_rate":   win_rate,
+            "open_count": len(open_list),
+            "open_list":  open_list,
+            "closed":     closed,
+        }
 
     def _calc_pnl(self, trades: list[dict]) -> dict:
         """Calcula P&L de paper trades (BUY → SELL_TO_CLOSE pairs)."""
