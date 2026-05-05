@@ -1448,6 +1448,18 @@ def main():
             interruptible_sleep(60)
             continue
 
+        # Defense-in-depth: gate hardcodeado contra trading_hours_enabled=False.
+        # Usa los mismos start/end que el UI pero ignora el flag enabled.
+        # Bug original (5-may-26): cuando trading_hours_enabled=False,
+        # is_within_trading_window() retornaba True incondicionalmente, dejando
+        # operar al bot 24/7 (incluyendo trades overnight con tf=1440).
+        sch_guard = load_schedule(settings, defaults=DEFAULTS_EQUITY)
+        _now_g    = now_et()
+        _t_g      = _now_g.time().replace(second=0, microsecond=0)
+        if _now_g.weekday() >= 5 or not (sch_guard.start <= _t_g < sch_guard.end):
+            interruptible_sleep(60)
+            continue
+
         # ─── A partir de aquí estamos DENTRO del rango de trading ───
         budget = float(settings.get("budget", 100))
 
