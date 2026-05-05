@@ -1,48 +1,56 @@
 # ============================================================
-#  EOLO v2 Dashboard — Cloud Build Pipeline
+#  EOLO CROP Dashboard — Cloud Build Pipeline
 #
-#  Deploy manual:
+#  Servicio: eolo-crop-dashboard (us-east1)
+#
+#  Manual trigger:
+#    cd /Users/JUAN/PycharmProjects/eolo
 #    gcloud builds submit \
-#      --config eolo-options/dashboard-cloudrun/cloudbuild.yaml \
-#      --project eolo-schwab-agent \
-#      eolo-options/dashboard-cloudrun/
+#      --config eolo-crop/dashboard-cloudrun/cloudbuild.yaml \
+#      eolo-crop/dashboard-cloudrun/ \
+#      --project eolo-schwab-agent
+#
+#  Auth: OAuth via 3 secrets de Secret Manager (mismo patrón que
+#  eolo-options-dashboard). ALLOWED_EMAILS via env var (no en código).
 # ============================================================
 
 steps:
-  # ── Build ──────────────────────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'build'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/eolo-options-dashboard:$BUILD_ID'
+      - 'gcr.io/$PROJECT_ID/eolo-crop-dashboard:$BUILD_ID'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/eolo-options-dashboard:latest'
+      - 'gcr.io/$PROJECT_ID/eolo-crop-dashboard:latest'
       - '.'
 
-  # ── Push ───────────────────────────────────────────────
   - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/eolo-options-dashboard:latest'
+    args: ['push', 'gcr.io/$PROJECT_ID/eolo-crop-dashboard:latest']
 
-  # ── Deploy a Cloud Run ─────────────────────────────────
   - name: 'gcr.io/cloud-builders/gcloud'
     args:
       - 'run'
       - 'deploy'
-      - 'eolo-options-dashboard'
-      - '--image=gcr.io/$PROJECT_ID/eolo-options-dashboard:latest'
-      - '--region=us-central1'
+      - 'eolo-crop-dashboard'
+      - '--image=gcr.io/$PROJECT_ID/eolo-crop-dashboard:latest'
+      - '--region=us-east1'
       - '--platform=managed'
       - '--allow-unauthenticated'
       - '--memory=256Mi'
       - '--cpu=1'
-      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+      - '--cpu-boost'
+      - '--timeout=300'
+      - '--concurrency=80'
+      - '--max-instances=5'
+      - '--port=8080'
+      - '--service-account=995870841941-compute@developer.gserviceaccount.com'
+      - '--set-env-vars=^@^GOOGLE_CLOUD_PROJECT=$PROJECT_ID@ALLOWED_EMAILS=juanfranciscolago@gmail.com,lago.ezequiel@gmail.com'
+      - '--set-secrets=GOOGLE_CLIENT_ID=google-oauth-client-id:latest,GOOGLE_CLIENT_SECRET=google-oauth-client-secret:latest,FLASK_SECRET_KEY=flask-secret-key:latest'
 
 images:
-  - 'gcr.io/$PROJECT_ID/eolo-options-dashboard:latest'
+  - 'gcr.io/$PROJECT_ID/eolo-crop-dashboard:latest'
 
-timeout: '600s'
+timeout: '900s'
 
 options:
   logging: CLOUD_LOGGING_ONLY
