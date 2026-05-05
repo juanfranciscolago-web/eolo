@@ -39,3 +39,12 @@ trades_log.csv
 runcycle.log
 *_mock.json
 *-test.html
+
+# ── Backup files ────────────────────────────────────────────
+*.bak
+*.bak-*
+
+# ── Session handoff docs (root level) ──────────────────────
+/EOLO_CONTEXT_FOR_NEW_CHAT.md
+/EOLO_HANDOFF.md
+/EOLO_*.md
