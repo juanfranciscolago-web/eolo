@@ -2001,7 +2001,24 @@ function updateHeader() {
   const badge = document.getElementById('mode-badge');
   badge.textContent = mode === 'LIVE' ? '🔴 LIVE' : '📄 PAPER';
   badge.className = mode === 'LIVE' ? 'live' : '';
-  document.getElementById('updated').textContent = '⟳ ' + (state.updated_at || '–');
+  // updated_at viene como UTC string del bot ("2026-05-05 13:32:11"). Convertir a ET.
+  let updatedDisplay = '–';
+  if (state.updated_at) {
+    try {
+      const isoUtc = state.updated_at.replace(' ', 'T') + 'Z';
+      const utcDate = new Date(isoUtc);
+      const etStr = utcDate.toLocaleString('en-US', {
+        timeZone: 'America/New_York',
+        hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      });
+      updatedDisplay = etStr + ' ET';
+    } catch (e) {
+      updatedDisplay = state.updated_at;
+    }
+  }
+  document.getElementById('updated').textContent = '⟳ ' + updatedDisplay;
   document.getElementById('updated').style.color = 'var(--muted)';
 
   // Toggle activo — leído del state (bot v2 escribe state.active)
@@ -3510,8 +3527,9 @@ function updateThetaHarvest() {
 
     } else if (pos.length > 0) {
       // No history yet — plot entry + current on full-day axis
-      const now  = new Date();
-      const nowT = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
+      // Hora ET correcta — usuarios fuera de ET (ej Argentina) verían hora local con new Date() solo
+      const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const nowT = `${etNow.getHours().toString().padStart(2,'0')}:${etNow.getMinutes().toString().padStart(2,'0')}`;
       const nowSlot = snapGrid(nowT);
       vixData = DAY_GRID.map(t => t === nowSlot ? (vix_cur ?? null) : null);
 
@@ -3740,10 +3758,9 @@ function updateThetaHarvest() {
   if ($th('th-ex-vix-s'))  { $th('th-ex-vix-s').textContent  = vixOk  ? 'OK' : 'ALTO'; $th('th-ex-vix-s').className  = 'th-exit-status ' + (vixOk ? 'th-exit-ok' : 'th-exit-warn'); }
 
   // EOD status
-  const nowET = new Date();
-  // Approximate ET offset (UTC-4 or UTC-5)
-  const utcH  = nowET.getUTCHours() + nowET.getUTCMinutes()/60;
-  const etH   = utcH - 4;  // EDT
+  // Obtener hora ET correcta vía toLocaleString (maneja EDT/EST automático)
+  const etDate = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const etH = etDate.getHours() + etDate.getMinutes()/60;
   const eodEl = $th('th-ex-eod-s');
   if (eodEl) {
     if      (etH >= 15.25) { eodEl.textContent = '1–4DTE CIERRE'; eodEl.className = 'th-exit-status th-exit-hit'; }
