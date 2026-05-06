@@ -1078,10 +1078,16 @@ class CropBotTheta:
         # 2° fallback: señales técnicas internas Eolo v1
         if pivot_result and getattr(pivot_result, "sector", None):
             spread_type = pivot_result.sector.spread_type
+            top_movers = getattr(pivot_result.sector, "top_movers", []) or []
+            movers_str = ", ".join(
+                f"{m.get('symbol', '?')}={m.get('pct', 0):+.2f}%"
+                for m in top_movers[:3]
+            ) if top_movers else "—"
             logger.info(
                 f"[ThetaHarvest] {ticker} dirección via sector analysis: "
                 f"{spread_type} ({pivot_result.sector.direction} "
-                f"{pivot_result.sector.weighted_change_pct:+.2f}%)"
+                f"{pivot_result.sector.weighted_change_pct:+.2f}%) "
+                f"top: {movers_str}"
             )
         else:
             signals     = self._signals_data.get(ticker, {})
@@ -1126,6 +1132,29 @@ class CropBotTheta:
                 f"[ThetaHarvest] {ticker} Tick/AD → {tick_confirmation} "
                 f"(TICK={tick_ctx.tick:+.0f} AD={tick_ctx.ad:+.0f})"
             )
+
+        # ── 4c. Log estructurado de decisión (análisis posterior) ─
+        _decision_log = {
+            "ticker":               ticker,
+            "timestamp_et":         now_et().isoformat(),
+            "consensus_risk":       getattr(pivot_result, "consensus_risk", None) if pivot_result else None,
+            "atr_gate_hit":         getattr(pivot_result, "atr_gate_hit", None)   if pivot_result else None,
+            "delta_min":            getattr(pivot_result, "delta_min", None)       if pivot_result else None,
+            "delta_max":            getattr(pivot_result, "delta_max", None)       if pivot_result else None,
+            "spread_type":          spread_type,
+            "sector_direction":     pivot_result.sector.direction            if pivot_result and getattr(pivot_result, "sector", None) else None,
+            "sector_weighted_pct":  pivot_result.sector.weighted_change_pct  if pivot_result and getattr(pivot_result, "sector", None) else None,
+            "sector_top_movers":    getattr(pivot_result.sector, "top_movers", [])[:5] if pivot_result and getattr(pivot_result, "sector", None) else [],
+            "tick":                 getattr(tick_ctx, "tick",         None) if tick_ctx else None,
+            "ad":                   getattr(tick_ctx, "ad",           None) if tick_ctx else None,
+            "tick_extreme":         getattr(tick_ctx, "tick_extreme", None) if tick_ctx else None,
+            "tick_confirmation":    getattr(tick_ctx, "confirmation", None) if tick_ctx else None,
+            "decision_source":      "sector_analysis" if pivot_result and getattr(pivot_result, "sector", None) else "internal_signals",
+        }
+        try:
+            logger.info(f"[ThetaHarvest][DECISION] {json.dumps(_decision_log, default=str)}")
+        except Exception as _log_exc:
+            logger.warning(f"[ThetaHarvest][DECISION] log emit failed: {_log_exc}")
 
         # ── 5. Intentar abrir cada DTE libre ──────────────
         slots = self._theta_slots.get(ticker, {})
