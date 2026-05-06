@@ -678,7 +678,8 @@ class OptionsTrader:
             # Actualizar posiciones paper en memoria
             self._update_paper_positions(
                 instruction, ticker, expiration, strike,
-                opt_type, contracts, limit, order_id
+                opt_type, contracts, limit, order_id,
+                strategy=strategy,
             )
             return order_id
 
@@ -734,6 +735,7 @@ class OptionsTrader:
                     "opened_at":    timestamp,
                     "opened_at_ts": time.time(),  # epoch para hold_seconds en cierre
                     "order_id":     order_id,
+                    "strategy":     strategy,
                 }
 
             # Enrichment LIVE — mismo helper que paper, modo LIVE usa slippage real.
@@ -792,6 +794,7 @@ class OptionsTrader:
         contracts:   int,
         entry_price: float | None,
         order_id:    str,
+        strategy:    str = "",
     ):
         """
         Mantiene el estado de posiciones paper en memoria.
@@ -817,6 +820,7 @@ class OptionsTrader:
                 "unrealized_pnl_pct": 0.0,
                 "opened_at":       datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 "opened_at_ts":    time.time(),  # epoch para hold_seconds en enrichment
+                "strategy":        strategy,
             })
             logger.info(
                 f"[📄 PAPER] Posición abierta: {ticker} {opt_type.upper()} "
@@ -1033,16 +1037,20 @@ class OptionsTrader:
             if not pos["long"] or pos["contracts"] <= 0:
                 continue
 
+            strategy = pos.get("strategy", "")
+            reason   = pos.get("reason", "")
             opt_type = pos["option_type"]
             if opt_type == "call":
                 order_id = await self.close_long_call(
                     pos["ticker"], pos["expiration"],
-                    pos["strike"], pos["contracts"]
+                    pos["strike"], pos["contracts"],
+                    strategy=strategy, reason=reason,
                 )
             else:
                 order_id = await self.close_long_put(
                     pos["ticker"], pos["expiration"],
-                    pos["strike"], pos["contracts"]
+                    pos["strike"], pos["contracts"],
+                    strategy=strategy, reason=reason,
                 )
 
             if order_id:
