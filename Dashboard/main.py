@@ -775,7 +775,7 @@ def api_performance():
     for t in today_trades:
         ticker   = t.get("ticker", "?")
         action   = t.get("action", "")
-        strategy = t.get("strategy", "EMA")
+        strategy = t.get("strategy") or "UNKNOWN"
         price    = float(t.get("price", 0))
         shares   = int(t.get("shares", 1))
         ts       = t.get("timestamp", "")
@@ -849,7 +849,7 @@ def api_performance():
                 day_buys   = {}
                 for t in sorted(day_trades, key=lambda x: x.get("timestamp", "")):
                     ticker   = t.get("ticker", "?")
-                    strategy = t.get("strategy", "EMA")
+                    strategy = t.get("strategy") or "UNKNOWN"
                     action   = t.get("action", "")
                     price    = float(t.get("price", 0))
                     shares   = int(t.get("shares", 1))

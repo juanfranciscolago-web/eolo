@@ -2256,15 +2256,19 @@ class EoloV2:
     async def _close_position(self, pos: dict):
         """Cierra una posición específica."""
         opt_type = pos.get("option_type", "call")
+        strategy = pos.get("strategy", "")
+        reason   = pos.get("reason", "")
         if opt_type == "call":
             await self.trader.close_long_call(
                 pos["ticker"], pos["expiration"],
-                pos["strike"], pos["contracts"]
+                pos["strike"], pos["contracts"],
+                strategy=strategy, reason=reason,
             )
         else:
             await self.trader.close_long_put(
                 pos["ticker"], pos["expiration"],
-                pos["strike"], pos["contracts"]
+                pos["strike"], pos["contracts"],
+                strategy=strategy, reason=reason,
             )
 
     # ── Auto-close 15:27 ET ────────────────────────────────
