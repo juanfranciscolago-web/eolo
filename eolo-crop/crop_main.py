@@ -434,6 +434,10 @@ class CropBotTheta:
         self._daily_loss_cap_status: dict = {}
         self._daily_loss_cap_log_ts: float = 0.0      # last WARN emit (epoch s)
         self._daily_loss_cap_log_dedup_s: float = 60.0
+        # Ventana de entrada theta harvest — editable desde el dashboard vía Firestore.
+        # Defaults hardcoded como safety net; Firestore los overrides en _poll_settings().
+        self._entry_hour_et:        float = ENTRY_HOUR_ET
+        self._entry_window_minutes: float = ENTRY_WINDOW_MINUTES
         # Schedule de trading — editable desde el dashboard. Defaults equity
         # (09:30-15:27 ET con auto-close 15:27). Se refresca en _poll_settings().
         self._schedule: TradingSchedule = DEFAULTS_EQUITY
@@ -853,10 +857,10 @@ class CropBotTheta:
         if getattr(self, "_claude_gate_enabled", True):
             now_h      = now_et()
             hour_frac  = now_h.hour + now_h.minute / 60.0
-            window_end = ENTRY_HOUR_ET + ENTRY_WINDOW_MINUTES / 60.0
-            if not (ENTRY_HOUR_ET <= hour_frac <= window_end):
+            window_end = self._entry_hour_et + self._entry_window_minutes / 60.0
+            if not (self._entry_hour_et <= hour_frac <= window_end):
                 logger.debug(
-                    f"[CROP] {ticker} — gate: fuera de ventana {ENTRY_HOUR_ET:.2f}-{window_end:.2f} ET, "
+                    f"[CROP] {ticker} — gate: fuera de ventana {self._entry_hour_et:.2f}-{window_end:.2f} ET, "
                     f"skip Claude (ahorro API)"
                 )
                 return
@@ -1141,14 +1145,16 @@ class CropBotTheta:
             # ── Tranche entry: 3 contratos, mismo strike, distintos targets ──
             try:
                 signals = scan_theta_harvest_tranches(
-                    ticker         = ticker,
-                    chain          = chain,
-                    vix            = vix,
-                    vvix           = vvix,
-                    spread_type    = spread_type,
-                    dte_preference = dte,
-                    pivot_result   = pivot_result,
-                    force_entry    = getattr(self, "_theta_force_entry", False),
+                    ticker                = ticker,
+                    chain                 = chain,
+                    vix                   = vix,
+                    vvix                  = vvix,
+                    spread_type           = spread_type,
+                    dte_preference        = dte,
+                    pivot_result          = pivot_result,
+                    force_entry           = getattr(self, "_theta_force_entry", False),
+                    entry_hour_et         = self._entry_hour_et,
+                    entry_window_minutes  = self._entry_window_minutes,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -2465,6 +2471,27 @@ class CropBotTheta:
                         old = self._daily_loss_cap_pct
                         self._daily_loss_cap_pct = new_val
                         changed.append(f"daily_loss_cap_pct={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            # ── Entry window (theta harvest) ──────────────────
+            if "entry_hour_et" in cfg:
+                try:
+                    new_val = float(cfg["entry_hour_et"])
+                    if new_val != self._entry_hour_et:
+                        old = self._entry_hour_et
+                        self._entry_hour_et = new_val
+                        changed.append(f"entry_hour_et={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            if "entry_window_minutes" in cfg:
+                try:
+                    new_val = float(cfg["entry_window_minutes"])
+                    if new_val != self._entry_window_minutes:
+                        old = self._entry_window_minutes
+                        self._entry_window_minutes = new_val
+                        changed.append(f"entry_window_minutes={old}→{new_val}")
                 except (TypeError, ValueError):
                     pass
 

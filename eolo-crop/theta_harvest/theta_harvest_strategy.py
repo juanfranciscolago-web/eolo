@@ -87,8 +87,8 @@ TRANCHE_PROFIT_TARGETS: list = [0.35, 0.65, None]
 # Hora de entrada diaria (ET, formato decimal)
 # 9:45 ET: evitar los primeros 15 min de alta volatilidad post-apertura.
 # Ventana hasta 12:00 ET: evita entradas tardías de alto riesgo.
-ENTRY_HOUR_ET        = 9.75   # 9:45 ET — tras el gap fill inicial de apertura
-ENTRY_WINDOW_MINUTES = 135    # 135 min = 9:45 → 12:00 ET (sin entradas después del mediodía)
+ENTRY_HOUR_ET        = 10.5   # 10:30 ET (alineado con trading_start_et; override vía Firestore)
+ENTRY_WINDOW_MINUTES = 90     # 90 min = 10:30 → 12:00 ET (sin entradas después del mediodía)
 
 # EOD force-close — diferenciado por DTE
 # 0DTE: gamma explota en los últimos 30 min → cerrar a las 15:30 ET.
@@ -354,13 +354,17 @@ def _dte(expiration: str) -> int:
         return 999
 
 
-def _is_in_entry_window(force_entry: bool = False) -> bool:
+def _is_in_entry_window(
+    force_entry:         bool  = False,
+    entry_hour_et:       float = ENTRY_HOUR_ET,
+    entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
+) -> bool:
     """True si estamos dentro de la ventana de entrada configurada."""
     if force_entry:
         return True
     hour_et = _hour_et()
-    entry_end = ENTRY_HOUR_ET + ENTRY_WINDOW_MINUTES / 60.0
-    return ENTRY_HOUR_ET <= hour_et <= entry_end
+    entry_end = entry_hour_et + entry_window_minutes / 60.0
+    return entry_hour_et <= hour_et <= entry_end
 
 
 # ── Strike selection ──────────────────────────────────────
@@ -447,16 +451,18 @@ def _determine_spread_type(
 # ── Función principal de escaneo ──────────────────────────
 
 def scan_theta_harvest(
-    ticker:         str,
-    chain:          dict,
-    vix:            Optional[float] = None,
-    vvix:           Optional[float] = None,
-    spread_type:    str = "put_credit_spread",
-    dte_preference: int = 0,
-    force_entry:    bool = False,
+    ticker:               str,
+    chain:                dict,
+    vix:                  Optional[float] = None,
+    vvix:                 Optional[float] = None,
+    spread_type:          str = "put_credit_spread",
+    dte_preference:       int = 0,
+    force_entry:          bool = False,
     pivot_result=None,          # PivotAnalysisResult | None
-    tranche_id:     int = 0,    # 0=35%, 1=65%, 2=None(expiry)
-    tranche_target: Optional[float] = 0.65,  # fracción del crédito a capturar
+    tranche_id:           int = 0,    # 0=35%, 1=65%, 2=None(expiry)
+    tranche_target:       Optional[float] = 0.65,  # fracción del crédito a capturar
+    entry_hour_et:        float = ENTRY_HOUR_ET,
+    entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -494,11 +500,11 @@ def scan_theta_harvest(
         return None
 
     # ── 3. Ventana horaria ─────────────────────────────────
-    if not _is_in_entry_window(force_entry):
+    if not _is_in_entry_window(force_entry, entry_hour_et, entry_window_minutes):
         hour_et = _hour_et()
         logger.debug(
             f"[ThetaHarvest] {ticker} — fuera de ventana "
-            f"(hora ET={hour_et:.2f}, ventana={ENTRY_HOUR_ET:.2f}–{ENTRY_HOUR_ET + ENTRY_WINDOW_MINUTES/60:.2f})"
+            f"(hora ET={hour_et:.2f}, ventana={entry_hour_et:.2f}–{entry_hour_et + entry_window_minutes/60:.2f})"
         )
         return None
 
@@ -822,14 +828,16 @@ def evaluate_open_position(
 # ── Multi-tranche entry (función principal para paper/live) ───────────────
 
 def scan_theta_harvest_tranches(
-    ticker:         str,
-    chain:          dict,
-    vix:            Optional[float] = None,
-    vvix:           Optional[float] = None,
-    spread_type:    str = "put_credit_spread",
-    dte_preference: int = 0,
-    force_entry:    bool = False,
+    ticker:               str,
+    chain:                dict,
+    vix:                  Optional[float] = None,
+    vvix:                 Optional[float] = None,
+    spread_type:          str = "put_credit_spread",
+    dte_preference:       int = 0,
+    force_entry:          bool = False,
     pivot_result=None,
+    entry_hour_et:        float = ENTRY_HOUR_ET,
+    entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -852,16 +860,18 @@ def scan_theta_harvest_tranches(
     """
     # Validar con T1 (target estándar 65%) — si no pasa los gates, ningún tranche pasa
     base_signal = scan_theta_harvest(
-        ticker         = ticker,
-        chain          = chain,
-        vix            = vix,
-        vvix           = vvix,
-        spread_type    = spread_type,
-        dte_preference = dte_preference,
-        force_entry    = force_entry,
-        pivot_result   = pivot_result,
-        tranche_id     = 1,
-        tranche_target = 0.65,
+        ticker                = ticker,
+        chain                 = chain,
+        vix                   = vix,
+        vvix                  = vvix,
+        spread_type           = spread_type,
+        dte_preference        = dte_preference,
+        force_entry           = force_entry,
+        pivot_result          = pivot_result,
+        tranche_id            = 1,
+        tranche_target        = 0.65,
+        entry_hour_et         = entry_hour_et,
+        entry_window_minutes  = entry_window_minutes,
     )
     if base_signal is None:
         return []
