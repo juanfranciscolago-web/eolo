@@ -759,6 +759,17 @@ class CropBotTheta:
             logger.debug(f"[CROP] Mercado cerca del cierre — sin nuevas órdenes")
             return
 
+        # GUARD hardcodeado — defense-in-depth contra trading_hours_enabled=False
+        # Bug descubierto 5-may-2026: si self._schedule.enabled=False,
+        # is_within_trading_window() retorna True incondicional. Este guard
+        # usa .start y .end pero IGNORA deliberadamente .enabled.
+        _sch_guard = self._schedule or DEFAULTS_EQUITY
+        _now_g = now_et()
+        _t_g = _now_g.time().replace(second=0, microsecond=0)
+        if _now_g.weekday() >= 5 or not (_sch_guard.start <= _t_g < _sch_guard.end):
+            logger.debug(f"[CROP] GUARD: fuera de ventana {_sch_guard.start}-{_sch_guard.end} — skip")
+            return
+
         await self._run_analysis_cycle(ticker, chain)
 
     # ── Ciclo de análisis ──────────────────────────────────
@@ -1016,6 +1027,18 @@ class CropBotTheta:
         #       Bloquea entradas en pre/post market y fines de semana.
         #       El check de ventana interna (9:45–12:00) lo hace scan_theta_harvest;
         #       este gate evita intentos fuera de sesión completamente.
+        # GUARD hardcodeado — defense-in-depth contra trading_hours_enabled=False
+        # Bug descubierto 5-may-2026: si self._schedule.enabled=False,
+        # is_within_trading_window() retorna True incondicional. Este guard
+        # usa .start y .end pero IGNORA deliberadamente .enabled.
+        _sch_guard = self._schedule or DEFAULTS_EQUITY
+        _now_g = now_et()
+        _t_g = _now_g.time().replace(second=0, microsecond=0)
+        if _now_g.weekday() >= 5 or not (_sch_guard.start <= _t_g < _sch_guard.end):
+            logger.debug(f"[CROP][theta] GUARD: fuera de ventana — skip")
+            return
+
+        # Mantener también el check original (defensa en doble capa)
         if not self._is_within_trading_window():
             logger.debug(f"[ThetaHarvest] {ticker} — fuera de sesión NYSE, skip")
             return
@@ -2097,17 +2120,29 @@ class CropBotTheta:
 
     def _should_auto_close(self) -> bool:
         """
-        True si ya pasó el `auto_close_et` configurado y todavía estamos
-        dentro del día de mercado (antes de 16:00 ET). Usa self._schedule,
-        que se refresca cada ciclo desde Firestore vía _poll_settings().
+        GUARD: ignora sch.enabled deliberadamente (defense-in-depth).
+        Auto-close DEBE disparar independientemente del flag enabled,
+        porque es safety net de salida, no restricción de entrada.
+
+        Bug descubierto 5-may-2026 en V1, mismo bug en CROP:
+        si trading_hours_enabled=False, las posiciones de OptionsBrain
+        quedaban abiertas overnight con riesgo de gap.
+        Theta Harvest tiene safety net propio (TIME_STOP en _theta_monitor_loop).
         """
         now = now_et()
+
+        # Skip weekends — no auto-close fines de semana
+        if now.weekday() >= 5:
+            return False
+
         sch = self._schedule or DEFAULTS_EQUITY
-        if not sch.enabled:
+        t = now.time().replace(second=0, microsecond=0)
+
+        # GUARD hardcodeado — ignora sch.enabled deliberadamente
+        if t < sch.auto_close:
             return False
-        if not _tr_is_after_auto_close(now, sch):
-            return False
-        # Ceiling 16:00 ET — no cerramos fuera del día
+
+        # Ceiling: no cerrar después de 16:00 ET (mercado ya cerrado)
         return now.hour < 16
 
     def _is_after_close_time(self) -> bool:
