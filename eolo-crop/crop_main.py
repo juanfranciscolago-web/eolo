@@ -1133,28 +1133,63 @@ class CropBotTheta:
                 f"(TICK={tick_ctx.tick:+.0f} AD={tick_ctx.ad:+.0f})"
             )
 
-        # ── 4c. Log estructurado de decisión (análisis posterior) ─
+        # ── 4c. Log estructurado de decisión + persistencia Firestore ────
+        decision_id  = f"{time.time():.3f}"
         _decision_log = {
+            # Identidad
+            "decision_id":          decision_id,
             "ticker":               ticker,
             "timestamp_et":         now_et().isoformat(),
+            "dte":                  None,
+            "weekday":              now_et().strftime("%A"),
+            "day_max_positions":    getattr(self, "_max_positions", None),
+            # Macro
+            "vix_level":            vix,
+            "vvix_level":           vvix,
+            "spx_level":            None,
+            "ticker_price":         (chain.get("underlying") if isinstance(chain, dict) else None),
+            "ticker_iv_rank":       None,
+            # Pivot Sector
             "consensus_risk":       getattr(pivot_result, "consensus_risk", None) if pivot_result else None,
             "atr_gate_hit":         getattr(pivot_result, "atr_gate_hit", None)   if pivot_result else None,
             "delta_min":            getattr(pivot_result, "delta_min", None)       if pivot_result else None,
             "delta_max":            getattr(pivot_result, "delta_max", None)       if pivot_result else None,
-            "spread_type":          spread_type,
-            "sector_direction":     pivot_result.sector.direction            if pivot_result and getattr(pivot_result, "sector", None) else None,
-            "sector_weighted_pct":  pivot_result.sector.weighted_change_pct  if pivot_result and getattr(pivot_result, "sector", None) else None,
+            "sector_spread_type":   spread_type,
+            "sector_direction":     pivot_result.sector.direction           if pivot_result and getattr(pivot_result, "sector", None) else None,
+            "sector_weighted_pct":  pivot_result.sector.weighted_change_pct if pivot_result and getattr(pivot_result, "sector", None) else None,
             "sector_top_movers":    getattr(pivot_result.sector, "top_movers", [])[:5] if pivot_result and getattr(pivot_result, "sector", None) else [],
-            "tick":                 getattr(tick_ctx, "tick",         None) if tick_ctx else None,
-            "ad":                   getattr(tick_ctx, "ad",           None) if tick_ctx else None,
+            "pivot_pp":             None,
+            "pivot_source":         None,
+            # TICK/AD
+            "tick_value":           getattr(tick_ctx, "tick",         None) if tick_ctx else None,
+            "ad_value":             getattr(tick_ctx, "ad",           None) if tick_ctx else None,
             "tick_extreme":         getattr(tick_ctx, "tick_extreme", None) if tick_ctx else None,
-            "tick_confirmation":    getattr(tick_ctx, "confirmation", None) if tick_ctx else None,
+            "tick_decision":        getattr(tick_ctx, "confirmation", None) if tick_ctx else None,
+            "trin_value":           None,
+            # Greeks (no disponibles en evaluación, solo al abrir trade)
+            "delta":                None,
+            "gamma":                None,
+            "theta":                None,
+            "vega":                 None,
+            # Position state
+            "puts_open":            sum(1 for p in self._theta_positions if "put"  in (p.get("spread_type") or "")),
+            "calls_open":           sum(1 for p in self._theta_positions if "call" in (p.get("spread_type") or "")),
+            "count":                len(self._theta_positions),
+            # Decisión final
+            "final_decision":       "EVALUATED",
+            "decision_layer":       None,
+            "rejection_reason":     None,
+            "slot_used":            None,
+            "already_open_side":    None,
             "decision_source":      "sector_analysis" if pivot_result and getattr(pivot_result, "sector", None) else "internal_signals",
+            # Vinculación con trades
+            "executed_trades":      [],
         }
         try:
             logger.info(f"[ThetaHarvest][DECISION] {json.dumps(_decision_log, default=str)}")
         except Exception as _log_exc:
             logger.warning(f"[ThetaHarvest][DECISION] log emit failed: {_log_exc}")
+        self._log_theta_decision(decision_id, _decision_log)
 
         # ── 5. Intentar abrir cada DTE libre ──────────────
         slots = self._theta_slots.get(ticker, {})
@@ -1207,6 +1242,33 @@ class CropBotTheta:
                         }
                         self._theta_positions.append(pos)
                         self._save_theta_positions_to_firestore()
+                        # ── Persistencia Firestore — Paso 3 ──────────────
+                        trade_id = f"{decision_id}_T{signal.tranche_id}"
+                        pos["trade_id"]    = trade_id
+                        pos["decision_id"] = decision_id
+                        self._log_theta_trade_open(trade_id, decision_id, {
+                            "ticker":           ticker,
+                            "dte":              dte,
+                            "tranche":          signal.tranche_id,
+                            "tranche_target":   signal.tranche_target,
+                            "side":             signal.spread_type,
+                            "short_strike":     signal.short_strike,
+                            "long_strike":      signal.long_strike,
+                            "strikes":          f"{signal.short_strike}/{signal.long_strike}",
+                            "spread_width":     abs(signal.long_strike - signal.short_strike),
+                            "entry_credit":     signal.net_credit,
+                            "contracts":        pos.get("contracts", 1),
+                            "entry_time_et":    now_et().isoformat(),
+                            "vix_at_entry":     vix,
+                            "vvix_at_entry":    vvix,
+                            "spx_at_entry":     None,
+                            "slippage_bps":     None,
+                            "delta":            pos.get("delta") or signal.short_delta,
+                            "gamma":            pos.get("gamma"),
+                            "theta":            pos.get("theta"),
+                            "vega":             pos.get("vega"),
+                        })
+                        _decision_log.setdefault("executed_trades", []).append(trade_id)
                         opened_any = True
                         # Sumar crédito total del día
                         self._theta_stats["credit_total"] = round(
@@ -1378,6 +1440,27 @@ class CropBotTheta:
                             })
                         except Exception as _e:
                             logger.warning(f"[ThetaHarvest] closed_positions snapshot failed: {_e}")
+
+                        # ── Persistencia Firestore — Paso 3 ──────────────
+                        _trade_id_close = pos.get("trade_id")
+                        if _trade_id_close:
+                            try:
+                                _exit_payload = {
+                                    "exit_time_et":       datetime.utcnow().isoformat(),
+                                    "trade_duration_min": round(
+                                        (time.time() - (pos.get("opened_at") or time.time())) / 60.0, 1
+                                    ),
+                                    "exit_reason":        exit_reason,
+                                    "exit_credit":        _cv,
+                                    "pnl":                round(pos.get("unrealized_pnl") or 0, 2),
+                                    "pnl_pct":            round((_nc - _cv) / _nc * 100, 1) if _nc else 0,
+                                    "vix_at_exit":        vix,
+                                    "vvix_at_exit":       vvix,
+                                    "spx_at_exit":        None,
+                                }
+                                self._log_theta_trade_close(_trade_id_close, _exit_payload)
+                            except Exception as _fs_e:
+                                logger.warning(f"[ThetaHarvest][FS] trade_close prepare failed: {_fs_e}")
 
                         # Liberar el DTE slot solo cuando TODOS los tranches del
                         # mismo DTE están cerrados. T0 cierra antes (35% target)
@@ -2147,6 +2230,11 @@ class CropBotTheta:
                         logger.info(
                             f"[CROP] Auto-close completado: {len(closed)} órdenes de cierre"
                         )
+                        # ── Daily summary Firestore — Paso 3 ─────────────
+                        try:
+                            self._write_daily_summary()
+                        except Exception as _ds_e:
+                            logger.warning(f"[CROP] daily_summary failed: {_ds_e}")
                     except Exception as e:
                         logger.error(f"[CROP] Error en auto-close: {e}")
                     self._auto_close_done_date = today
@@ -3278,6 +3366,105 @@ class CropBotTheta:
                 "positions_open":    0,
                 "positions_closed_today": 0,
             }
+
+    # ── Paso 3: Firestore helpers ──────────────────────────────────────────
+
+    def _log_theta_decision(self, decision_id: str, payload: dict) -> None:
+        """Persiste decisión de theta harvest en Firestore. No bloquea flujo."""
+        try:
+            from google.cloud import firestore as _fs
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            db = _fs.Client()
+            db.collection("eolo-crop-theta-decisions") \
+              .document(today) \
+              .collection("decisions") \
+              .document(decision_id) \
+              .set({**payload, "recorded_ts": time.time()})
+        except Exception as _e:
+            logger.warning(f"[ThetaHarvest][FS] decision write failed: {_e}")
+
+    def _log_theta_trade_open(self, trade_id: str, decision_id: str, payload: dict) -> None:
+        """Persiste apertura de trade en Firestore con status=OPEN."""
+        try:
+            from google.cloud import firestore as _fs
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            db = _fs.Client()
+            db.collection("eolo-crop-theta-trades") \
+              .document(today) \
+              .collection("trades") \
+              .document(trade_id) \
+              .set({
+                  **payload,
+                  "trade_id":    trade_id,
+                  "decision_id": decision_id,
+                  "status":      "OPEN",
+                  "recorded_ts": time.time(),
+              })
+        except Exception as _e:
+            logger.warning(f"[ThetaHarvest][FS] trade_open write failed: {_e}")
+
+    def _log_theta_trade_close(self, trade_id: str, exit_payload: dict) -> None:
+        """Actualiza doc existente del trade con status=CLOSED + campos exit."""
+        if not trade_id:
+            return
+        try:
+            from google.cloud import firestore as _fs
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            db = _fs.Client()
+            ref = db.collection("eolo-crop-theta-trades") \
+                    .document(today) \
+                    .collection("trades") \
+                    .document(trade_id)
+            ref.set({
+                **exit_payload,
+                "status":              "CLOSED",
+                "closed_recorded_ts":  time.time(),
+            }, merge=True)
+        except Exception as _e:
+            logger.warning(f"[ThetaHarvest][FS] trade_close write failed: {_e}")
+
+    def _write_daily_summary(self) -> None:
+        """Escribe summary del día en auto-close 15:30."""
+        try:
+            from google.cloud import firestore as _fs
+            today    = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            weekday  = datetime.now(timezone.utc).strftime("%A")
+            stats    = self._theta_stats or {}
+            closed_today = self._theta_closed_positions or []
+
+            total_trades = len(closed_today)
+            winners  = sum(1 for t in closed_today if (t.get("pnl") or 0) > 0)
+            losers   = sum(1 for t in closed_today if (t.get("pnl") or 0) < 0)
+            total_pnl = sum((t.get("pnl") or 0) for t in closed_today)
+
+            payload = {
+                "date":                     today,
+                "weekday":                  weekday,
+                "day_max_positions":        getattr(self, "_max_positions", None),
+                "total_decisions":          None,
+                "decisions_executed":       None,
+                "decisions_hold":           None,
+                "decisions_rejected":       None,
+                "total_trades":             total_trades,
+                "trades_winners":           winners,
+                "trades_losers":            losers,
+                "total_pnl":                round(total_pnl, 2),
+                "worst_drawdown_intraday":  None,
+                "vix_open":                 None,
+                "vix_close":                getattr(self, "_last_vix",  None),
+                "vvix_open":                None,
+                "vvix_close":               getattr(self, "_last_vvix", None),
+                "panic_close_triggered":    False,
+                "panic_close_count":        0,
+                "recorded_ts":              time.time(),
+            }
+
+            db = _fs.Client()
+            db.collection("eolo-crop-theta-daily-summary") \
+              .document(today) \
+              .set(payload)
+        except Exception as _e:
+            logger.warning(f"[ThetaHarvest][FS] daily_summary write failed: {_e}")
 
 
 # ── Entry point ────────────────────────────────────────────
