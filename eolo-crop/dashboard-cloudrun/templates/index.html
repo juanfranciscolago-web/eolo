@@ -2715,7 +2715,7 @@ function updateTrades() {
   // ── Operaciones cerradas ──
   const closedRaw = (state.pnl || {}).closed || [];
   const closed = closedRaw.filter(c => (!f.ticker || c.ticker === f.ticker) &&
-    (!f.strategy || c.strategy === f.strategy || c.exit_reason === f.strategy));
+    (!f.strategy || c.strategy === f.strategy));
   document.getElementById('count-closed').textContent = closed.length;
   const closedBody = document.getElementById('closed-body');
   closedBody.innerHTML = !closed.length
