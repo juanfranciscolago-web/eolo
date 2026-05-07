@@ -230,7 +230,7 @@ class ThetaHarvestSignal:
             "spread_width":      self.spread_width,
             "max_risk":          round(self.max_risk, 2),
             "contracts":         contracts,
-            "strategy":          "THETA_HARVEST",
+            "strategy":          "theta_harvest",
             "risk_level":        self.risk_level,
             "payoff_ratio":      round(self.payoff_ratio, 4),
             "breakeven_move_pct": round(self.breakeven_move_pct, 3),
