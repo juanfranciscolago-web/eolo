@@ -823,7 +823,11 @@
   .th-legend-item { display: flex; align-items: center; gap: 5px; font-size: 0.68rem; color: var(--muted); }
   .th-legend-line { width: 18px; height: 2px; border-radius: 2px; }
   .th-legend-line.dashed { background: repeating-linear-gradient(to right, var(--yellow) 0, var(--yellow) 5px, transparent 5px, transparent 9px); }
-  .th-chart-wrap { position: relative; height: 220px; }
+  .th-chart-wrap       { position: relative; height: 220px; }
+  .th-charts-stack     { display: flex; flex-direction: column; gap: 12px; }
+  .th-chart-mini       { display: flex; flex-direction: column; }
+  .th-chart-mini-title { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; padding-left: 8px; letter-spacing: 0.5px; }
+  .th-chart-mini-wrap  { position: relative; height: 180px; }
 
   /* 3-col panels */
   .th-panels { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-bottom: 14px; }
@@ -1068,8 +1072,31 @@
         </div>
       </div>
     </div>
-    <div class="th-chart-wrap">
-      <canvas id="th-pnl-chart"></canvas>
+    <div class="th-charts-stack">
+      <div class="th-chart-mini">
+        <div class="th-chart-mini-title">SPY</div>
+        <div class="th-chart-mini-wrap">
+          <canvas id="th-pnl-chart-spy"></canvas>
+        </div>
+      </div>
+      <div class="th-chart-mini">
+        <div class="th-chart-mini-title">QQQ</div>
+        <div class="th-chart-mini-wrap">
+          <canvas id="th-pnl-chart-qqq"></canvas>
+        </div>
+      </div>
+      <div class="th-chart-mini">
+        <div class="th-chart-mini-title">IWM</div>
+        <div class="th-chart-mini-wrap">
+          <canvas id="th-pnl-chart-iwm"></canvas>
+        </div>
+      </div>
+      <div class="th-chart-mini">
+        <div class="th-chart-mini-title">TQQQ</div>
+        <div class="th-chart-mini-wrap">
+          <canvas id="th-pnl-chart-tqqq"></canvas>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1544,7 +1571,8 @@ const STRAT_ORDER = ['ema','gap','vwap_rsi','bollinger','orb','rsi_sma200','supe
 
 let state = {};
 let pnlChart = null, donutChart = null;
-let thPnlChart   = null;
+const TH_CHART_TICKERS = ['SPY', 'QQQ', 'IWM', 'TQQQ'];
+const thCharts = { SPY: null, QQQ: null, IWM: null, TQQQ: null };
 let thChartMode  = 'price';  // 'price' | 'pnl'
 
 function setThChartMode(mode) {
@@ -1563,13 +1591,15 @@ function setThChartMode(mode) {
       if (title) title.textContent = 'P&L acumulado · VIX overlay';
     }
   }
-  // Update chart y-axis label
-  if (thPnlChart) {
-    thPnlChart.options.scales.y.title.text = mode === 'price' ? 'Precio spread ($)' : 'P&L ($)';
-    thPnlChart.options.scales.y.ticks.callback = mode === 'price'
+  // Update all 4 chart y-axis labels and tooltip callbacks
+  TH_CHART_TICKERS.forEach(t => {
+    const chart = thCharts[t];
+    if (!chart) return;
+    chart.options.scales.y.title.text = mode === 'price' ? 'Precio spread ($)' : 'P&L ($)';
+    chart.options.scales.y.ticks.callback = mode === 'price'
       ? v => `$${v.toFixed(2)}`
       : v => `$${v >= 0 ? '+' : ''}${v.toFixed(0)}`;
-    thPnlChart.options.plugins.tooltip.callbacks.label = ctx => {
+    chart.options.plugins.tooltip.callbacks.label = ctx => {
       const label = ctx.dataset.label || '';
       const val   = ctx.parsed.y;
       if (ctx.dataset.yAxisID === 'vix') return ` VIX: ${val.toFixed(1)}`;
@@ -1577,7 +1607,7 @@ function setThChartMode(mode) {
         ? ` ${label}: $${val.toFixed(2)}`
         : ` ${label}: $${val >= 0 ? '+' : ''}${val.toFixed(0)}`;
     };
-  }
+  });
   updateThetaHarvest();
 }
 let activeTab = 'open';
@@ -1618,45 +1648,48 @@ function initCharts() {
     options: { responsive: true, maintainAspectRatio: false, cutout: '70%', plugins: { legend: { display: false } } },
   });
 
-  // Theta Harvest P&L + VIX dual-axis chart
-  thPnlChart = new Chart(document.getElementById('th-pnl-chart'), {
-    type: 'line',
-    data: { labels: [], datasets: [] },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: 'index', intersect: false },
-      plugins: {
-        legend: { labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 14 } },
-        tooltip: {
-          callbacks: {
-            label: ctx => {
-              const label = ctx.dataset.label || '';
-              const val   = ctx.parsed.y;
-              if (ctx.dataset.yAxisID === 'vix') return ` VIX: ${val.toFixed(1)}`;
-              return thChartMode === 'price'
-                ? ` ${label}: $${val.toFixed(2)}`
-                : ` ${label}: $${val >= 0 ? '+' : ''}${val.toFixed(0)}`;
+  // Theta Harvest P&L + VIX — 4 mini charts, one per ticker
+  TH_CHART_TICKERS.forEach(ticker => {
+    const ctx = document.getElementById('th-pnl-chart-' + ticker.toLowerCase());
+    if (!ctx) return;
+    thCharts[ticker] = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { labels: { color: '#8b949e', font: { size: 10 }, boxWidth: 14 } },
+          tooltip: {
+            callbacks: {
+              label: ctx => {
+                const label = ctx.dataset.label || '';
+                const val   = ctx.parsed.y;
+                if (ctx.dataset.yAxisID === 'vix') return ` VIX: ${val.toFixed(1)}`;
+                return thChartMode === 'price'
+                  ? ` ${label}: $${val.toFixed(2)}`
+                  : ` ${label}: $${val >= 0 ? '+' : ''}${val.toFixed(0)}`;
+              }
             }
           }
-        }
-      },
-      scales: {
-        x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
-        y: {
-          position: 'left',
-          ticks: { color: '#8b949e', font: { size: 10 },
-            callback: v => `$${v.toFixed(2)}` },
-          grid: { color: '#21262d' },
-          title: { display: true, text: 'Precio spread ($)', color: '#8b949e', font: { size: 10 } },
         },
-        vix: {
-          position: 'right',
-          ticks: { color: '#fbbf24', font: { size: 10 } },
-          grid: { drawOnChartArea: false },
-          title: { display: true, text: 'VIX', color: '#fbbf24', font: { size: 10 } },
+        scales: {
+          x: { ticks: { color: '#8b949e', font: { size: 10 } }, grid: { color: '#21262d' } },
+          y: {
+            position: 'left',
+            ticks: { color: '#8b949e', font: { size: 10 }, callback: v => `$${v.toFixed(2)}` },
+            grid: { color: '#21262d' },
+            title: { display: true, text: 'Precio spread ($)', color: '#8b949e', font: { size: 10 } },
+          },
+          vix: {
+            position: 'right',
+            ticks: { color: '#fbbf24', font: { size: 10 } },
+            grid: { drawOnChartArea: false },
+            title: { display: true, text: 'VIX', color: '#fbbf24', font: { size: 10 } },
+          },
         },
       },
-    },
+    });
   });
 }
 
@@ -2509,108 +2542,121 @@ function updateThetaHarvest() {
     });
   });
 
-  // ── Intraday Spread Chart (Precio o P&L) ─────────────────
-  if (thPnlChart) {
-    let labels   = [];
-    let datasets = [];
-    let vixData  = [];
-    const mode   = thChartMode;  // 'price' | 'pnl'
+  // ── Intraday Spread Chart — 4 mini charts, one per ticker ──
+  {
+    const mode = thChartMode;
 
+    // DAY_GRID y snapGrid compartidos entre los 4 charts
+    const DAY_GRID = (() => {
+      const g = [];
+      for (let m = 9*60; m <= 16*60+30; m += 5) {
+        const h = Math.floor(m/60), mm = m % 60;
+        g.push(`${h.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`);
+      }
+      return g;
+    })();
+    const snapGrid = hhmm => {
+      if (!hhmm || hhmm.length < 5) return DAY_GRID[0];
+      const [rh, rm] = hhmm.slice(-5).split(':').map(Number);
+      const rawMins  = rh * 60 + rm;
+      let best = DAY_GRID[0], bestDist = Infinity;
+      for (const g of DAY_GRID) {
+        const [gh, gm] = g.split(':').map(Number);
+        const d = Math.abs(gh * 60 + gm - rawMins);
+        if (d < bestDist) { bestDist = d; best = g; }
+      }
+      return best;
+    };
+
+    // VIX compartido entre los 4 charts
+    let vixData;
     if (hist.length > 0) {
-      // Real data from bot
-      labels  = hist.map(h => h.time);
-      vixData = hist.map(h => h.vix != null ? h.vix : null);
-      // Collect all position labels
-      const posLabels = new Set();
-      hist.forEach(h => (h.datasets || []).forEach(d => posLabels.add(d.label)));
-      let putIdx = 0, callIdx = 0;
-      posLabels.forEach(label => {
-        const isPut = label.toLowerCase().includes('put');
-        const color = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
-                            : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
-        const data  = hist.map(h => {
-          const d = (h.datasets || []).find(x => x.label === label);
-          if (!d) return null;
-          return mode === 'price' ? (d.price ?? null) : (d.pnl ?? null);
-        });
-        datasets.push({
-          label, data, borderColor: color, backgroundColor: color + '18',
-          borderWidth: 2, tension: 0.3, spanGaps: true,
-          fill: mode === 'price',
-          pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y',
-        });
-      });
-    } else if (pos.length > 0) {
-      // No history yet — show entry credit as current price
-      const now  = new Date();
-      const hhmm = `${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`;
-      const entryTime = '10:00';
-      labels = [entryTime, hhmm];
-      let putIdx = 0, callIdx = 0;
-      pos.forEach(p => {
-        const isPut   = (p.spread_type || '').includes('put');
-        const color   = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
-                              : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
-        const dteSlot = p.dte_slot ?? p.dte;
-        const tid     = p.tranche_id ?? 0;
-        const label   = `${p.ticker} ${isPut ? 'PUT' : 'CALL'} ${dteSlot}DTE T${tid}`;
-        const entryVal = mode === 'price' ? (p.net_credit || 0) : 0;
-        const curVal   = mode === 'price'
-          ? (p.current_value ?? p.net_credit ?? 0)
-          : (p.unrealized_pnl || 0);
-        datasets.push({
-          label, data: [entryVal, curVal], borderColor: color, backgroundColor: color + '18',
-          borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
-          pointRadius: 4, pointHoverRadius: 6, yAxisID: 'y',
-        });
-      });
-      vixData = [vix_cur ?? null, vix_cur ?? null];
+      const snapMap = {};
+      hist.forEach(h => { snapMap[snapGrid((h.time || '').slice(-5))] = h; });
+      vixData = DAY_GRID.map(t => { const h = snapMap[t]; return h ? (h.vix ?? null) : null; });
     } else {
-      // Demo data — precio del spread descendiendo (theta decay)
-      labels = ['09:30','10:00','10:15','10:30','10:45','11:00','11:30','12:00',
-                '13:00','14:00','14:30','15:00','15:15'];
-      const demoPos = mode === 'price' ? [
-        {label:'SPY PUT 0DTE',  color:TH_COLORS_PUT[0],  vals:[null,0.42,0.38,0.32,0.26,0.21,0.18,0.14,0.10,0.08,0.05,null,null]},
-        {label:'SPY PUT 1DTE',  color:TH_COLORS_PUT[1],  vals:[null,0.38,0.35,0.32,0.29,0.27,0.24,0.22,0.19,0.17,0.15,0.13,0.12]},
-        {label:'SPY CALL 2DTE', color:TH_COLORS_CALL[0], vals:[null,0.45,0.44,0.46,0.42,0.40,0.37,0.33,0.30,0.27,0.25,0.23,0.22]},
-        {label:'TQQQ PUT 0DTE', color:TH_COLORS_PUT[2],  vals:[null,0.55,0.50,0.44,0.39,0.36,0.31,0.24,0.18,0.14,0.10,null,null]},
-        {label:'TQQQ PUT 1DTE', color:TH_COLORS_PUT[3],  vals:[null,0.48,0.46,0.43,0.40,0.38,0.35,0.32,0.29,0.26,0.23,0.21,0.20]},
-      ] : [
-        {label:'SPY PUT 0DTE',  color:TH_COLORS_PUT[0],  vals:[null,0,4,10,16,21,24,28,32,34,37,null,null]},
-        {label:'SPY PUT 1DTE',  color:TH_COLORS_PUT[1],  vals:[null,0,3,6,9,11,14,16,19,21,23,25,26]},
-        {label:'SPY CALL 2DTE', color:TH_COLORS_CALL[0], vals:[null,0,1,-1,3,5,8,12,15,18,20,22,23]},
-        {label:'TQQQ PUT 0DTE', color:TH_COLORS_PUT[2],  vals:[null,0,5,11,16,19,24,31,37,41,45,null,null]},
-        {label:'TQQQ PUT 1DTE', color:TH_COLORS_PUT[3],  vals:[null,0,2,5,8,10,13,16,19,22,25,27,28]},
-      ];
-      vixData = [19.2,18.9,18.5,18.2,17.8,17.5,17.2,17.0,17.3,17.8,18.1,18.4,18.2];
-      demoPos.forEach(d => datasets.push({
-        label: d.label, data: d.vals.map(v => v === null ? null : v),
-        borderColor: d.color, backgroundColor: d.color + '18',
-        borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
-        pointRadius: 0, pointHoverRadius: 4, yAxisID: 'y',
-      }));
+      const etNow   = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+      const nowSlot = snapGrid(`${etNow.getHours().toString().padStart(2,'0')}:${etNow.getMinutes().toString().padStart(2,'0')}`);
+      vixData = DAY_GRID.map(t => t === nowSlot ? (vix_cur ?? null) : null);
     }
 
-    // VIX dataset (always last, dashed, right axis)
-    if (vixData.some(v => v !== null)) {
-      datasets.push({
-        label: 'VIX', data: vixData,
-        borderColor: '#fbbf24', backgroundColor: 'transparent',
-        borderWidth: 1.5, borderDash: [5, 4],
-        tension: 0.3, spanGaps: true, fill: false,
-        pointRadius: 0, yAxisID: 'vix',
-      });
+    // Helper: construye datasets para un ticker, filtrando hist/pos
+    function buildTickerDatasets(ticker) {
+      const datasets = [];
+      let putIdx = 0, callIdx = 0;
+      const tickerHist = hist.filter(h => (h.datasets || []).some(d => d.label.startsWith(ticker + ' ')));
+      const tickerPos  = pos.filter(p => p.ticker === ticker);
+
+      if (tickerHist.length > 0) {
+        // Rama 1: historia real para este ticker
+        const snapMap = {};
+        hist.forEach(h => { snapMap[snapGrid((h.time || '').slice(-5))] = h; });
+        const posLabels = new Set();
+        hist.forEach(h => (h.datasets || []).forEach(d => { if (d.label.startsWith(ticker + ' ')) posLabels.add(d.label); }));
+        [...posLabels].sort((a, b) => {
+          const aP = a.toLowerCase().includes('put'), bP = b.toLowerCase().includes('put');
+          if (aP !== bP) return aP ? -1 : 1;
+          return a < b ? -1 : 1;
+        }).forEach(label => {
+          const isPut = label.toLowerCase().includes('put');
+          const color = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
+                              : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
+          datasets.push({ label, yAxisID: 'y',
+            data: DAY_GRID.map(t => { const h = snapMap[t]; if (!h) return null;
+              const d = (h.datasets||[]).find(x => x.label === label);
+              return d ? (mode === 'price' ? (d.price ?? null) : (d.pnl ?? null)) : null; }),
+            borderColor: color, backgroundColor: color + '18',
+            borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
+            pointRadius: 0, pointHoverRadius: 4 });
+        });
+
+      } else if (tickerPos.length > 0) {
+        // Rama 2: sin historia aún — plotear entry + current
+        const etNow   = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+        const nowSlot = snapGrid(`${etNow.getHours().toString().padStart(2,'0')}:${etNow.getMinutes().toString().padStart(2,'0')}`);
+        [...tickerPos].sort((a, b) => {
+          const aP = (a.spread_type||'').includes('put'), bP = (b.spread_type||'').includes('put');
+          if (aP !== bP) return aP ? -1 : 1;
+          return (a.dte_slot||a.dte||0) - (b.dte_slot||b.dte||0);
+        }).forEach(p => {
+          const isPut     = (p.spread_type || '').includes('put');
+          const color     = isPut ? TH_COLORS_PUT[putIdx++ % TH_COLORS_PUT.length]
+                                  : TH_COLORS_CALL[callIdx++ % TH_COLORS_CALL.length];
+          const dteSlot   = p.dte_slot ?? p.dte;
+          const label     = `${p.ticker} ${isPut ? 'PUT' : 'CALL'} ${dteSlot}DTE T${p.tranche_id ?? 0}`;
+          const entrySlot = snapGrid((p.entry_time ? (p.entry_time+'').slice(-5) : '09:45'));
+          const entryVal  = mode === 'price' ? (p.net_credit || 0) : 0;
+          const curVal    = mode === 'price' ? (p.current_value ?? p.net_credit ?? 0) : (p.unrealized_pnl || 0);
+          datasets.push({ label, yAxisID: 'y',
+            data: DAY_GRID.map(t => t === entrySlot ? entryVal : (t === nowSlot && nowSlot !== entrySlot ? curVal : null)),
+            borderColor: color, backgroundColor: color + '18',
+            borderWidth: 2, tension: 0.3, spanGaps: true, fill: mode === 'price',
+            pointRadius: 3, pointHoverRadius: 6 });
+        });
+      }
+
+      // VIX siempre último, dashed, eje derecho
+      if (vixData.some(v => v !== null)) {
+        datasets.push({ label: 'VIX', data: vixData, yAxisID: 'vix',
+          borderColor: '#fbbf24', backgroundColor: 'transparent',
+          borderWidth: 1.5, borderDash: [5, 4],
+          tension: 0.3, spanGaps: true, fill: false, pointRadius: 0 });
+      }
+      return datasets;
     }
 
-    // Update y-axis based on mode
-    thPnlChart.options.scales.y.title.text = mode === 'price' ? 'Precio spread ($)' : 'P&L ($)';
-    thPnlChart.options.scales.y.ticks.callback = mode === 'price'
-      ? v => `$${v.toFixed(2)}`
-      : v => `$${v >= 0 ? '+' : ''}${v.toFixed(0)}`;
-
-    thPnlChart.data.labels   = labels;
-    thPnlChart.data.datasets = datasets;
-    thPnlChart.update('none');
+    // Actualizar cada chart con sus datos filtrados
+    TH_CHART_TICKERS.forEach(ticker => {
+      const chart = thCharts[ticker];
+      if (!chart) return;
+      chart.options.scales.y.title.text = mode === 'price' ? 'Precio spread ($)' : 'P&L ($)';
+      chart.options.scales.y.ticks.callback = mode === 'price'
+        ? v => `$${v.toFixed(2)}`
+        : v => `$${v >= 0 ? '+' : ''}${v.toFixed(0)}`;
+      chart.data.labels   = DAY_GRID;
+      chart.data.datasets = buildTickerDatasets(ticker);
+      chart.update('none');
+    });
   }
 
   // ── Positions + PayoffScore ───────────────────────────────
