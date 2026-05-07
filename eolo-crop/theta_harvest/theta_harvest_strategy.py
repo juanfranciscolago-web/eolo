@@ -90,12 +90,9 @@ TRANCHE_PROFIT_TARGETS: list = [0.35, 0.65, None]
 ENTRY_HOUR_ET        = 10.5   # 10:30 ET (alineado con trading_start_et; override vía Firestore)
 ENTRY_WINDOW_MINUTES = 90     # 90 min = 10:30 → 12:00 ET (sin entradas después del mediodía)
 
-# EOD force-close — diferenciado por DTE
-# 0DTE: gamma explota en los últimos 30 min → cerrar a las 15:30 ET.
-#   Captura todo el theta decay del día con solo 30 min de riesgo gamma final.
-# 1–4 DTE: gamma bajo → 15:50 ET (10 min antes de cierre = buffer seguro).
-FORCE_CLOSE_HOUR_0DTE    = 15.50   # 15:30 ET — solo 0DTE
-FORCE_CLOSE_HOUR_1TO4DTE = 15.833  # 15:50 ET — 1, 2, 3 y 4 DTE
+# FORCE_CLOSE_HOUR — eliminado en Paso 6 backlog v2.
+# Reemplazado por auto_close_et que se pasa como parámetro a
+# evaluate_open_position desde crop_main.py (lectura desde Firestore).
 
 # Exits
 PROFIT_TARGET_PCT = 0.65   # default (T1) — cada tranche usa TRANCHE_PROFIT_TARGETS[i]
@@ -711,6 +708,7 @@ def evaluate_open_position(
     vix_current:   Optional[float] = None,
     vvix_current:  Optional[float] = None,
     spy_drop_30m:  Optional[float] = None,   # % caída SPY últimos 30 min (positivo = caída)
+    auto_close_et: float = 15.5,             # Paso 6 backlog v2: hora ET cierre forzado
 ) -> Optional[str]:
     """
     Evalúa si una posición theta harvest abierta debe cerrarse.
@@ -805,16 +803,15 @@ def evaluate_open_position(
         )
         return "PROFIT"
 
-    # ── 7. Time stop EOD (diferenciado por DTE) ──────────
+    # ── 7. Time stop EOD ─────────────────────────────────
+    # Paso 6 backlog v2: hora unificada de cierre forzado desde Firestore (auto_close_et)
     hour_et = _hour_et()
     dte = position.get("dte", 0)
-    force_close_hour = FORCE_CLOSE_HOUR_0DTE if dte == 0 else FORCE_CLOSE_HOUR_1TO4DTE
 
-    if hour_et >= force_close_hour:
+    if hour_et >= auto_close_et:
         logger.info(
             f"[ThetaHarvest] {ticker} TIME_STOP — "
-            f"hora ET={hour_et:.2f} ≥ {force_close_hour:.2f} "
-            f"({'0DTE' if dte == 0 else f'{dte}DTE'})"
+            f"hora ET={hour_et:.2f} ≥ {auto_close_et:.2f}"
         )
         return "TIME_STOP"
 
@@ -924,14 +921,16 @@ def scan_theta_harvest_tranches(
 
 # ── Helpers públicos ──────────────────────────────────────
 
-def should_close_for_eod(dte: int = 0, hour_et: Optional[float] = None) -> bool:
-    """True si estamos en horario de cierre EOD para el DTE dado.
-    0DTE → 14:30 ET | 1–4 DTE → 15:15 ET
-    """
+def should_close_for_eod(
+    dte: int = 0,
+    hour_et: Optional[float] = None,
+    auto_close_et: float = 15.5,  # Paso 6 backlog v2: hora ET cierre forzado
+) -> bool:
+    """True si estamos en horario de cierre EOD para el DTE dado."""
     if hour_et is None:
         hour_et = _hour_et()
-    threshold = FORCE_CLOSE_HOUR_0DTE if dte == 0 else FORCE_CLOSE_HOUR_1TO4DTE
-    return hour_et >= threshold
+    # Paso 6 backlog v2: threshold viene de auto_close_et (Firestore vía caller)
+    return hour_et >= auto_close_et
 
 
 def get_delta_range_for_risk(risk_level: str) -> tuple[float, float]:

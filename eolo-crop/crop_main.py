@@ -987,7 +987,8 @@ class CropBotTheta:
         slots = self._theta_slots.get(ticker, {})
         # Si algún slot tiene fecha de ayer (o antes), liberarlo
         new_slots = {}
-        for dte in TARGET_DTES:
+        # Paso 6 backlog v2: usar DTEs dinámicos de Paso 5
+        for dte in self._compute_theta_dtes():
             slot_date = slots.get(dte)
             if slot_date == today:
                 new_slots[dte] = today      # spread de hoy sigue activo
@@ -1405,6 +1406,10 @@ class CropBotTheta:
                         vix_current   = vix,
                         vvix_current  = vvix,
                         spy_drop_30m  = spy_drop_30m,
+                        auto_close_et = (  # Paso 6
+                            self._schedule.auto_close.hour
+                            + self._schedule.auto_close.minute / 60.0
+                        ),
                     )
                     if exit_reason:
                         to_close.append((pos, exit_reason))
@@ -2266,6 +2271,17 @@ class CropBotTheta:
                         logger.info(
                             f"[CROP] Auto-close completado: {len(closed)} órdenes de cierre"
                         )
+                        # Paso 6 backlog v2: Daily Theta Harvest — limpiar estado interno
+                        # post auto-close para evitar carry-over de posiciones del día anterior.
+                        positions_count = len(self._theta_positions)
+                        self._theta_positions.clear()
+                        self._theta_slots = {}
+                        self._save_theta_positions_to_firestore()
+                        if positions_count > 0:
+                            logger.info(
+                                f"[CROP] 🧹 Daily Theta cleanup: {positions_count} posiciones "
+                                f"limpias en memoria, slots resetados, Firestore actualizado"
+                            )
                         # ── Daily summary Firestore — Paso 3 ─────────────
                         try:
                             self._write_daily_summary()
