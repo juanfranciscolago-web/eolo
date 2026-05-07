@@ -15,6 +15,7 @@
 
 MACRO_SYMBOLS = {
     "VIX":    {"schwab": "$VIX",   "aliases": ["VIX",   "$VIX.X",   "VIX.X"]},
+    "VVIX":   {"schwab": "$VVIX",  "aliases": ["VVIX",  "$VVIX.X",  "VVIX.X"]},
     "VIX9D":  {"schwab": "$VIX9D", "aliases": ["VIX9D", "$VIX9D.X", "VIX9D.X"]},
     "VIX3M":  {"schwab": "$VIX3M", "aliases": ["VIX3M", "$VIX3M.X", "VIX3M.X"]},
     "TICK":   {"schwab": "$TICK",  "aliases": ["TICK",  "$TICK.US"]},
