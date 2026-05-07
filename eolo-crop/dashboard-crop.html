@@ -1033,6 +1033,14 @@
     <div class="th-ticker-label">SPY</div>
     <!-- slots generados por JS -->
   </div>
+  <!-- DTE Slots — QQQ -->
+  <div class="th-slots-row" id="th-slots-qqq">
+    <div class="th-ticker-label">QQQ</div>
+  </div>
+  <!-- DTE Slots — IWM -->
+  <div class="th-slots-row" id="th-slots-iwm">
+    <div class="th-ticker-label">IWM</div>
+  </div>
   <!-- DTE Slots — TQQQ -->
   <div class="th-slots-row" id="th-slots-tqqq">
     <div class="th-ticker-label">TQQQ</div>
@@ -2453,7 +2461,7 @@ function updateThetaHarvest() {
   // ── DTE Slots (Opción B: 3 DTEs × 3 tranches T0/T1/T2) ───
   const TRANCHE_COLORS = ['#f59e0b', '#58a6ff', '#22c55e'];  // amber/blue/green
   const TRANCHE_LABELS = ['T0·35%', 'T1·65%', 'T2·EXP'];
-  ['SPY','TQQQ'].forEach(ticker => {
+  ['SPY','QQQ','IWM','TQQQ'].forEach(ticker => {
     const row = $th('th-slots-' + ticker.toLowerCase());
     if (!row) return;
     while (row.children.length > 1) row.removeChild(row.lastChild);
@@ -2689,7 +2697,7 @@ function updateThetaHarvest() {
   // ── Pivot zones (SPY + TQQQ) ──────────────────────────────
   const pivotEl = $th('th-pivot-tickers');
   if (pivotEl) {
-    pivotEl.innerHTML = ['SPY','TQQQ'].map(t => {
+    pivotEl.innerHTML = ['SPY','QQQ','IWM','TQQQ'].map(t => {
       const pv = pivots[t];
       if (!pv) return `<div style="font-size:.7rem;color:var(--dim)">${t}: sin datos pivot</div>`;
       const risk     = pv.consensus_risk || 'MID';
