@@ -6,8 +6,6 @@ from .theta_harvest_strategy import (
     should_close_for_eod,
     TARGET_DTES,
     TRANCHE_PROFIT_TARGETS,
-    FORCE_CLOSE_HOUR_0DTE,
-    FORCE_CLOSE_HOUR_1TO4DTE,
     VVIX_PANIC_THRESHOLD,
     _determine_spread_type,
 )
@@ -34,8 +32,6 @@ __all__ = [
     "evaluate_open_position",
     "should_close_for_eod",
     "TARGET_DTES",
-    "FORCE_CLOSE_HOUR_0DTE",
-    "FORCE_CLOSE_HOUR_1TO4DTE",
     "VVIX_PANIC_THRESHOLD",
     "_determine_spread_type",
     # pivots
