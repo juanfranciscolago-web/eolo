@@ -712,8 +712,9 @@ def evaluate_open_position(
 ) -> Optional[str]:
     """
     Evalúa si una posición theta harvest abierta debe cerrarse.
-    Retorna: "PROFIT" | "STOP_LOSS" | "VIX_SPIKE" | "DELTA_DRIFT" |
-             "SPY_DROP" | "VVIX_PANIC" | "TIME_STOP" | None
+    Retorna: "PROFIT" | "STOP_LOSS" | "VIX_SPIKE" | "VIX_VELOCITY_UP" |
+             "VIX_VELOCITY_DOWN" | "DELTA_DRIFT" | "SPY_DROP" |
+             "VVIX_PANIC" | "TIME_STOP" | None
 
     Orden de prioridad (mayor a menor):
       1. VVIX_PANIC  → VVIX > 110

@@ -445,6 +445,20 @@ class CropBotTheta:
         # False (default): guard activo, NO se permite PUT+CALL en mismo ticker.
         # True: guard se saltea, permite Iron Condors (eval futura).
         self._iron_condor_enabled: bool = False
+
+        # Paso 7 backlog v2: VIX velocidad ±3% en 120s
+        # Default False (conservador). Activación via Firestore: vix_velocity_enabled.
+        self._vix_velocity_enabled: bool = False
+
+        # Buffer para detectar movimiento del VIX en ventana de 120s.
+        # maxlen=5: sample actual + 4 históricos × 30s = 120s ventana exacta.
+        from collections import deque
+        self._vix_velocity_buffer: deque = deque(maxlen=5)
+
+        # Cooldown: 1 disparo por día por dirección (reset en _auto_close_loop)
+        self._vix_velocity_up_done: bool = False
+        self._vix_velocity_down_done: bool = False
+
         self._last_command_ts:      float        = 0.0
         self._last_settings_ts:     float        = 0.0
         self._command_poll_interval = 5          # segundos
@@ -558,6 +572,7 @@ class CropBotTheta:
             self._command_watcher_loop(),
             self._claude_bot_loop(),
             self._theta_monitor_loop(),
+            self._vix_velocity_loop(),          # Paso 7
         ]
         if macro_task is not None:
             gather_tasks.append(macro_task)
@@ -2280,6 +2295,10 @@ class CropBotTheta:
                                 f"[CROP] 🧹 Daily Theta cleanup: {positions_count} posiciones "
                                 f"limpias en memoria, slots resetados, Firestore actualizado"
                             )
+                        # Paso 7 backlog v2: reset VIX velocity cooldown para mañana
+                        self._vix_velocity_up_done = False
+                        self._vix_velocity_down_done = False
+                        self._vix_velocity_buffer.clear()
                         # ── Daily summary Firestore — Paso 3 ─────────────
                         try:
                             self._write_daily_summary()
@@ -2778,6 +2797,17 @@ class CropBotTheta:
                         old = self._iron_condor_enabled
                         self._iron_condor_enabled = new_val
                         changed.append(f"iron_condor_enabled={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
+            # ── VIX Velocity (Paso 7 backlog v2) ────────────
+            if "vix_velocity_enabled" in cfg:
+                try:
+                    new_val = bool(cfg["vix_velocity_enabled"])
+                    if new_val != self._vix_velocity_enabled:
+                        old = self._vix_velocity_enabled
+                        self._vix_velocity_enabled = new_val
+                        changed.append(f"vix_velocity_enabled={old}→{new_val}")
                 except (TypeError, ValueError):
                     pass
 
@@ -3427,6 +3457,108 @@ class CropBotTheta:
                 "positions_open":    0,
                 "positions_closed_today": 0,
             }
+
+    # ── Paso 7 backlog v2: VIX Velocity Loop ────────────────────────────────
+
+    async def _vix_velocity_loop(self):
+        """
+        Loop de monitoreo de velocidad del VIX. Corre cada 30s.
+
+        Detecta movimientos bruscos del VIX en ventana de 120s:
+        - Si VIX sube +3% en 120s → cierra todos los PUTs abiertos.
+        - Si VIX baja -3% en 120s → cierra todos los CALLs abiertos.
+
+        Cooldown: un disparo por día por dirección. Flags se resetean
+        en _auto_close_loop (Paso 6).
+
+        Bypass via Firestore flag vix_velocity_enabled (default False).
+        """
+        logger.info("[VIXVelocity] Loop iniciado (cada 30s, ventana 120s)")
+        while self._running:
+            await asyncio.sleep(30)
+
+            if not self._vix_velocity_enabled:
+                continue
+
+            if self._vix_velocity_up_done and self._vix_velocity_down_done:
+                continue
+
+            if not self._theta_positions:
+                continue
+
+            try:
+                vix, _ = self._theta_get_macro_context()
+            except Exception as e:
+                logger.debug(f"[VIXVelocity] Error obteniendo VIX: {e}")
+                continue
+
+            if vix is None or vix <= 0:
+                continue
+
+            self._vix_velocity_buffer.append(vix)
+
+            if len(self._vix_velocity_buffer) < 5:
+                continue
+
+            oldest_vix = self._vix_velocity_buffer[0]
+            newest_vix = self._vix_velocity_buffer[-1]
+            delta_pct = (newest_vix / oldest_vix) - 1.0 if oldest_vix > 0 else 0.0
+
+            if delta_pct >= 0.03 and not self._vix_velocity_up_done:
+                self._vix_velocity_up_done = True
+                puts = [
+                    p for p in self._theta_positions
+                    if "put" in (p.get("spread_type") or "")
+                ]
+                logger.warning(
+                    f"[VIXVelocity] VIX UP {delta_pct*100:+.2f}% en 120s "
+                    f"(de {oldest_vix:.2f} a {newest_vix:.2f}) — "
+                    f"cerrando {len(puts)} PUT(s)"
+                )
+                for pos in puts:
+                    await self._close_theta_position_by_reason(pos, "VIX_VELOCITY_UP")
+
+            elif delta_pct <= -0.03 and not self._vix_velocity_down_done:
+                self._vix_velocity_down_done = True
+                calls = [
+                    p for p in self._theta_positions
+                    if "call" in (p.get("spread_type") or "")
+                ]
+                logger.warning(
+                    f"[VIXVelocity] VIX DOWN {delta_pct*100:+.2f}% en 120s "
+                    f"(de {oldest_vix:.2f} a {newest_vix:.2f}) — "
+                    f"cerrando {len(calls)} CALL(s)"
+                )
+                for pos in calls:
+                    await self._close_theta_position_by_reason(pos, "VIX_VELOCITY_DOWN")
+
+    async def _close_theta_position_by_reason(self, pos: dict, exit_reason: str):
+        """
+        Cierra una posición theta harvest por exit reason específico.
+        Usado por VIX_VELOCITY_UP/DOWN. Paso 7 backlog v2.
+        """
+        ticker = pos.get("ticker", "?")
+        dte_slot = pos.get("dte_slot", "?")
+        try:
+            await self.trader.close_spread(
+                ticker=ticker,
+                short_strike=pos.get("short_strike"),
+                long_strike=pos.get("long_strike"),
+                expiration=pos.get("expiration"),
+                spread_type=pos.get("spread_type"),
+                contracts=pos.get("contracts", 1),
+                reason=f"ThetaHarvest {exit_reason}",
+            )
+            if pos in self._theta_positions:
+                self._theta_positions.remove(pos)
+            self._save_theta_positions_to_firestore()
+            logger.info(
+                f"[VIXVelocity] Cerrado {ticker} DTE={dte_slot} motivo={exit_reason}"
+            )
+        except Exception as e:
+            logger.error(
+                f"[VIXVelocity] Error cerrando {ticker} DTE={dte_slot}: {e}"
+            )
 
     # ── Paso 5: Slots dinámicos + Guard Iron Condor ────────────────────────
 
