@@ -337,6 +337,15 @@ class EoloCryptoOrchestrator:
         # Cuando se agregue un feed de VIX a crypto, pasarlo aquí.
         regime_mult = get_regime_multiplier(macro=None)
         for strat in buys:
+            # ── Symbol whitelist por estrategia ─────────────
+            _wl = settings.STRATEGY_SYMBOL_WHITELIST.get(strat)
+            if _wl is not None and symbol not in _wl:
+                logger.debug(
+                    f"[WHITELIST] {strat} bloqueado en {symbol} "
+                    f"(permitido solo en {sorted(_wl)})"
+                )
+                continue
+            # ────────────────────────────────────────────────
             tfs = sorted(tf_map.get((symbol, strat), []))
             reason = (f"multi-tf consensus | strategy={strat} | "
                       f"tfs={tfs} | mode="
