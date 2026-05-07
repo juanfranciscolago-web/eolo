@@ -422,8 +422,8 @@ def _fetch_prev_day_ohlc(ticker: str, token: str) -> Optional[dict]:
     """Fetcha OHLC del día anterior vía Schwab /pricehistory."""
     params = {
         "symbol":        ticker,
-        "periodType":    "day",
-        "period":        5,
+        "periodType":    "month",
+        "period":        1,
         "frequencyType": "daily",
         "frequency":     1,
         "needExtendedHoursData": False,
