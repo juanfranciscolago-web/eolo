@@ -545,9 +545,19 @@ def scan_theta_harvest(
         logger.info(f"[ThetaHarvest] {ticker} — sin expiraciones válidas ≤ {cfg['max_dte']} DTE")
         return None
 
-    # Elegir la expiración más cercana al DTE preferido
-    valid_exps.sort(key=lambda e: abs(_dte(e) - dte_preference))
-    chosen_exp = valid_exps[0]
+    # Match estricto: solo aceptar la expiración con DTE exacto al solicitado.
+    # Antes se elegía el más cercano (abs sort), pero eso causaba que
+    # spreads de DTE=N se abrieran cuando se pidió DTE=0, marcando el slot
+    # con DTE incorrecto y permitiendo doble exposición. Paso 4 backlog v2.
+    exact_match = [exp for exp in valid_exps if _dte(exp) == dte_preference]
+    if not exact_match:
+        available = sorted(set(_dte(e) for e in valid_exps))
+        logger.info(
+            f"[ThetaHarvest] {ticker} — DTE={dte_preference} no disponible "
+            f"(disponibles: {available}), skip"
+        )
+        return None
+    chosen_exp = exact_match[0]
     chosen_dte = _dte(chosen_exp)
 
     # Verificar tiempo mínimo hasta expiración
