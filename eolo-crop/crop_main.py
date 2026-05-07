@@ -60,8 +60,6 @@ from theta_harvest.theta_harvest_strategy import (
     evaluate_open_position,
     should_close_for_eod,
     TARGET_DTES,
-    FORCE_CLOSE_HOUR_0DTE,
-    FORCE_CLOSE_HOUR_1TO4DTE,
     _determine_spread_type,
     ENTRY_HOUR_ET,
     ENTRY_WINDOW_MINUTES,
