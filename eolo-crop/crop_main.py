@@ -1467,7 +1467,7 @@ class CropBotTheta:
                                 "exit_ts": datetime.utcnow().isoformat(), "entry_price": _nc or 0, "exit_price": _cv,
                                 "pnl": round(pos.get("unrealized_pnl") or 0, 2),
                                 "pnl_pct": round((_nc - _cv) / _nc * 100, 1) if _nc else 0,
-                                "strategy": "THETA_HARVEST", "exit_reason": exit_reason,
+                                "strategy": "theta_harvest", "exit_reason": exit_reason,
                                 "reason": pos.get("reason", ""), "dte_slot": pos.get("dte_slot"), "tranche_id": pos.get("tranche_id"),
                             })
                         except Exception as _e:
@@ -3228,7 +3228,7 @@ class CropBotTheta:
                 "entry_price": pos.get("net_credit", 0),
                 "exit_price":  pos.get("current_value", 0),
                 "qty":         pos.get("contracts", 1),
-                "strategy":    "THETA_HARVEST",
+                "strategy":    "theta_harvest",
                 "reason":      pos.get("reason", ""),
                 "entry_ts":    entry_ts,
                 "dte_slot":    pos.get("dte_slot"),
@@ -3284,7 +3284,7 @@ class CropBotTheta:
                     "price":    price,
                     "qty":      qty,
                     "ts":       t.get("timestamp", ""),
-                    "strategy": t.get("strategy", "CLAUDE"),
+                    "strategy": t.get("strategy", "claude_bot"),
                     "reason":   t.get("reason", ""),
                     "ticker":   t.get("ticker", ""),
                     "option_type": t.get("option_type", ""),

@@ -472,7 +472,7 @@ class OptionsTrader:
         long_strike:  float,        # strike de protección (más OTM)
         contracts:    int   = 1,
         net_credit:   float | None = None,
-        strategy:     str   = "THETA_HARVEST",
+        strategy:     str   = "theta_harvest",
         reason:       str   = "",
     ) -> str | None:
         """

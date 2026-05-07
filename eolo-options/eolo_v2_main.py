@@ -3239,7 +3239,7 @@ class EoloV2:
                     "price":    price,
                     "qty":      qty,
                     "ts":       t.get("timestamp", ""),
-                    "strategy": t.get("strategy", "CLAUDE"),
+                    "strategy": t.get("strategy", "claude_bot"),
                     "reason":   t.get("reason", ""),
                     "ticker":   t.get("ticker", ""),
                     "option_type": t.get("option_type", ""),
