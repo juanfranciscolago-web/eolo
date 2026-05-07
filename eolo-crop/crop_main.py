@@ -37,7 +37,7 @@ import json
 import os
 import sys
 import time
-from collections import defaultdict
+from collections import defaultdict, deque
 from datetime import datetime, timezone
 from loguru import logger
 
@@ -58,7 +58,6 @@ from execution.options_trader import OptionsTrader, _send_telegram
 from theta_harvest import scan_theta_harvest_tranches, ThetaHarvestSignal
 from theta_harvest.theta_harvest_strategy import (
     evaluate_open_position,
-    should_close_for_eod,
     TARGET_DTES,
     _determine_spread_type,
     ENTRY_HOUR_ET,
@@ -452,7 +451,6 @@ class CropBotTheta:
 
         # Buffer para detectar movimiento del VIX en ventana de 120s.
         # maxlen=5: sample actual + 4 históricos × 30s = 120s ventana exacta.
-        from collections import deque
         self._vix_velocity_buffer: deque = deque(maxlen=5)
 
         # Cooldown: 1 disparo por día por dirección (reset en _auto_close_loop)
@@ -963,6 +961,8 @@ class CropBotTheta:
                     vvix = macro.get("vvix") or macro.get("VVIX")
         except Exception:
             pass
+        self._last_vix  = vix
+        self._last_vvix = vvix
         return vix, vvix
 
     def _theta_spy_drop_30m(self) -> float:
@@ -2278,7 +2278,7 @@ class CropBotTheta:
             if self._should_auto_close():
                 today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
                 if self._auto_close_done_date != today:
-                    logger.info("[CROP] 🕒 AUTO-CLOSE 15:27 ET — cerrando todas las posiciones")
+                    logger.info(f"[CROP] 🕒 AUTO-CLOSE {self._schedule.auto_close.strftime('%H:%M')} ET — cerrando todas las posiciones")
                     try:
                         closed = await self.trader.close_all_positions()
                         logger.info(
