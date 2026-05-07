@@ -68,6 +68,7 @@ from theta_harvest.pivot_analysis import (
     fetch_tick_ad, TickADContext,
 )
 from theta_harvest.macro_news_filter import is_news_day, log_calendar_status
+from helpers import get_access_token
 
 # ── REMOVED: VRP, 0DTE Gamma Scalp, Earnings IV, Put Skew (CROP es theta-only) ────
 # ── Multi-TF compartido (paquete común eolo_common) ───────
@@ -1120,7 +1121,7 @@ class CropBotTheta:
         # neutral/confirm → proceder
         tick_ctx: Optional[TickADContext] = None
         try:
-            tick_ctx = fetch_tick_ad(self._schwab.access_token)
+            tick_ctx = fetch_tick_ad(get_access_token())
             if tick_ctx is not None:
                 # Guardar para dashboard pill + flow gate
                 _tick_conf = tick_ctx.evaluate(spread_type) if spread_type else "neutral"
