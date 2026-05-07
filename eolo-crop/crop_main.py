@@ -443,6 +443,10 @@ class CropBotTheta:
         self._schedule: TradingSchedule = DEFAULTS_EQUITY
         # Filtro macro — se puede desactivar desde el dashboard (toggle MACRO ON/OFF)
         self._macro_filter_enabled: bool = True
+        # Iron Condor flag — Paso 5 backlog v2.
+        # False (default): guard activo, NO se permite PUT+CALL en mismo ticker.
+        # True: guard se saltea, permite Iron Condors (eval futura).
+        self._iron_condor_enabled: bool = False
         self._last_command_ts:      float        = 0.0
         self._last_settings_ts:     float        = 0.0
         self._command_poll_interval = 5          # segundos
@@ -1193,7 +1197,9 @@ class CropBotTheta:
 
         # ── 5. Intentar abrir cada DTE libre ──────────────
         slots = self._theta_slots.get(ticker, {})
-        for dte in TARGET_DTES:
+        # Slots dinámicos por weekday — Paso 5 backlog v2
+        active_dtes = self._compute_theta_dtes()
+        for dte in active_dtes:
             if slots.get(dte) == today:
                 continue    # ya tenemos spread para este DTE hoy
 
@@ -1205,6 +1211,32 @@ class CropBotTheta:
             if already_open:
                 self._theta_slots.setdefault(ticker, {})[dte] = today
                 continue
+
+            # ── Cap GLOBAL Theta Harvest — Paso 5 backlog v2 ──
+            theta_cap = self._compute_theta_max_positions()
+            if len(self._theta_positions) >= theta_cap:
+                logger.info(
+                    f"[ThetaHarvest] {ticker} DTE={dte} — cap global alcanzado "
+                    f"({len(self._theta_positions)}/{theta_cap}), skip"
+                )
+                continue
+
+            # ── Guard Iron Condor — Paso 5 backlog v2 ──
+            # No abrir CALL si hay PUT abierto en mismo ticker (y viceversa).
+            # Bypass via Firestore flag iron_condor_enabled (default False).
+            if not self._iron_condor_enabled:
+                opposite_side = "call" if "put" in (spread_type or "") else "put"
+                opposite_open = any(
+                    p.get("ticker") == ticker
+                    and opposite_side in (p.get("spread_type") or "")
+                    for p in self._theta_positions
+                )
+                if opposite_open:
+                    logger.info(
+                        f"[ThetaHarvest] {ticker} DTE={dte} — guard Iron Condor: "
+                        f"hay {opposite_side} spread abierto en {ticker}, skip {spread_type}"
+                    )
+                    continue
 
             # ── Tranche entry: 3 contratos, mismo strike, distintos targets ──
             try:
@@ -2724,6 +2756,17 @@ class CropBotTheta:
                 except (TypeError, ValueError):
                     pass
 
+            # ── Iron Condor (theta harvest) ─────────────────
+            if "iron_condor_enabled" in cfg:
+                try:
+                    new_val = bool(cfg["iron_condor_enabled"])
+                    if new_val != self._iron_condor_enabled:
+                        old = self._iron_condor_enabled
+                        self._iron_condor_enabled = new_val
+                        changed.append(f"iron_condor_enabled={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
             if changed:
                 logger.info(f"[COMMANDS] ⚙️  Config actualizada: {', '.join(changed)}")
 
@@ -3370,6 +3413,34 @@ class CropBotTheta:
                 "positions_open":    0,
                 "positions_closed_today": 0,
             }
+
+    # ── Paso 5: Slots dinámicos + Guard Iron Condor ────────────────────────
+
+    def _compute_theta_dtes(self) -> list[int]:
+        """
+        DTEs válidos según weekday — opciones expiran lun-vie.
+        Lun: [0,1,2,3,4]  Mar: [0,1,2,3]  Mié: [0,1,2]  Jue: [0,1]  Vie: [0]
+        Sáb/Dom: [] (no se opera, igual hay guard de fin de semana antes).
+        """
+        from datetime import datetime, timezone
+        wd = datetime.now(timezone.utc).weekday()  # 0=Lun, 6=Dom
+        mapping = {
+            0: [0, 1, 2, 3, 4],   # Lunes
+            1: [0, 1, 2, 3],      # Martes
+            2: [0, 1, 2],         # Miércoles
+            3: [0, 1],            # Jueves
+            4: [0],               # Viernes
+        }
+        return mapping.get(wd, [])
+
+    def _compute_theta_max_positions(self) -> int:
+        """
+        Cap global de posiciones theta harvest según weekday.
+        Lun: 60  Mar: 48  Mié: 36  Jue: 24  Vie: 12
+        Cálculo: len(DTEs válidos) × 4 tickers × 3 tranches
+        """
+        dtes = self._compute_theta_dtes()
+        return len(dtes) * 4 * 3
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 
