@@ -150,6 +150,16 @@ STRATEGIES_ENABLED = {
     "momentum_score_fase7a":   False,
 }
 
+# Whitelist de símbolos por estrategia
+# Solo aplica si la estrategia está en este dict; estrategias ausentes
+# operan en TODOS los símbolos (comportamiento default).
+# Para rsi_sma200: análisis 6-may-2026 mostró edge real (CI95 positivo)
+# solo en BTCUSDT y ETHUSDT con n>=680 trades cada uno. Resto de símbolos
+# perdían sistemáticamente (CI95 negativo o cruzando cero).
+STRATEGY_SYMBOL_WHITELIST: dict[str, set[str]] = {
+    "rsi_sma200": {"BTCUSDT", "ETHUSDT"},
+}
+
 # Mínimo de estrategias que deben coincidir en la misma dirección
 # para que se ejecute un trade. Con 5 estrategias activas, >= 2
 # significa 40% de acuerdo (evita trades de una sola estrategia).
