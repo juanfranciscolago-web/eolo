@@ -2460,7 +2460,7 @@ function updateThetaHarvest() {
   const creditTot  = pnlData.credit_total ?? null;
   const closedCount= pnlData.positions_closed_today ?? 0;
   const winRate    = stats.win_rate     ?? null;
-  const riskLevel  = pivots.SPY?.consensus_risk || pivots.TQQQ?.consensus_risk || null;
+  const riskLevel  = pivots.SPY?.consensus_risk || pivots.QQQ?.consensus_risk || pivots.IWM?.consensus_risk || null;
   const _sEntry    = sector.SPY || sector.QQQ || Object.values(sector)[0] || {};
   const sectorDir  = _sEntry.direction || null;
   const sectorScr  = _sEntry.weighted_change_pct ?? null;
@@ -2800,8 +2800,8 @@ function updateThetaHarvest() {
 
   // ── Flow nodes ────────────────────────────────────────────
   const isNewsDay = macro.is_news_day || false;
-  const atrGate   = (pivots.SPY?.atr_gate_hit || pivots.TQQQ?.atr_gate_hit) || false;
-  const noTrade   = (pivots.SPY?.consensus_risk === 'NO_TRADE' || pivots.TQQQ?.consensus_risk === 'NO_TRADE');
+  const atrGate   = (pivots.SPY?.atr_gate_hit || pivots.QQQ?.atr_gate_hit || pivots.IWM?.atr_gate_hit) || false;
+  const noTrade   = (pivots.SPY?.consensus_risk === 'NO_TRADE' || pivots.QQQ?.consensus_risk === 'NO_TRADE' || pivots.IWM?.consensus_risk === 'NO_TRADE');
   const tickConf  = tick_ad.confirmation || 'neutral';
   const maxSlots  = (state.config?.max_positions ?? 2) * ((state.tickers || []).length || 4);
   const openSlots = maxSlots - pos.length;
