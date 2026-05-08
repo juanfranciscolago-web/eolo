@@ -43,6 +43,7 @@ runcycle.log
 # ── Backup files ────────────────────────────────────────────
 *.bak
 *.bak-*
+backups/
 
 # ── Session handoff docs (root level) ──────────────────────
 /EOLO_CONTEXT_FOR_NEW_CHAT.md

@@ -122,16 +122,18 @@ MIN_PAYOFF_RATIO = {
 # ── Tabla dinámica VIX → min_credit y min_payoff ─────────
 # Lógica: VIX bajo = IV baja = créditos menores pero mercado más tranquilo.
 # Ajustamos los filtros proporcionalmente para no perdernos setups válidos.
-# Cada tupla: (vix_max_excl, min_credit_spy, min_credit_tqqq, min_payoff_multiplier)
+# Sub-sprint 2A (8-may-2026): refactor de 2 cols (spy/tqqq) a 4 cols
+# per-ticker. Antes QQQ e IWM heredaban thresholds de TQQQ — ahora explícito.
+# Cada tupla: (vix_max_excl, spy, qqq, iwm, tqqq, min_payoff_multiplier)
 #   min_payoff_multiplier se aplica sobre MIN_PAYOFF_RATIO base.
-VIX_CREDIT_TABLE: list[tuple[float, float, float, float]] = [
-    # vix_ceil  spy_min  tqqq_min  payoff_mult
-    (13.0,      0.15,    0.12,     0.55),   # VIX < 13: mercado ultra-calmo
-    (16.0,      0.22,    0.18,     0.65),   # VIX 13–16: bajo normal
-    (20.0,      0.30,    0.25,     0.80),   # VIX 16–20: normal-bajo
-    (25.0,      0.40,    0.35,     1.00),   # VIX 20–25: normal (defaults actuales)
-    (30.0,      0.50,    0.42,     1.10),   # VIX 25–30: elevado
-    (float("inf"), 0.65, 0.55,    1.20),   # VIX > 30: alta volatilidad
+VIX_CREDIT_TABLE: list[tuple[float, float, float, float, float, float]] = [
+    # vix_ceil    spy   qqq   iwm   tqqq  payoff_mult
+    (13.0,        0.15, 0.13, 0.08, 0.12, 0.55),   # VIX < 13: ultra-calmo
+    (16.0,        0.22, 0.19, 0.12, 0.18, 0.65),   # VIX 13–16: bajo normal
+    (20.0,        0.30, 0.27, 0.16, 0.25, 0.80),   # VIX 16–20: normal-bajo
+    (25.0,        0.40, 0.35, 0.20, 0.35, 1.00),   # VIX 20–25: normal (defaults)
+    (30.0,        0.50, 0.45, 0.27, 0.42, 1.10),   # VIX 25–30: elevado
+    (float("inf"),0.65, 0.58, 0.36, 0.55, 1.20),   # VIX > 30: alta volatilidad
 ]
 
 
@@ -148,9 +150,13 @@ def _vix_credit_thresholds(
         base = TICKER_CONFIG.get(ticker, {}).get("min_credit", 0.40)
         return base, base_payoff_ratios
 
-    for vix_ceil, spy_min, tqqq_min, payoff_mult in VIX_CREDIT_TABLE:
+    for vix_ceil, spy_min, qqq_min, iwm_min, tqqq_min, payoff_mult in VIX_CREDIT_TABLE:
         if vix < vix_ceil:
-            credit_min = spy_min if ticker == "SPY" else tqqq_min
+            # Dispatch per-ticker (Sub-sprint 2A) — antes binario SPY vs TQQQ-like.
+            credit_min_map = {"SPY": spy_min, "QQQ": qqq_min, "IWM": iwm_min, "TQQQ": tqqq_min}
+            credit_min = credit_min_map.get(
+                ticker, TICKER_CONFIG.get(ticker, {}).get("min_credit", 0.40)
+            )
             adjusted_payoff = {
                 k: round(v * payoff_mult, 4)
                 for k, v in base_payoff_ratios.items()
