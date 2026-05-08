@@ -163,9 +163,14 @@ def api_config():
     try:
         data = request.get_json(force=True) or {}
         allowed = {
+            # Existentes
             "budget_per_trade", "max_positions", "daily_loss_cap_pct",
             "macro_filter_enabled", "trading_start_et", "trading_end_et",
             "auto_close_et",
+            # Sprint 1 (8-may): Bugs E + Q + R + vix_entry_threshold UI
+            "iron_condor_enabled", "vix_velocity_enabled",
+            "vix_entry_threshold", "entry_hour_et",
+            "default_stop_loss_pct", "default_take_profit_pct",
         }
         payload = {k: v for k, v in data.items() if k in allowed}
         if not payload:

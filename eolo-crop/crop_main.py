@@ -436,6 +436,8 @@ class CropBotTheta:
         # Defaults hardcoded como safety net; Firestore los overrides en _poll_settings().
         self._entry_hour_et:        float = ENTRY_HOUR_ET
         self._entry_window_minutes: float = ENTRY_WINDOW_MINUTES
+        # VIX entry threshold — editable desde el dashboard. Default safety net.
+        self._vix_entry_threshold:  float = 40.0
         # Schedule de trading — editable desde el dashboard. Defaults equity
         # (09:30-15:27 ET con auto-close 15:27). Se refresca en _poll_settings().
         self._schedule: TradingSchedule = DEFAULTS_EQUITY
@@ -1266,6 +1268,7 @@ class CropBotTheta:
                     force_entry           = getattr(self, "_theta_force_entry", False),
                     entry_hour_et         = self._entry_hour_et,
                     entry_window_minutes  = self._entry_window_minutes,
+                    vix_max_entry         = self._vix_entry_threshold,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -2682,6 +2685,16 @@ class CropBotTheta:
                 except (TypeError, ValueError):
                     pass
 
+            if "vix_entry_threshold" in cfg:
+                try:
+                    new_val = float(cfg["vix_entry_threshold"])
+                    if new_val != self._vix_entry_threshold:
+                        old = self._vix_entry_threshold
+                        self._vix_entry_threshold = new_val
+                        changed.append(f"vix_entry_threshold={old}→{new_val}")
+                except (TypeError, ValueError):
+                    pass
+
             # ── Trading schedule (start/end/auto-close) ───
             # Keys: trading_start_et, trading_end_et, auto_close_et,
             # trading_hours_enabled. Defaults equity (09:30/15:27/15:27).
@@ -2894,6 +2907,11 @@ class CropBotTheta:
                     "auto_close_et":           self._schedule.auto_close.strftime("%H:%M"),
                     "trading_hours_enabled":   self._schedule.enabled,
                     "macro_filter_enabled":    self._macro_filter_enabled,
+                    # Sprint 1 (8-may): exposición de flags al frontend
+                    "iron_condor_enabled":     self._iron_condor_enabled,
+                    "vix_velocity_enabled":    self._vix_velocity_enabled,
+                    "vix_entry_threshold":     self._vix_entry_threshold,
+                    "entry_hour_et":           self._entry_hour_et,
                 },
                 # Daily loss cap snapshot — dashboard lo usa para mostrar
                 # pnl real vs cap + estado (HIT / armed / disabled).

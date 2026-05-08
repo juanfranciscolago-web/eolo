@@ -460,6 +460,7 @@ def scan_theta_harvest(
     tranche_target:       Optional[float] = 0.65,  # fracción del crédito a capturar
     entry_hour_et:        float = ENTRY_HOUR_ET,
     entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
+    vix_max_entry:        float = VIX_MAX_ENTRY,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -492,8 +493,8 @@ def scan_theta_harvest(
         return None
 
     # ── 2. VIX gate ────────────────────────────────────────
-    if vix is not None and vix > VIX_MAX_ENTRY:
-        logger.info(f"[ThetaHarvest] {ticker} — VIX={vix:.1f} > {VIX_MAX_ENTRY}, skip")
+    if vix is not None and vix > vix_max_entry:
+        logger.info(f"[ThetaHarvest] {ticker} — VIX={vix:.1f} > {vix_max_entry}, skip")
         return None
 
     # ── 3. Ventana horaria ─────────────────────────────────
@@ -846,6 +847,7 @@ def scan_theta_harvest_tranches(
     pivot_result=None,
     entry_hour_et:        float = ENTRY_HOUR_ET,
     entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
+    vix_max_entry:        float = VIX_MAX_ENTRY,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -880,6 +882,7 @@ def scan_theta_harvest_tranches(
         tranche_target        = 0.65,
         entry_hour_et         = entry_hour_et,
         entry_window_minutes  = entry_window_minutes,
+        vix_max_entry         = vix_max_entry,
     )
     if base_signal is None:
         return []
@@ -902,6 +905,7 @@ def scan_theta_harvest_tranches(
                 pivot_result   = pivot_result,
                 tranche_id     = t_id,
                 tranche_target = t_target,
+                vix_max_entry  = vix_max_entry,
             )
         if sig is not None:
             signals.append(sig)

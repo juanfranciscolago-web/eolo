@@ -1499,12 +1499,28 @@
 
     <div style="display:grid;gap:14px">
 
+      <div style="font-size:.78rem;color:var(--muted);border-bottom:1px solid var(--border);padding-bottom:8px;margin-bottom:-4px">Estrategias activas</div>
+      <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+        <input id="cfg-iron-condor" type="checkbox" style="width:16px;height:16px;accent-color:var(--blue);margin-top:2px">
+        <span style="flex:1">
+          Iron Condor activo
+          <div style="font-size:.68rem;color:var(--dim);margin-top:2px">Activa rama IC en lugar de credit spread direccional</div>
+        </span>
+      </label>
+      <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:flex-start;gap:10px;cursor:pointer">
+        <input id="cfg-vix-velocity" type="checkbox" style="width:16px;height:16px;accent-color:var(--blue);margin-top:2px">
+        <span style="flex:1">
+          VIX Velocity (trigger de salida)
+          <div style="font-size:.68rem;color:var(--dim);margin-top:2px">UP cierra PUTs · DOWN cierra CALLs (asimétrico, Paso 7)</div>
+        </span>
+      </label>
+
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
         <label style="font-size:.78rem;color:var(--muted)">Budget por trade (USD)
           <input id="cfg-budget" type="number" min="50" max="50000" step="50"
             style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
         </label>
-        <label style="font-size:.78rem;color:var(--muted)">Max posiciones / ticker
+        <label style="font-size:.78rem;color:var(--muted)">Max global (safety)
           <input id="cfg-max-pos" type="number" min="1" max="10" step="1"
             style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
         </label>
@@ -1515,12 +1531,51 @@
           style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
       </label>
 
+      <label style="font-size:.78rem;color:var(--muted)">VIX entry threshold (límite superior)
+        <div style="font-size:.68rem;color:var(--dim);margin-top:2px;margin-bottom:4px">Bloquea entrada si VIX excede este valor</div>
+        <input id="cfg-vix-entry-threshold" type="number" min="20" max="60" step="1" value="40"
+          style="width:100%;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+      </label>
+
       <label style="font-size:.78rem;color:var(--muted);display:flex;align-items:center;gap:10px;cursor:pointer">
         <input id="cfg-macro" type="checkbox" style="width:16px;height:16px;accent-color:var(--blue)">
         Filtro macro habilitado (bloquea entradas en días con noticias)
       </label>
 
+      <div style="font-size:.78rem;color:var(--muted);border-top:1px solid var(--border);padding-top:12px">Risk management</div>
+      <div style="font-size:.7rem;color:#f59e0b;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:6px;padding:8px 10px;line-height:1.4">
+        ⚠️ Cambios aplican solo a nuevas entradas. Posiciones abiertas mantienen sus targets congelados al momento de apertura.
+      </div>
+      <label style="font-size:.78rem;color:var(--muted)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>Stop Loss % (default)</span>
+          <span id="cfg-default-stop-loss-pct-val" style="color:var(--text);font-weight:700">50%</span>
+        </div>
+        <input id="cfg-default-stop-loss-pct" type="range" min="0" max="500" step="25" value="50"
+          style="width:100%;margin-top:4px"
+          oninput="document.getElementById('cfg-default-stop-loss-pct-val').textContent = this.value + '%'">
+      </label>
+      <label style="font-size:.78rem;color:var(--muted)">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span>Take Profit % (default)</span>
+          <span id="cfg-default-take-profit-pct-val" style="color:var(--text);font-weight:700">100%</span>
+        </div>
+        <input id="cfg-default-take-profit-pct" type="range" min="10" max="100" step="5" value="100"
+          style="width:100%;margin-top:4px"
+          oninput="document.getElementById('cfg-default-take-profit-pct-val').textContent = this.value + '%'">
+      </label>
+
       <div style="font-size:.78rem;color:var(--muted);border-top:1px solid var(--border);padding-top:12px">Horario de trading (ET)</div>
+      <label style="font-size:.78rem;color:var(--muted)">Entry window
+        <select id="cfg-entry-hour" style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
+          <option value="9.5">9:30</option>
+          <option value="10.0">10:00</option>
+          <option value="10.5">10:30</option>
+          <option value="11.0">11:00</option>
+          <option value="11.5">11:30</option>
+          <option value="12.0">12:00</option>
+        </select>
+      </label>
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
         <label style="font-size:.78rem;color:var(--muted)">Start
           <input id="cfg-start" type="time"
@@ -2333,13 +2388,23 @@ document.getElementById('confirm-overlay').addEventListener('click', (e) => {
 function openConfig() {
   const cfg = state.config || {};
   const el = id => document.getElementById(id);
-  el('cfg-budget').value    = cfg.budget_per_trade     ?? 200;
-  el('cfg-max-pos').value   = cfg.max_positions        ?? 2;
-  el('cfg-daily-cap').value = cfg.daily_loss_cap_pct   ?? -2;
-  el('cfg-macro').checked   = cfg.macro_filter_enabled !== false;
-  el('cfg-start').value     = cfg.trading_start_et     || '09:45';
-  el('cfg-end').value       = cfg.trading_end_et       || '15:30';
-  el('cfg-autoclose').value = cfg.auto_close_et        || '15:27';
+  el('cfg-budget').value         = cfg.budget_per_trade     ?? 200;
+  el('cfg-max-pos').value        = cfg.max_positions        ?? 2;
+  el('cfg-daily-cap').value      = cfg.daily_loss_cap_pct   ?? -2;
+  el('cfg-macro').checked        = cfg.macro_filter_enabled !== false;
+  el('cfg-iron-condor').checked  = !!cfg.iron_condor_enabled;
+  el('cfg-vix-velocity').checked = !!cfg.vix_velocity_enabled;
+  el('cfg-vix-entry-threshold').value = cfg.vix_entry_threshold ?? 40;
+  el('cfg-entry-hour').value     = parseFloat(cfg.entry_hour_et ?? 10.5).toFixed(1);
+  const slPct = cfg.default_stop_loss_pct   ?? 50;
+  const tpPct = cfg.default_take_profit_pct ?? 100;
+  el('cfg-default-stop-loss-pct').value         = slPct;
+  el('cfg-default-take-profit-pct').value       = tpPct;
+  el('cfg-default-stop-loss-pct-val').textContent   = slPct + '%';
+  el('cfg-default-take-profit-pct-val').textContent = tpPct + '%';
+  el('cfg-start').value          = cfg.trading_start_et     || '09:45';
+  el('cfg-end').value            = cfg.trading_end_et       || '15:30';
+  el('cfg-autoclose').value      = cfg.auto_close_et        || '15:27';
   const overlay = document.getElementById('config-overlay');
   overlay.style.display = 'flex';
 }
@@ -2356,13 +2421,19 @@ async function saveConfig() {
   if (isNaN(cap) || cap > 0) { toast('Daily loss cap debe ser negativo', 'error'); return; }
 
   const payload = {
-    budget_per_trade:     budget,
-    max_positions:        parseInt(el('cfg-max-pos').value) || 2,
-    daily_loss_cap_pct:   cap,
-    macro_filter_enabled: el('cfg-macro').checked,
-    trading_start_et:     el('cfg-start').value,
-    trading_end_et:       el('cfg-end').value,
-    auto_close_et:        el('cfg-autoclose').value,
+    budget_per_trade:        budget,
+    max_positions:           parseInt(el('cfg-max-pos').value) || 2,
+    daily_loss_cap_pct:      cap,
+    macro_filter_enabled:    el('cfg-macro').checked,
+    iron_condor_enabled:     el('cfg-iron-condor').checked,
+    vix_velocity_enabled:    el('cfg-vix-velocity').checked,
+    vix_entry_threshold:     parseInt(el('cfg-vix-entry-threshold').value) || 40,
+    entry_hour_et:           parseFloat(el('cfg-entry-hour').value) || 10.5,
+    default_stop_loss_pct:   parseFloat(el('cfg-default-stop-loss-pct').value),
+    default_take_profit_pct: parseFloat(el('cfg-default-take-profit-pct').value),
+    trading_start_et:        el('cfg-start').value,
+    trading_end_et:          el('cfg-end').value,
+    auto_close_et:           el('cfg-autoclose').value,
   };
 
   try {
