@@ -650,10 +650,12 @@ class OptionsTrader:
                     if (p["ticker"] == ticker and p["expiration"] == expiration
                         and p["strike"] == strike and p["option_type"] == opt_type):
                         entry   = p.get("entry_price", 0) or 0
-                        current = limit if limit is not None else entry
-                        if entry:
-                            pnl_pct = round((current - entry) / entry * 100, 2)
-                        pnl_usd = round((current - entry) * p["contracts"] * 100, 2)
+                        if limit is not None:
+                            current = limit
+                            if entry:
+                                pnl_pct = round((current - entry) / entry * 100, 2)
+                            pnl_usd = round((current - entry) * p["contracts"] * 100, 2)
+                        # else: limit ausente → pnl_usd y pnl_pct quedan None (init)
                         entry_price_override = float(entry) if entry else None
                         opened_at_ts         = p.get("opened_at_ts")
                         break
@@ -718,10 +720,12 @@ class OptionsTrader:
                 opened = self._open_positions.pop(symbol, None)
                 if opened:
                     entry   = opened.get("entry_price", 0) or 0
-                    current = limit if limit is not None else entry
-                    if entry:
-                        pnl_pct = round((current - entry) / entry * 100, 2)
-                    pnl_usd = round((current - entry) * opened.get("contracts", contracts) * 100, 2)
+                    if limit is not None:
+                        current = limit
+                        if entry:
+                            pnl_pct = round((current - entry) / entry * 100, 2)
+                        pnl_usd = round((current - entry) * opened.get("contracts", contracts) * 100, 2)
+                    # else: limit ausente → pnl_usd y pnl_pct quedan None (init)
                     entry_price_override = float(entry) if entry else None
                     opened_at_ts         = opened.get("opened_at_ts")
             elif instruction == "BUY_TO_OPEN":
