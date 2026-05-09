@@ -194,13 +194,21 @@ def daily_open_reset():
     except Exception as e:
         results["theta_reset"] = f"error: {e}"
 
-    # ── 3. Limpiar P&L de ayer en Firestore ──────────────────
+    # ── 3. Limpiar P&L de ayer en Firestore (archive antes de borrar) ─────
     try:
         project_id = _os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
         db = _fs.Client(project=project_id)
         yesterday = (datetime.now(timezone.utc) - timedelta(days=1)).strftime("%Y-%m-%d")
-        db.collection("eolo-options-trades").document(yesterday).delete()
-        results["firestore_cleanup"] = f"eliminado eolo-options-trades/{yesterday}"
+        src_ref = db.collection("eolo-options-trades").document(yesterday)
+        snap = src_ref.get()
+        if snap.exists:
+            db.collection("eolo-options-trades-archive").document(yesterday).set(
+                snap.to_dict(), merge=False
+            )
+            src_ref.delete()
+            results["firestore_cleanup"] = f"archivado eolo-options-trades/{yesterday} → eolo-options-trades-archive/{yesterday}"
+        else:
+            results["firestore_cleanup"] = f"skip — no existe eolo-options-trades/{yesterday}"
     except Exception as e:
         results["firestore_cleanup"] = f"error: {e}"
 
