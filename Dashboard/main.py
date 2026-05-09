@@ -1040,11 +1040,19 @@ def daily_open_reset():
     except Exception as e:
         results["close_all_flag"] = f"error: {e}"
 
-    # ── 2. Limpiar P&L de ayer en Firestore ──────────────────
+    # ── 2. Limpiar P&L de ayer en Firestore (archive antes de borrar) ─────
     try:
         yesterday = (date.today() - timedelta(days=1)).strftime("%Y-%m-%d")
-        db.collection(TRADES_COLLECTION).document(yesterday).delete()
-        results["firestore_cleanup"] = f"eliminado eolo-trades/{yesterday}"
+        src_ref = db.collection(TRADES_COLLECTION).document(yesterday)
+        snap = src_ref.get()
+        if snap.exists:
+            db.collection("eolo-trades-archive").document(yesterday).set(
+                snap.to_dict(), merge=False
+            )
+            src_ref.delete()
+            results["firestore_cleanup"] = f"archivado eolo-trades/{yesterday} → eolo-trades-archive/{yesterday}"
+        else:
+            results["firestore_cleanup"] = f"skip — no existe eolo-trades/{yesterday}"
     except Exception as e:
         results["firestore_cleanup"] = f"error: {e}"
 
