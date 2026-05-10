@@ -932,18 +932,6 @@ def scan_theta_harvest_tranches(
 
 # ── Helpers públicos ──────────────────────────────────────
 
-def should_close_for_eod(
-    dte: int = 0,
-    hour_et: Optional[float] = None,
-    auto_close_et: float = 15.5,  # Paso 6 backlog v2: hora ET cierre forzado
-) -> bool:
-    """True si estamos en horario de cierre EOD para el DTE dado."""
-    if hour_et is None:
-        hour_et = _hour_et()
-    # Paso 6 backlog v2: threshold viene de auto_close_et (Firestore vía caller)
-    return hour_et >= auto_close_et
-
-
 def get_delta_range_for_risk(risk_level: str) -> tuple[float, float]:
     """Retorna (delta_min, delta_max) para el risk level dado."""
     from .pivot_analysis import DELTA_BY_RISK
