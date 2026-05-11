@@ -52,8 +52,6 @@ from stream.options_stream import SchwabStream
 from stream.options_chain  import OptionChainFetcher
 from analysis.greeks       import enrich_contract
 from analysis.iv_surface   import IVSurface
-from claude.options_brain  import OptionsBrain
-from claude.claude_bot     import ClaudeBotEngine
 from execution.options_trader import OptionsTrader, _send_telegram
 from theta_harvest import scan_theta_harvest_tranches, ThetaHarvestSignal
 from theta_harvest.theta_harvest_strategy import (
@@ -81,7 +79,6 @@ from eolo_common.multi_tf import (
     CandleBuffer, BufferMarketData, ConfluenceFilter, load_multi_tf_config,
 )
 from eolo_common.multi_tf.normalize import from_schwab_chart_equity
-from eolo_common.routing import AutoRouter as _AutoRouter  # Strategy Auto-Router
 from eolo_common.trading_hours import (
     DEFAULTS_EQUITY,
     TradingSchedule,
@@ -313,20 +310,8 @@ class CropBotTheta:
         self.stream        = SchwabStream(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
         # CROP: sin MispricingScanner (solo Theta Harvest)
-        self.brain         = OptionsBrain()
         self.trader        = OptionsTrader(paper=PAPER_TRADING)
-        # Auto-Router — actualiza toggles de estrategias según régimen cada 30 min
-        self._auto_router  = _AutoRouter(bot_id="crop", update_interval_min=30)
 
-        # Claude Bot — estrategia #14 sobre acciones del underlying.
-        # Corre en paralelo con OptionsBrain (que opera opciones).
-        # Intenta instanciarse, pero si falla la API key no rompe el bot.
-        try:
-            self.claude_bot = ClaudeBotEngine(paper_mode=True)
-            logger.info("[CLAUDE_BOT_V2] Engine inicializado ✅")
-        except Exception as e:
-            self.claude_bot = None
-            logger.warning(f"[CLAUDE_BOT_V2] Engine NO disponible: {e}")
 
         mode = "📄 PAPER TRADING" if PAPER_TRADING else "💰 LIVE TRADING"
         logger.info(f"[CROP] Modo: {mode}")
