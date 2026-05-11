@@ -1025,6 +1025,26 @@
     text-align: left;
     font-style: italic;
   }
+
+  /* DTE Schedule (S1.4) */
+  .matrix-table td.dte-enabled {
+    color: var(--green);
+    font-weight: 600;
+    text-align: center;
+  }
+  .matrix-table td.dte-disabled {
+    color: var(--muted);
+    opacity: 0.4;
+    text-align: center;
+  }
+  .matrix-table tr.weekend td:first-child {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .matrix-table tr.weekend td.dte-enabled,
+  .matrix-table tr.weekend td.dte-disabled {
+    opacity: 0.5;
+  }
 </style>
 </head>
 <body>
@@ -1789,10 +1809,27 @@
         </table>
       </div>
 
-      <!-- Placeholders para próximos sprints -->
-      <div class="matrix-block matrix-coming-soon">
-        <h3>DTE Schedule <span class="matrix-badge">Coming in S1.4</span></h3>
+      <!-- DTE Schedule -->
+      <div class="matrix-block">
+        <h3>DTE Schedule — DTEs operados por día de semana</h3>
+        <p class="matrix-note">Día actual destacado ▶ · ✓ = DTE habilitado · — = no operado</p>
+        <table id="dte-schedule-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Día</th>
+              <th>DTE 0</th>
+              <th>DTE 1</th>
+              <th>DTE 2</th>
+              <th>DTE 3</th>
+              <th>DTE 4</th>
+            </tr>
+          </thead>
+          <tbody id="dte-schedule-tbody"></tbody>
+        </table>
+        <p class="matrix-note">Module default (fallback): <span id="dte-default-display">—</span></p>
       </div>
+
+      <!-- Placeholders para próximos sprints -->
       <div class="matrix-block matrix-coming-soon">
         <h3>Exits Advanced <span class="matrix-badge">Coming in S1.5</span></h3>
       </div>
@@ -3198,6 +3235,54 @@ function renderTickerConfig(strategyParams) {
     }).join('');
 }
 
+function renderDteSchedule(strategyParams) {
+  const tbody = document.getElementById('dte-schedule-tbody');
+  if (!tbody || !strategyParams || !strategyParams.target_dtes) return;
+
+  const sched = strategyParams.target_dtes.by_weekday || {};
+  const moduleDefault = strategyParams.target_dtes.module_default || [];
+
+  const dayMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayLabel = {
+    'Mon': 'Lunes', 'Tue': 'Martes', 'Wed': 'Miércoles',
+    'Thu': 'Jueves', 'Fri': 'Viernes', 'Sat': 'Sábado', 'Sun': 'Domingo'
+  };
+  const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayKey = dayMap[etNow.getDay()];
+
+  const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  tbody.innerHTML = order.map(day => {
+    const dtes = sched[day] || [];
+    const isToday = day === todayKey;
+    const isWeekend = day === 'Sat' || day === 'Sun';
+
+    const cells = [0, 1, 2, 3, 4].map(dte => {
+      const enabled = dtes.includes(dte);
+      return `<td class="${enabled ? 'dte-enabled' : 'dte-disabled'}">${enabled ? '✓' : '—'}</td>`;
+    }).join('');
+
+    const rowClass = [
+      isToday ? 'active' : '',
+      isWeekend ? 'weekend' : ''
+    ].filter(Boolean).join(' ');
+
+    return `
+      <tr class="${rowClass}">
+        <td><strong>${dayLabel[day]}</strong></td>
+        ${cells}
+      </tr>
+    `;
+  }).join('');
+
+  const defaultDisplay = document.getElementById('dte-default-display');
+  if (defaultDisplay) {
+    defaultDisplay.textContent = moduleDefault.length > 0
+      ? '[' + moduleDefault.join(', ') + ']'
+      : '—';
+  }
+}
+
 function updateStrategyMatrices() {
   const sp = state.strategy_params;
   if (!sp) return;
@@ -3205,6 +3290,7 @@ function updateStrategyMatrices() {
   renderVixCreditTable(sp, currentVix);
   renderDeltaByRisk(sp);
   renderTickerConfig(sp);
+  renderDteSchedule(sp);
 }
 
 // ══════════════════════════════════════════
