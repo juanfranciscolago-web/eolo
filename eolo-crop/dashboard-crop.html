@@ -1045,6 +1045,56 @@
   .matrix-table tr.weekend td.dte-disabled {
     opacity: 0.5;
   }
+
+  /* Exits Advanced (S1.5) */
+  .exits-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .exits-group {
+    background: rgba(48, 54, 61, 0.2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .exits-group h4 {
+    margin: 0 0 10px 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  .exit-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+  }
+  .exit-card:last-child { border-bottom: none; }
+  .exit-label {
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .exit-value {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: var(--yellow);
+    font-variant-numeric: tabular-nums;
+  }
+  .badge-inline {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    background: rgba(48, 54, 61, 0.6);
+    color: var(--muted);
+    border-radius: 3px;
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: 0;
+  }
 </style>
 </head>
 <body>
@@ -1829,9 +1879,93 @@
         <p class="matrix-note">Module default (fallback): <span id="dte-default-display">—</span></p>
       </div>
 
-      <!-- Placeholders para próximos sprints -->
-      <div class="matrix-block matrix-coming-soon">
-        <h3>Exits Advanced <span class="matrix-badge">Coming in S1.5</span></h3>
+      <!-- Exits Advanced -->
+      <div class="matrix-block">
+        <h3>Exits Advanced — exit triggers, gates, timing</h3>
+        <p class="matrix-note">14 parámetros hardcoded en strategy module — read-only en S1</p>
+
+        <div class="exits-grid">
+          <!-- GRUPO 1: ENTRY GATES -->
+          <div class="exits-group">
+            <h4>Entry Gates</h4>
+            <div class="exit-card">
+              <span class="exit-label">VIX max entry</span>
+              <span class="exit-value" id="exit-vix-max">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">VIX spike delta</span>
+              <span class="exit-value" id="exit-vix-spike">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">VVIX panic</span>
+              <span class="exit-value" id="exit-vvix">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 2: EXIT TRIGGERS -->
+          <div class="exits-group">
+            <h4>Exit Triggers</h4>
+            <div class="exit-card">
+              <span class="exit-label">Delta drift max</span>
+              <span class="exit-value" id="exit-delta-drift">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">SPY drop 30m</span>
+              <span class="exit-value" id="exit-spy-drop">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Stop loss mult</span>
+              <span class="exit-value" id="exit-stop-loss">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Profit target</span>
+              <span class="exit-value" id="exit-profit-target">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 3: TRANCHE TP -->
+          <div class="exits-group">
+            <h4>Tranche Take Profit</h4>
+            <div class="exit-card">
+              <span class="exit-label">T0 / T1 / T2</span>
+              <span class="exit-value" id="exit-tranches">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 4: TIMING -->
+          <div class="exits-group">
+            <h4>Timing</h4>
+            <div class="exit-card">
+              <span class="exit-label">Entry hour ET</span>
+              <span class="exit-value" id="exit-entry-hour">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Entry window</span>
+              <span class="exit-value" id="exit-entry-window">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Min mins to exp</span>
+              <span class="exit-value" id="exit-min-mins">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 5: VIX VELOCITY -->
+          <div class="exits-group">
+            <h4>VIX Velocity <span class="badge-inline">inline literals</span></h4>
+            <div class="exit-card">
+              <span class="exit-label">Threshold UP</span>
+              <span class="exit-value" id="exit-vv-up">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Threshold DOWN</span>
+              <span class="exit-value" id="exit-vv-down">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Window (sec)</span>
+              <span class="exit-value" id="exit-vv-window">—</span>
+            </div>
+          </div>
+        </div>
       </div>
 
     </div>
@@ -3283,6 +3417,49 @@ function renderDteSchedule(strategyParams) {
   }
 }
 
+function renderExitsAdvanced(strategyParams) {
+  const mountPoint = document.getElementById('exit-vix-max');
+  if (!mountPoint || !strategyParams || !strategyParams.exits_advanced) return;
+
+  const ea = strategyParams.exits_advanced;
+
+  const setValue = (id, value, formatter) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value === null || value === undefined) { el.textContent = '—'; return; }
+    el.textContent = formatter ? formatter(value) : value;
+  };
+
+  // Grupo 1: Entry Gates
+  setValue('exit-vix-max',        ea.vix_max_entry,        v => v.toFixed(1));
+  setValue('exit-vix-spike',      ea.vix_spike_delta,      v => '+' + v.toFixed(1));
+  setValue('exit-vvix',           ea.vvix_panic_threshold, v => v.toFixed(0));
+
+  // Grupo 2: Exit Triggers
+  setValue('exit-delta-drift',    ea.delta_drift_max,      v => v.toFixed(2));
+  setValue('exit-spy-drop',       ea.spy_drop_pct_30m,     v => v.toFixed(2) + '%');
+  setValue('exit-stop-loss',      ea.stop_loss_mult,       v => v.toFixed(2) + 'x');
+  setValue('exit-profit-target',  ea.profit_target_pct,    v => (v * 100).toFixed(0) + '%');
+
+  // Grupo 3: Tranche TP
+  const tp = ea.tranche_profit_targets;
+  if (tp) {
+    const fmt = v => v === null ? 'Exp' : (v * 100).toFixed(0) + '%';
+    setValue('exit-tranches', tp, arr => arr.map(fmt).join(' / '));
+  }
+
+  // Grupo 4: Timing
+  setValue('exit-entry-hour',     ea.entry_hour_et,
+    v => Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0') + ' ET');
+  setValue('exit-entry-window',   ea.entry_window_minutes, v => v + ' min');
+  setValue('exit-min-mins',       ea.min_minutes_to_exp,   v => v + ' min');
+
+  // Grupo 5: VIX Velocity
+  setValue('exit-vv-up',          ea.vix_velocity_threshold_up_pct,   v => '+' + (v * 100).toFixed(1) + '%');
+  setValue('exit-vv-down',        ea.vix_velocity_threshold_down_pct, v => (v * 100).toFixed(1) + '%');
+  setValue('exit-vv-window',      ea.vix_velocity_window_seconds,     v => v + 's');
+}
+
 function updateStrategyMatrices() {
   const sp = state.strategy_params;
   if (!sp) return;
@@ -3291,6 +3468,7 @@ function updateStrategyMatrices() {
   renderDeltaByRisk(sp);
   renderTickerConfig(sp);
   renderDteSchedule(sp);
+  renderExitsAdvanced(sp);
 }
 
 // ══════════════════════════════════════════
