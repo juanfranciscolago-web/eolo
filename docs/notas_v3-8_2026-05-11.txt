@@ -271,3 +271,33 @@ PRE-FLIGHT NECESARIO ANTES DE S2:
   (DELTA_BY_RISK no está en allowed_set actual)
 - Decidir si /api/config-audit es endpoint nuevo
 
+
+═══════════════════════════════════════════════════════════════
+14. DECISIÓN ESTRATÉGICA (16:35 ART) — CLEANUP CROP THETA-ONLY
+═══════════════════════════════════════════════════════════════
+
+DECISIÓN DE PRODUCTO TOMADA:
+CROP debe ser theta_harvest only. Limpieza total de Claude brain,
+OptionsTrader, AutoRouter, y 45 strategies técnicas.
+
+PLAN COMPLETO EN: docs/PLAN_CLEANUP_CROP_THETA_ONLY.md
+
+RESUMEN:
+- 4 fases secuenciales (auditoría → código → posiciones → deploy)
+- Cronograma: 4-5 sesiones, 12-18h totales
+- HOY solo documentación
+- MAÑANA: FASE 1 Auditoría (PnL por strategy + acoplamiento + V2 account)
+
+CRÍTICA PENDIENTE: confirmar si V2 y CROP comparten cuenta Schwab.
+Si comparten, V2 paralelo sigue abriendo claude_medium aunque CROP
+esté limpio. Esto necesita decisión adicional.
+
+IMPACTO SPRINT S1:
+- S1 tal cual es válido POST-cleanup
+- Pre-cleanup: deployar con disclaimer "Theta Harvest config (otros
+  módulos serán removidos)"
+
+IMPACTO SPRINT S2:
+- S2 Risk Management TIENE SENTIDO POST-cleanup
+- Antes mostraría datos confusos (cap mezclado entre strategies)
+- DEFERRED hasta FASE 4 completada
