@@ -301,3 +301,122 @@ IMPACTO SPRINT S2:
 - S2 Risk Management TIENE SENTIDO POST-cleanup
 - Antes mostraría datos confusos (cap mezclado entre strategies)
 - DEFERRED hasta FASE 4 completada
+
+═══════════════════════════════════════════════════════════════
+15. SESIÓN EXTENDIDA — FASE 1 AUDITORÍA COMPLETA + F2.1
+═══════════════════════════════════════════════════════════════
+
+FASE 1 AUDITORÍA — 5 sub-tareas completadas (17:00-19:00 ART):
+
+1.1 Schwab account check:
+    - Ambos bots (V2 + CROP) en PAPER mode
+    - Comparten accounts[0] via mismo OAuth, pero ambos paper = self-contained
+    - Cleanup CROP NO necesita coordinación con V2
+
+1.2 PnL por strategy HOY (mediodía):
+    - theta_harvest: -$516 (WR 20%, día catastrófico SPY_DROP)
+    - claude_medium: ~+$534 estimado
+    - Bot daily_loss_cap.hit gatilló a -$8,714 al EOD
+    - INSIGHT: Bug AC.1 detectado tarde — theta_harvest posiblemente
+      mislabeled como "claude_bot" en muchos trades
+
+1.3 27-day aggregation:
+    - eolo-trades = bot V1 STOCKS (716 trades, 11 días)
+    - eolo-crop-trades = solo CROP options (279 events, 1 día)
+    - No hay 27 días de datos CROP → decisión con N=1
+
+1.4 Mapeo acoplamiento OptionsTrader:
+    - theta_harvest usa execute_decision (L1285 open, L1478 close)
+    - Claude brain usa execute_decision (L1602)
+    - Cleanup quirúrgico NO viable — refactor targeted necesario
+    - Estimación realista: 5-8h (no 30 min como pensábamos)
+
+1.5 Backup completo:
+    - Tag git: pre-cleanup-crop-theta-only-20260511_1652
+    - Snapshot código en /tmp/eolo-pre-cleanup-20260511_1652/
+    - api-state, config Firestore, Cloud Run revision
+
+ATTEMPT CLAUDE_GATE=0 — FALLIDO:
+- Probado revision 00043-5gl con canary tag
+- Resultado: ClaudeBotEngine + _claude_bot_loop arrancaron igual
+- CLAUDE_GATE solo controla _claude_gate_enabled (gate específico)
+- NO controla instanciación de objetos Claude
+- Rollback canary: tag removido, bot productivo intacto en 00042-xsr
+
+F2.1 IDENTIFICACIÓN EXHAUSTIVA:
+- Inventario completo en docs/FASE_2_CLEANUP_EJECUTABLE.md (384 líneas)
+- Imports a eliminar: 3 (L55, L56, L84 en crop_main.py)
+- Call sites brain.*: 4 calls + state refs
+- Call sites claude_bot.*: 7 calls + state refs
+- AutoRouter: solo Claude lo usa (theta NO)
+- Carpeta claude/: 798 líneas (claude_bot.py 404 + options_brain.py 394)
+- L1602 execute_decision: Claude flow (ELIMINAR)
+- L1285 + L1478: theta flow (MANTENER)
+
+HALLAZGOS NUEVOS F2.1:
+
+H24 — Bug AC.1 línea exacta identificada
+  Archivo: eolo-crop/execution/options_trader.py:1111
+  Código: _raw_strat = mp_type if mp_type else f"claude_{confidence.lower()}"
+                       if confidence else "claude_bot"
+  Impacto: theta_harvest sin confidence → tagged "claude_bot"
+           Posiblemente muchos "claude_medium" históricos son theta mislabeled
+  Fix: incluir en F2.6 del cleanup mañana (CONFIRMADO)
+  Severidad: ALTA (invalida análisis PnL por strategy)
+
+H25 — _run_analysis_cycle (crop_main.py:L799) NO es 100% Claude
+  Mezcla lógica que necesita revisión línea-a-línea
+  Riesgo: eliminar todo puede romper algo theta
+  Acción mañana: ir con cuidado en F2.3
+
+H26 — _poll_settings lee config Claude del Firestore (L2751+)
+  Post-cleanup el código intentará leer claude_bot_enabled
+  Decisión: dejar config tal cual, código ignorará silenciosamente
+
+DECISIONES TOMADAS PARA F2 MAÑANA:
+- F2.6 (Bug AC.1 fix L1111): INCLUIR en cleanup
+- smoke_test.py: ARCHIVAR junto con claude/
+
+═══════════════════════════════════════════════════════════════
+16. PLAN MAÑANA — FASE 2 CLEANUP EJECUTABLE
+═══════════════════════════════════════════════════════════════
+
+PRE-FLIGHT MATUTINO (10 min):
+  cat ~/PycharmProjects/eolo/docs/FASE_2_CLEANUP_EJECUTABLE.md
+
+FASES MAÑANA:
+  F2.2 — Eliminar imports + instanciaciones    (1h)
+  F2.3 — Eliminar loops + helpers + L1602       (1-2h, cuidado L799)
+  F2.4 — Archivar claude/ + smoke_test.py        (30 min)
+  F2.5 — Validación local (py_compile, smoke)   (30 min)
+  F2.6 — Fix Bug AC.1 L1111 (tagging)            (15-30 min)
+  F2.7 — Deploy canary                            (30 min)
+  F2.8 — Validación canary + promote             (1h)
+
+  TOTAL: 5-6.5h mañana
+
+ORDEN SUGERIDO MAÑANA:
+  ~10:00 ART  Pre-flight + leer doc
+  ~10:15 ART  F2.2 imports
+  ~11:15 ART  F2.3 loops + helpers
+  ~13:15 ART  Pausa almuerzo (verify Val 3.1-V1, V2 con cron 14:30)
+  ~14:30 ART  Cron V1+V2 dispara — re-validar
+  ~15:00 ART  F2.4 archivar
+  ~15:30 ART  F2.5 validación local
+  ~16:00 ART  F2.6 fix Bug AC.1
+  ~16:30 ART  F2.7 deploy canary
+  ~17:00 ART  F2.8 validación + promote
+
+  Estimado fin: ~18:00 ART
+
+ROLLBACK PLAN:
+  git checkout pre-cleanup-crop-theta-only-20260511_1652
+  gcloud run services update-traffic eolo-bot-crop \
+    --to-revisions=eolo-bot-crop-00042-xsr=100
+
+DEFINITION OF DONE:
+  ✅ Bot CROP en producción sin Claude code
+  ✅ Theta_harvest sigue operando
+  ✅ Nuevas posiciones tagged correctamente (no más "claude_bot")
+  ✅ Dashboard muestra solo theta
+  ✅ Bug AC.1 fix aplicado
