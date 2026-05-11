@@ -21,6 +21,24 @@ from loguru import logger
 
 import crop_main
 
+from theta_harvest.theta_harvest_strategy import (
+    VIX_CREDIT_TABLE,
+    TICKER_CONFIG,
+    TARGET_DTES,
+    DELTA_DRIFT_MAX,
+    SPY_DROP_PCT_30M,
+    VIX_MAX_ENTRY,
+    VIX_SPIKE_DELTA,
+    VVIX_PANIC_THRESHOLD,
+    STOP_LOSS_MULT,
+    PROFIT_TARGET_PCT,
+    TRANCHE_PROFIT_TARGETS,
+    MIN_MINUTES_TO_EXP,
+    ENTRY_HOUR_ET,
+    ENTRY_WINDOW_MINUTES,
+)
+from theta_harvest.pivot_analysis import DELTA_BY_RISK
+
 app = Flask(__name__)
 
 # ── Estado global del bot (para health / status) ─────────
@@ -216,6 +234,67 @@ def _pnl_from_bot(bot):
     }
 
 
+def _strategy_params() -> dict:
+    """Snapshot read-only de constantes ThetaHarvest. Para /api/state (Sprint S1)."""
+    return {
+        "vix_credit_table": [
+            {
+                "vix_ceil":    (None if vc == float("inf") else vc),
+                "spy":         spy, "qqq": qqq, "iwm": iwm, "tqqq": tqqq,
+                "payoff_mult": pm,
+            }
+            for vc, spy, qqq, iwm, tqqq, pm in VIX_CREDIT_TABLE
+        ],
+        "delta_by_risk": {
+            risk: [dmin, dmax]
+            for risk, (dmin, dmax) in DELTA_BY_RISK.items()
+        },
+        "ticker_config": {
+            ticker: {
+                "spread_width":  cfg.get("spread_width"),
+                "delta_min_abs": cfg.get("delta_min_abs"),
+                "delta_max_abs": cfg.get("delta_max_abs"),
+                "min_credit":    cfg.get("min_credit"),
+                "max_dte":       cfg.get("max_dte"),
+            }
+            for ticker, cfg in TICKER_CONFIG.items()
+        },
+        "target_dtes": {
+            "module_default": TARGET_DTES,
+            "by_weekday": {
+                "Mon": [0, 1, 2, 3, 4],
+                "Tue": [0, 1, 2, 3],
+                "Wed": [0, 1, 2],
+                "Thu": [0, 1],
+                "Fri": [0],
+                "Sat": [],
+                "Sun": [],
+            },
+            "_note": "by_weekday se aplica en crop_main.py:3584 _compute_theta_dtes(). module_default es fallback."
+        },
+        "exits_advanced": {
+            "delta_drift_max":          DELTA_DRIFT_MAX,
+            "spy_drop_pct_30m":         SPY_DROP_PCT_30M,
+            "vix_max_entry":            VIX_MAX_ENTRY,
+            "vix_spike_delta":          VIX_SPIKE_DELTA,
+            "vvix_panic_threshold":     VVIX_PANIC_THRESHOLD,
+            "stop_loss_mult":           STOP_LOSS_MULT,
+            "profit_target_pct":        PROFIT_TARGET_PCT,
+            "tranche_profit_targets":   TRANCHE_PROFIT_TARGETS,
+            "min_minutes_to_exp":       MIN_MINUTES_TO_EXP,
+            "entry_hour_et":            ENTRY_HOUR_ET,
+            "entry_window_minutes":     ENTRY_WINDOW_MINUTES,
+            "vix_velocity_threshold_up_pct":   0.03,
+            "vix_velocity_threshold_down_pct": -0.03,
+            "vix_velocity_window_seconds":     120,
+            "_note": (
+                "auto_close ET unificado en config.auto_close_et (ver /api/state.config). "
+                "vix_velocity son magic numbers inline en crop_main.py:3522,3536 (no constantes)."
+            ),
+        },
+    }
+
+
 @app.route("/api/state")
 def api_state():
     """
@@ -239,6 +318,7 @@ def api_state():
                     state = json.load(f)
                     state["timestamp"] = datetime.utcnow().isoformat()
                     state["_source"] = "local_state_file"
+                    state["strategy_params"] = _strategy_params()
                     if bot is not None:
                         state["pnl"] = _pnl_from_bot(bot)
                     return jsonify(state), 200
@@ -258,7 +338,8 @@ def api_state():
                     "pnl_history": [],
                     "macro": {},
                     "pivots": {},
-                }
+                },
+                "strategy_params": _strategy_params(),
             }), 200
 
         # Fallback 3: Construir estado desde bot_instance
@@ -300,6 +381,7 @@ def api_state():
             logger.debug(f"[API /state] Could not build pivots: {pe}")
 
         state["pnl"] = _pnl_from_bot(bot)
+        state["strategy_params"] = _strategy_params()
         return jsonify(state), 200
 
     except Exception as e:
