@@ -917,6 +917,102 @@
     header { padding: 12px 16px; }
     .grid, .grid-2col, .section { padding-left: 16px; padding-right: 16px; }
   }
+
+  /* ══════════════════════════════════════════
+     PARAMETROS ESTRATEGIA — Sprint S1
+  ══════════════════════════════════════════ */
+  .collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+  }
+  .collapsible-header:hover { border-color: var(--border-strong); }
+  .collapsible-header h2 { margin: 0; font-size: 1.1rem; color: var(--text); }
+  .toggle-indicator {
+    transition: transform 0.2s;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .collapsible.collapsed .toggle-indicator { transform: rotate(-90deg); }
+  .collapsible.collapsed .collapsible-body { display: none; }
+  .collapsible-body {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 16px;
+  }
+
+  .matrix-block { margin-bottom: 20px; }
+  .matrix-block:last-child { margin-bottom: 0; }
+  .matrix-block h3 {
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .matrix-note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .matrix-table th, .matrix-table td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  .matrix-table th {
+    background: rgba(48, 54, 61, 0.4);
+    color: var(--muted);
+    font-weight: 600;
+    text-align: center;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+  }
+  .matrix-table th:first-child, .matrix-table td:first-child {
+    text-align: left;
+    color: var(--text);
+  }
+  .matrix-table tr.active {
+    background: var(--yellow-soft);
+    font-weight: 600;
+  }
+  .matrix-table tr.active td:first-child::before {
+    content: "▶ ";
+    color: var(--yellow);
+  }
+
+  .vix-bin-0 td, .vix-bin-1 td, .vix-bin-2 td { color: var(--text); }
+  .vix-bin-3 td { color: var(--yellow); }
+  .vix-bin-4 td { color: var(--orange); }
+  .vix-bin-5 td { color: var(--red); }
+  .matrix-table tr.active td { color: var(--yellow) !important; }
+
+  .matrix-coming-soon { opacity: 0.45; padding: 8px 0; }
+  .matrix-coming-soon h3 { color: var(--muted); }
+  .matrix-badge {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: rgba(48, 54, 61, 0.6);
+    color: var(--muted);
+    border-radius: 4px;
+    margin-left: 8px;
+    border: 1px solid var(--border);
+  }
 </style>
 </head>
 <body>
@@ -1615,6 +1711,51 @@
   <span style="margin-left:auto">EOLO Theta Harvest · <span id="clock">--:--:--</span> ET</span>
 </div>
 
+<!-- ══════════════════════════════════════════
+     PARÁMETROS ESTRATEGIA — read-only panel (Sprint S1)
+══════════════════════════════════════════ -->
+<div class="section">
+  <div id="strategy-matrices" class="collapsible collapsed">
+    <header class="collapsible-header" onclick="toggleCollapsible('strategy-matrices')">
+      <h2>📊 Parámetros Estrategia</h2>
+      <span class="toggle-indicator">▼</span>
+    </header>
+    <div class="collapsible-body">
+
+      <!-- VIX Credit Table -->
+      <div class="matrix-block">
+        <h3>VIX Credit Table — minimum credit per ticker by VIX regime</h3>
+        <p class="matrix-note">VIX actual: <span id="vix-current-display">—</span> · fila activa marcada con ▶</p>
+        <table id="vix-credit-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Rango VIX</th>
+              <th>SPY</th>
+              <th>QQQ</th>
+              <th>IWM</th>
+              <th>TQQQ</th>
+              <th>Payoff Mult</th>
+            </tr>
+          </thead>
+          <tbody id="vix-credit-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Placeholders para próximos sprints -->
+      <div class="matrix-block matrix-coming-soon">
+        <h3>Delta &amp; Spread Config <span class="matrix-badge">Coming in S1.3</span></h3>
+      </div>
+      <div class="matrix-block matrix-coming-soon">
+        <h3>DTE Schedule <span class="matrix-badge">Coming in S1.4</span></h3>
+      </div>
+      <div class="matrix-block matrix-coming-soon">
+        <h3>Exits Advanced <span class="matrix-badge">Coming in S1.5</span></h3>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
 // ============================================================
 //  CROP — Theta Harvest Dashboard — JS
@@ -1792,6 +1933,7 @@ function render() {
   updateTrades();
   updateThetaHarvest();
   updateStatusbar();
+  updateStrategyMatrices();
 }
 
 function updateHeader() {
@@ -2896,6 +3038,69 @@ function updateThetaHarvest() {
   setFlow('th-fn-entry',   'th-fn-entry-s',
     (isNewsDay || noTrade || !vixOk || tickConf === 'block') ? 'th-fn-block' : openSlots === 0 ? 'th-fn-warn' : 'th-fn-ok',
     (isNewsDay || noTrade || !vixOk || tickConf === 'block') ? 'BLOQUEADO' : openSlots === 0 ? 'LLENO' : openSlots + ' slots libres');
+}
+
+// ══════════════════════════════════════════
+// PARÁMETROS ESTRATEGIA (Sprint S1)
+// ══════════════════════════════════════════
+function toggleCollapsible(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('collapsed');
+}
+
+function renderVixCreditTable(strategyParams, currentVix) {
+  const tbody = document.getElementById('vix-credit-tbody');
+  if (!tbody || !strategyParams || !strategyParams.vix_credit_table) return;
+
+  const table = strategyParams.vix_credit_table;
+
+  const vixDisplay = document.getElementById('vix-current-display');
+  if (vixDisplay) {
+    vixDisplay.textContent = (currentVix !== null && currentVix !== undefined)
+      ? Number(currentVix).toFixed(2)
+      : '—';
+  }
+
+  let activeIdx = -1;
+  if (currentVix !== null && currentVix !== undefined) {
+    for (let i = 0; i < table.length; i++) {
+      const ceil = table[i].vix_ceil;
+      if (ceil === null || currentVix < ceil) {
+        activeIdx = i;
+        break;
+      }
+    }
+  }
+
+  tbody.innerHTML = table.map((row, idx) => {
+    const isActive = idx === activeIdx;
+    let label;
+    if (row.vix_ceil === null) {
+      label = '≥ 30';
+    } else if (idx === 0) {
+      label = `< ${row.vix_ceil}`;
+    } else {
+      const prevCeil = table[idx - 1].vix_ceil;
+      label = `${prevCeil} – ${row.vix_ceil}`;
+    }
+    return `
+      <tr class="vix-bin-${idx}${isActive ? ' active' : ''}">
+        <td>${label}</td>
+        <td>$${row.spy.toFixed(2)}</td>
+        <td>$${row.qqq.toFixed(2)}</td>
+        <td>$${row.iwm.toFixed(2)}</td>
+        <td>$${row.tqqq.toFixed(2)}</td>
+        <td>${row.payoff_mult.toFixed(2)}×</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function updateStrategyMatrices() {
+  const sp = state.strategy_params;
+  if (!sp) return;
+  const currentVix = state.vix || state.vix_current || null;
+  renderVixCreditTable(sp, currentVix);
 }
 
 // ══════════════════════════════════════════
