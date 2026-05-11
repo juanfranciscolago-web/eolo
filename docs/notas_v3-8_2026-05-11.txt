@@ -1,0 +1,273 @@
+
+═══════════════════════════════════════════════════════════════
+NOTAS v3.8 — Cierre lunes 11-may-2026
+═══════════════════════════════════════════════════════════════
+
+Generado: 11-may-2026 ~14:55 ART
+Última sesión completa: ~07:00-15:30 ART (8.5h trabajo cognitivo)
+
+═══════════════════════════════════════════════════════════════
+1. VALIDACIONES DEL DÍA
+═══════════════════════════════════════════════════════════════
+
+CERRADAS:
+- Val 3.5 Sprint 1 Panel UI: PASS estructural
+- Val 3.1-CROP Bug 3 archive: WEAK PASS (cron 10:30 ART OK)
+- Val 3.2-CROP Auth scheduler: PASS COMPLETO (HTTP 200, 21ms)
+- Val 3.3 Sub-sprint 2A VIX per-ticker: PASS sólido
+- Val 3.2-V1 Auth scheduler (us-central1): PASS OIDC+UA+200+0.4s
+- Val 3.2-V2 Auth scheduler (us-east1): PASS con advertencia 30s latencia
+
+NO VERIFICABLES (necesitan re-test mañana):
+- Val 3.1-V1 Bug 3 archive V1: no había doc en eolo-trades/2026-05-10
+- Val 3.1-V2 Bug 3 archive V2: no había doc en eolo-options-trades/2026-05-10
+
+ACCIÓN MAÑANA:
+- Cron V1+V2 dispara a 14:30 ART
+- Esta vez SÍ debería haber docs Firestore del lunes 11-may (bot operó hoy)
+- Re-validar Val 3.1-V1 y Val 3.1-V2 con docs reales
+
+PENDIENTE:
+- Val 3.4 Bug 1 pnl=None V2: depende de trades closed V2 hoy
+
+═══════════════════════════════════════════════════════════════
+2. BUGS DEL DÍA
+═══════════════════════════════════════════════════════════════
+
+Bug AM — RESUELTO ✅
+  Síntoma: Schwab refresh_token degradado, bot ciego 3h (14:09-17:30 UTC)
+  Causa: refresh_token rotó pero versión guardada no se actualizó
+  Fix: OAuth re-auth manual via safe_init_auth_v2.py
+  Branch: fix/bug-am-oauth-helpers (commit 8c39fde)
+  Backup token: /tmp/schwab_token_backup_2026-05-11_114449.json (7 días)
+
+Bug AN — RESUELTO ✅
+  Síntoma: V2 daily-open-reset reporta "close_all: 'error: '" string vacío
+  Causa: future.result(timeout=30) lanza TimeoutError con str()=''
+  Insight: coroutine sigue corriendo en background pese al "error"
+  Fix: catch específico TimeoutError + repr en Exception genérico
+  Archivos: eolo-options/main.py:185, eolo-crop/main.py:356
+  Dashboard NO afectado (patrón distinto)
+  Branch: fix/bug-an-timeout-reporting (commit 7171fbe)
+
+═══════════════════════════════════════════════════════════════
+3. HALLAZGOS NUEVOS (H10-H18)
+═══════════════════════════════════════════════════════════════
+
+H10: Sprint 3 (TP escalonado) YA está deployado desde 29-abr-2026
+     commit d201fe0 — TRANCHE_PROFIT_TARGETS [0.35, 0.65, None] hardcoded
+     Falta solo: matriz max_contracts_matrix + compute_tp_split + UI sliders
+
+H12: Discrepancia credit foto QQQ vs logs EXPLICADO
+     bot usa short_bid - long_ask (pesimista) vs foto muestra mark
+     Diferencia típica $0.10-$0.30, NO es bug, es diseño defensivo
+
+H13: Risk Level asimétrico tickers — INVESTIGAR
+     SPY MID (Δ0.22-0.30) operó 3 trades
+     QQQ LOW (Δ0.16-0.22) skip
+     IWM VERY_LOW (Δ0.10-0.16) skip
+     TQQQ VERY_LOW bloqueado por 401 (Bug AM)
+
+H14: V1 en us-central1 (NO us-east1 como decía plan v3.7)
+
+H15: Schedulers V1/V2 nunca dispararon antes (primer fire hoy)
+
+H16: Bot usa UTC en _compute_theta_dtes (crop_main.py:3590)
+     Debería usar ET. Impacto: ventana 20:00-00:00 ET considera día siguiente
+     NYSE cerrado en esa ventana → no afecta operación
+     Prioridad: BAJA. Sprint futuro.
+
+H17: V2 daily-open-reset latencia 30.09s (V1 = 0.4s)
+     Causa: close_all sincrónico de ~20 paper positions
+     Riesgo: cuenta real con más posiciones puede exceder 60s Cloud Run
+     Solución futura: 202 Accepted + /status endpoint
+     Prioridad: MEDIA. Sprint dedicado.
+
+H18: Nombres reales schedulers son eolo-daily-open-reset-v1/v2
+     NO eolo-archive-v1/v2 como decía plan v3.7
+     Acción: corregir docs/backlogs
+
+═══════════════════════════════════════════════════════════════
+4. SPRINT S1 — COMPLETO 100%
+═══════════════════════════════════════════════════════════════
+
+Branch: feature/sprint-S1-ui-matrices (5 commits, +665/-10 líneas)
+
+Sub-sprints:
+- S1.1 d3a435a — Backend /api/state.strategy_params (+83/-1)
+- S1.2 932cfff — VIX Credit Table read-only (+205)
+- S1.3 b18b5cb — Delta by Risk + Ticker Config (+107/-3)
+- S1.4 1fd00b8 — DTE Schedule ET-aware (+89/-3)
+- S1.5 7b1d616 — Exits Advanced 5 grupos (+181/-3)
+
+UI implementada read-only:
+- VIX Credit Table 6×6 con highlight VIX activo
+- Delta by Risk con interpretaciones
+- Ticker Config 4×5 params
+- DTE Schedule weekday × DTEs con día actual destacado (ET)
+- Exits Advanced 5 grupos: gates, triggers, tranches, timing, vix velocity
+
+PENDIENTE:
+- Deploy a Cloud Run desde feature branch
+- Test end-to-end con dashboard productivo
+- Abrir PR feature/sprint-S1-ui-matrices → main
+- S2: Modo edición + audit log (próximo sprint)
+
+═══════════════════════════════════════════════════════════════
+5. ESTADO DE BRANCHES EN REMOTE
+═══════════════════════════════════════════════════════════════
+
+main                                  9b0bbe2  baseline intocado
+feature/sprint-S1-ui-matrices         7b1d616  Sprint S1 100%
+fix/bug-an-timeout-reporting          7171fbe  Bug AN fix
+fix/bug-am-oauth-helpers              8c39fde  OAuth wrappers (insurance)
+
+Legacy purgables:
+fix/v2-bug1-pnl-none                  7e7ec29
+fix/v2-crop-dashboard-bug3-archive    ec36796
+
+═══════════════════════════════════════════════════════════════
+6. BACKUPS EN /tmp
+═══════════════════════════════════════════════════════════════
+
+dashboard-crop-backup-20260511_131103.html   (134KB, pre S1)
+main-backup-20260511_132154.py               (16KB, pre S1.1)
+eolo-options-main-20260511_144510.py         (pre Bug AN)
+eolo-crop-main-20260511_144510.py            (pre Bug AN)
+dashboard-main-20260511_144510.py            (precaución, no tocado)
+schwab_token_backup_2026-05-11_114449.json   (pre Bug AM recovery, 7 días)
+
+═══════════════════════════════════════════════════════════════
+7. LECCIONES NUEVAS (L31-L40)
+═══════════════════════════════════════════════════════════════
+
+L31: Verificar precios spot contra fuentes reales antes de afirmar
+     (Bug AK falso: SPY $590 vs realidad $737)
+
+L32: Token rotation handling debe ser defensivo
+     refresh_token puede rotar — validar y guardar atómico
+
+L33: Monitoring crítico de tokens en producción
+     3h ciego = inaceptable. Daily Health debe alertar inmediato
+
+L34: Documentar procedimientos de recovery ANTES de necesitarlos
+     OAuth re-auth tomó +30 min sin runbook
+
+L35: Verificar python vs python3 en pre-flight de scripts
+
+L36: Scripts para !-prefix (Claude Code) usar argv, NO input()
+
+L37: Verificar QUIÉN genera el output ANTES de planificar
+     HS-1 inicial apuntaba a daily-report vs realidad eolo-sheets-sync
+
+L38: Pre-flight ANTES de planificación detallada, NO después
+     Plan implementación inicial asumió estado sin verificar Sprint 1 8-may
+
+L39: Inventario detallado puede tener errores hasta tocar código
+     S1.1 reveló 3 discrepancias entre spec y realidad
+
+L40: Disciplina de cierre vale más que motivación residual
+     Hard stops respetados > "5 min más" subjetivos
+
+═══════════════════════════════════════════════════════════════
+8. PLAN MAÑANA (martes 12-may-2026)
+═══════════════════════════════════════════════════════════════
+
+PRIORIDAD ALTA:
+1. ~10:00 ART: revisar logs nocturnos (Bug AM no recurrió?)
+2. ~14:30 ART: cron V1+V2 dispara CON docs Firestore del lunes
+   → Re-validar Val 3.1-V1 y Val 3.1-V2 con archive real
+3. ~15:00 ART: Deploy Sprint S1 a producción (desde feature branch)
+   → Test end-to-end del dashboard read-only
+4. ~15:30 ART: Si S1 OK, abrir PR feature → main + merge
+
+PRIORIDAD MEDIA:
+5. Abrir PRs Bug AN + Bug AM helpers (independientes)
+6. Investigar H13 (Risk Level asimétrico tickers)
+7. Decidir Sprint S2 vs continuar otros backlog items
+
+PRIORIDAD BAJA / FUTURO:
+8. H16 fix (ET vs UTC en _compute_theta_dtes)
+9. H17 refactor (202 Accepted en close_all V2)
+10. H18 corregir nombres schedulers en docs
+
+NO HACER MAÑANA:
+- Sprint S2 antes de validar S1 en producción
+- Tocar lógica del bot (delta_drift, vix_velocity) sin Sprint dedicado
+- Hacer múltiples deploys en paralelo
+
+═══════════════════════════════════════════════════════════════
+9. CONTEXTO PARA SESIÓN MAÑANA
+═══════════════════════════════════════════════════════════════
+
+- Bot productivo opera con código main (sin Sprint S1)
+- 4 branches independientes en remote, listas para review/deploy
+- Backups en /tmp expiran en ~24h — guardar lo crítico antes
+- safe_init_auth_v2.py es el script de recovery oficial para Bug AM
+- VIX threshold por defecto: 40, vix_velocity inline 3%/-3%/120s
+- Macro filter sigue OFF (R1 recomienda activar)
+- Régimen del día sin scoring (S8 implementaría Capa 1 Claude pre-mercado)
+
+═══════════════════════════════════════════════════════════════
+10. SPRINT S2 RE-SCOPED (post-S1.5)
+═══════════════════════════════════════════════════════════════
+
+CONTEXTO:
+El plan original S2 (doc Plan_Implementacion 1400ART) decía:
+"S2 — UI Panel de Exits + Risk Management (4-6h)
+ - Cards de los 7 exit triggers
+ - Risk Management tab
+ - Active position tracking
+ - Estado del cap diario en vivo"
+
+REALIDAD POST-S1.5:
+S1.5 ya implementó los 7 exit triggers (5 grupos de cards).
+El S2 original tiene 75% de overlap con S1.5 ya entregado.
+
+SCOPE REAL DE S2 (lo que falta):
+
+S2.1 — Risk Management Tab (1.5-2h)
+  - Card visible con: daily_loss_cap_pct (con %), max_positions,
+    budget_per_trade, pnl_today live, % consumed del cap
+  - Barra de progreso visual del cap diario
+  - Highlight si cap > 75% consumido (warning amber)
+  - Highlight si cap > 90% (alert red)
+  - Datos: state.pnl + state.config.daily_loss_cap_pct
+
+S2.2 — Active Positions tracker (2-3h)
+  - Tabla compacta de posiciones abiertas
+  - Columns: ticker, strikes, DTE, credit_recv, current_value, 
+             pnl_$, pnl_%, T0/T1/T2 hit
+  - Highlight cerca del stop loss (>100% del credit)
+  - Highlight T0/T1 hit
+  - Sort by pnl_% descending
+
+S2.3 — Modo edición global (3-4h)
+  - Toggle "Edit Mode" en header de Strategy Matrices
+  - NumberInput, TimeInput, BooleanToggle, MatrixEditor
+  - Save / Cancel flotantes
+  - Validation client-side per parámetro
+  - POST a /api/config (endpoint existente)
+  - Toast notifications
+
+S2.4 — Audit log drawer (1-2h)
+  - Drawer lateral con últimos 20 cambios
+  - Cada entrada: timestamp + diff visual
+  - 1-click rollback
+  - Datos: /api/config-audit (endpoint nuevo)
+
+TOTAL ESTIMADO: 7.5-11h (vs 4-6h plan original)
+
+ORDEN SUGERIDO MAÑANA:
+1. PRIMERO: Deploy + test Sprint S1 (1h)
+2. SEGUNDO: S2.1 Risk Management (más visible, alto valor) (1.5-2h)
+3. TERCERO: S2.2 Active Positions si energía (2-3h)
+4. PARA OTRO DÍA: S2.3 + S2.4 (modo edición es trabajo serio)
+
+PRE-FLIGHT NECESARIO ANTES DE S2:
+- Verificar formato exacto state.positions / state.theta.positions
+- Verificar si state.pnl tiene pnl_today current
+- Confirmar /api/config POST acepta updates de matrices
+  (DELTA_BY_RISK no está en allowed_set actual)
+- Decidir si /api/config-audit es endpoint nuevo
+
