@@ -1332,6 +1332,7 @@ class CropBotTheta:
                         "long_strike":  pos.get("long_strike"),
                         "contracts":    pos.get("contracts", 1),
                         "reason":       f"ThetaHarvest {exit_reason or '?'}",
+                        "strategy":     "theta_harvest",
                     }
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
