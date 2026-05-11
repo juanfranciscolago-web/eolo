@@ -435,8 +435,10 @@ def daily_open_reset():
             results["close_all"] = "ok"
         else:
             results["close_all"] = "loop no disponible — skip"
+    except TimeoutError:
+        results["close_all"] = "timeout 30s — coroutine sigue en background"
     except Exception as e:
-        results["close_all"] = f"error: {e}"
+        results["close_all"] = f"error: {e!r}"
 
     # ── 2. Limpiar estado de theta harvest ────────────────────
     try:
