@@ -1013,6 +1013,18 @@
     margin-left: 8px;
     border: 1px solid var(--border);
   }
+
+  /* Risk level color hints (S1.3) */
+  .matrix-table tr.risk-very_low td:first-child { color: var(--blue); }
+  .matrix-table tr.risk-low td:first-child { color: var(--cyan); }
+  .matrix-table tr.risk-mid td:first-child { color: var(--yellow); }
+  .matrix-table tr.risk-no_trade td:first-child { color: var(--muted); opacity: 0.6; }
+  .matrix-table td.muted {
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: left;
+    font-style: italic;
+  }
 </style>
 </head>
 <body>
@@ -1741,10 +1753,43 @@
         </table>
       </div>
 
-      <!-- Placeholders para próximos sprints -->
-      <div class="matrix-block matrix-coming-soon">
-        <h3>Delta &amp; Spread Config <span class="matrix-badge">Coming in S1.3</span></h3>
+      <!-- Delta by Risk Level -->
+      <div class="matrix-block">
+        <h3>Delta by Risk Level — short leg delta range per risk bucket</h3>
+        <p class="matrix-note">Risk level determinado por análisis técnico (pivots + breadth)</p>
+        <table id="delta-by-risk-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Risk Level</th>
+              <th>Delta Min</th>
+              <th>Delta Max</th>
+              <th>Interpretación</th>
+            </tr>
+          </thead>
+          <tbody id="delta-by-risk-tbody"></tbody>
+        </table>
       </div>
+
+      <!-- Ticker Config -->
+      <div class="matrix-block">
+        <h3>Ticker Config — per-ticker spread parameters</h3>
+        <p class="matrix-note">Fallback defaults usados cuando VIX_CREDIT_TABLE no aplica</p>
+        <table id="ticker-config-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Spread Width</th>
+              <th>Δ Min</th>
+              <th>Δ Max</th>
+              <th>Min Credit</th>
+              <th>Max DTE</th>
+            </tr>
+          </thead>
+          <tbody id="ticker-config-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Placeholders para próximos sprints -->
       <div class="matrix-block matrix-coming-soon">
         <h3>DTE Schedule <span class="matrix-badge">Coming in S1.4</span></h3>
       </div>
@@ -3096,11 +3141,70 @@ function renderVixCreditTable(strategyParams, currentVix) {
   }).join('');
 }
 
+function renderDeltaByRisk(strategyParams) {
+  const tbody = document.getElementById('delta-by-risk-tbody');
+  if (!tbody || !strategyParams || !strategyParams.delta_by_risk) return;
+
+  const dbr = strategyParams.delta_by_risk;
+  const interpretations = {
+    VERY_LOW: 'Ultra conservador, OTM profundo (~prob asignación 10-16%)',
+    LOW:      'Conservador, OTM seguro (~prob asignación 16-22%)',
+    MID:      'Agresivo, mejor prima (~prob asignación 22-30%)',
+    NO_TRADE: 'Bucket sin operación (delta fuera de rangos)'
+  };
+
+  const order = ['VERY_LOW', 'LOW', 'MID', 'NO_TRADE'];
+
+  tbody.innerHTML = order
+    .filter(risk => dbr[risk])
+    .map(risk => {
+      const [dmin, dmax] = dbr[risk];
+      const isNoTrade = (risk === 'NO_TRADE') || (dmin === 0 && dmax === 0);
+      const label = risk.replace('_', ' ');
+      const dminLabel = isNoTrade ? '—' : dmin.toFixed(2);
+      const dmaxLabel = isNoTrade ? '—' : dmax.toFixed(2);
+      return `
+        <tr class="risk-${risk.toLowerCase()}">
+          <td><strong>${label}</strong></td>
+          <td>${dminLabel}</td>
+          <td>${dmaxLabel}</td>
+          <td class="muted">${interpretations[risk] || ''}</td>
+        </tr>
+      `;
+    }).join('');
+}
+
+function renderTickerConfig(strategyParams) {
+  const tbody = document.getElementById('ticker-config-tbody');
+  if (!tbody || !strategyParams || !strategyParams.ticker_config) return;
+
+  const tc = strategyParams.ticker_config;
+  const order = ['SPY', 'QQQ', 'IWM', 'TQQQ'];
+
+  tbody.innerHTML = order
+    .filter(t => tc[t])
+    .map(t => {
+      const cfg = tc[t];
+      return `
+        <tr>
+          <td><strong>${t}</strong></td>
+          <td>$${cfg.spread_width?.toFixed(2) ?? '—'}</td>
+          <td>${cfg.delta_min_abs?.toFixed(2) ?? '—'}</td>
+          <td>${cfg.delta_max_abs?.toFixed(2) ?? '—'}</td>
+          <td>$${cfg.min_credit?.toFixed(2) ?? '—'}</td>
+          <td>${cfg.max_dte ?? '—'}</td>
+        </tr>
+      `;
+    }).join('');
+}
+
 function updateStrategyMatrices() {
   const sp = state.strategy_params;
   if (!sp) return;
   const currentVix = state.vix || state.vix_current || null;
   renderVixCreditTable(sp, currentVix);
+  renderDeltaByRisk(sp);
+  renderTickerConfig(sp);
 }
 
 // ══════════════════════════════════════════
