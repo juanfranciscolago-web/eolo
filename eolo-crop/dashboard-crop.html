@@ -4151,7 +4151,8 @@ if (document.readyState === 'loading') {
 // EDIT MODE — Sprint S2.3
 // ══════════════════════════════════════════
 let isEditMode = false;
-let pendingEdits = {};
+let pendingEdits = {};        // { fieldId: validValue } — exported as JSON
+let inputDraftValues = {};    // { fieldId: rawUserInput } — what user sees (valid or invalid, persists across re-renders)
 
 function setEditMode(enabled) {
   isEditMode = enabled;
@@ -4171,6 +4172,7 @@ function setEditMode(enabled) {
     status.textContent = 'read-only';
     toolbar.style.display = 'none';
     pendingEdits = {};
+    inputDraftValues = {};  // Sprint S2.3 fix: clear drafts on mode-off
   }
 
   if (typeof updateRiskManagement === 'function') updateRiskManagement();
@@ -4178,6 +4180,7 @@ function setEditMode(enabled) {
 
 function discardEdits() {
   pendingEdits = {};
+  inputDraftValues = {};  // Sprint S2.3 fix: clear drafts on discard
   setEditMode(false);
 }
 
@@ -4211,26 +4214,38 @@ function _validateInput(input, min, max) {
 
 function _renderEditableNumber(currentValue, fieldId, min, max, step) {
   step = step || 'any';
+  // Display priority: draft (what user typed, valid or invalid) > pendingEdits (valid only) > currentValue (state)
+  // This preserves what the user sees across re-renders, including invalid values that should stay visible in red.
+  const draftVal = inputDraftValues[fieldId];
   const pendingVal = pendingEdits[fieldId];
-  const displayVal = pendingVal != null ? pendingVal : currentValue;
-  const editedCls = pendingVal != null ? ' edited' : '';
+  const displayVal = draftVal !== undefined ? draftVal : (pendingVal !== undefined ? pendingVal : currentValue);
+  // Check if draft is out of range — apply .invalid in initial render
+  const numVal = parseFloat(displayVal);
+  const isInvalid = !isNaN(numVal) && (numVal < min || numVal > max);
+  const isEdited = pendingVal !== undefined && !isInvalid;
+  const cssClass = isInvalid ? ' invalid' : (isEdited ? ' edited' : '');
   // Note: min/max NOT in HTML attrs — browser would auto-revert out-of-range values
   // before JS could mark .invalid. JS validates with min/max passed as args.
   // oninput (not just onchange) ensures realtime validation as user types.
-  return `<input type="number" class="editable-input${editedCls}" data-field="${fieldId}"
+  return `<input type="number" class="editable-input${cssClass}" data-field="${fieldId}"
     value="${displayVal}" step="${step}"
     oninput="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})"
     onchange="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})">`;
 }
 
 window._handleEditChange = function(fieldId, input, min, max, originalValue) {
+  const rawVal = input.value;
+  // Always preserve what user typed, even if invalid (so it survives re-renders)
+  inputDraftValues[fieldId] = rawVal;
   // _validateInput adds/removes .invalid based on range
   if (!_validateInput(input, min, max)) {
     // Out of range: drop from pendingEdits (don't stash invalid values)
+    // But keep in inputDraftValues so user sees what they typed
     delete pendingEdits[fieldId];
+    input.classList.remove('edited');  // can't be both invalid and edited
     return;
   }
-  const newVal = parseFloat(input.value);
+  const newVal = parseFloat(rawVal);
   if (newVal === originalValue) {
     delete pendingEdits[fieldId];
     input.classList.remove('edited');
