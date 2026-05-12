@@ -1506,6 +1506,13 @@
           <option value="">Todas las strategies</option>
           <option value="theta_harvest">theta_harvest</option>
         </select>
+        <select id="pos-filter-risk" class="pos-filter">
+          <option value="">Todos los risk levels</option>
+          <option value="VERY_LOW">VERY_LOW</option>
+          <option value="LOW">LOW</option>
+          <option value="MID">MID</option>
+          <option value="NO_TRADE">NO_TRADE</option>
+        </select>
         <span class="pos-count" id="pos-count">— positions</span>
       </div>
 
@@ -3789,6 +3796,7 @@ let posSortKey = 'eod';
 let posSortDir = 'asc';
 let posFilterTicker = '';
 let posFilterStrategy = '';
+let posFilterRisk = '';
 
 function _parseAutoCloseEt(s) {
   if (!s || typeof s !== 'string') return 15.5;
@@ -3924,11 +3932,16 @@ function updateActivePositions() {
   let filtered = positions.filter(p => {
     if (posFilterTicker && p.ticker !== posFilterTicker) return false;
     if (posFilterStrategy && p.strategy !== posFilterStrategy) return false;
+    if (posFilterRisk && p.risk_level !== posFilterRisk) return false;
     return true;
   });
 
   if (countEl) {
-    countEl.textContent = `${filtered.length} position${filtered.length !== 1 ? 's' : ''}${posFilterTicker ? ` · filter: ${posFilterTicker}` : ''}`;
+    const fparts = [];
+    if (posFilterTicker) fparts.push(posFilterTicker);
+    if (posFilterStrategy) fparts.push(posFilterStrategy);
+    if (posFilterRisk) fparts.push(`risk:${posFilterRisk}`);
+    countEl.textContent = `${filtered.length} position${filtered.length !== 1 ? 's' : ''}${fparts.length ? ` · filter: ${fparts.join(' + ')}` : ''}`;
   }
 
   if (filtered.length === 0) {
@@ -3977,6 +3990,13 @@ function _initPositionsTableHandlers() {
   if (sEl) {
     sEl.addEventListener('change', e => {
       posFilterStrategy = e.target.value;
+      updateActivePositions();
+    });
+  }
+  const rEl = document.getElementById('pos-filter-risk');
+  if (rEl) {
+    rEl.addEventListener('change', e => {
+      posFilterRisk = e.target.value;
       updateActivePositions();
     });
   }
