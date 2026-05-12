@@ -1095,6 +1095,128 @@
     text-transform: none;
     letter-spacing: 0;
   }
+
+  /* ══════════════════════════════════════════
+     RISK MANAGEMENT — Sprint S2.1
+  ══════════════════════════════════════════ */
+  .risk-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+  }
+  .risk-card {
+    background: #0f1419;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .risk-card-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .risk-card-icon { font-size: 1.1rem; }
+  .risk-card-header h3 {
+    margin: 0;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+  .risk-card-status {
+    font-size: 0.65rem;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+  }
+  .risk-card-status.ok      { background: var(--green-bg); color: var(--green); border: 1px solid #2c5e36; }
+  .risk-card-status.warn    { background: var(--yellow-soft); color: var(--yellow); border: 1px solid #6b5b1d; }
+  .risk-card-status.danger  { background: var(--red-bg); color: var(--red); border: 1px solid #6e2020; }
+  .risk-card-status.neutral { background: rgba(139,148,158,.15); color: var(--muted); border: 1px solid var(--border); }
+  .risk-metric {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 6px;
+  }
+  .risk-metric-label {
+    font-size: 0.75rem;
+    color: var(--muted);
+  }
+  .risk-metric-value {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .risk-metric-value.good { color: var(--green); }
+  .risk-metric-value.bad  { color: var(--red); }
+  .risk-metric-value.warn { color: var(--yellow); }
+  .risk-metric-note {
+    font-size: 0.7rem;
+    color: var(--muted);
+    margin: 6px 0 0;
+    line-height: 1.3;
+  }
+  .risk-progress-bar {
+    height: 8px;
+    background: rgba(139,148,158,.15);
+    border-radius: 4px;
+    overflow: hidden;
+    margin: 8px 0 4px;
+  }
+  .risk-progress-fill {
+    height: 100%;
+    background: var(--green);
+    border-radius: 4px;
+    transition: width 0.3s ease;
+  }
+  .risk-progress-fill.warn   { background: var(--yellow); }
+  .risk-progress-fill.danger { background: var(--red); }
+  .risk-breakdown-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .risk-breakdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+  }
+  .risk-breakdown-name {
+    flex: 0 0 90px;
+    color: var(--text);
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .risk-breakdown-bar-wrap {
+    flex: 1;
+    height: 6px;
+    background: rgba(139,148,158,.15);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .risk-breakdown-bar {
+    height: 100%;
+    background: var(--green);
+  }
+  .risk-breakdown-count {
+    font-variant-numeric: tabular-nums;
+    color: var(--muted);
+    flex: 0 0 auto;
+  }
+  @media (max-width: 720px) {
+    .risk-grid { grid-template-columns: 1fr; }
+  }
 </style>
 </head>
 <body>
@@ -1794,6 +1916,113 @@
 </div>
 
 <!-- ══════════════════════════════════════════
+     RISK MANAGEMENT — read-only panel (Sprint S2.1)
+══════════════════════════════════════════ -->
+<div class="section">
+  <div id="risk-management" class="collapsible collapsed">
+    <header class="collapsible-header" onclick="toggleCollapsible('risk-management')">
+      <h2>🛡 Risk Management</h2>
+      <span class="toggle-indicator">▼</span>
+    </header>
+    <div class="collapsible-body">
+
+      <p class="matrix-note" style="margin-bottom: 16px; font-style: italic;">
+        🛡 Read-only · Estado de límites de riesgo y exposición actual
+      </p>
+
+      <div class="risk-grid">
+
+        <!-- Card 1: Daily Loss Cap -->
+        <div class="risk-card" id="risk-card-loss-cap">
+          <div class="risk-card-header">
+            <span class="risk-card-icon">🛑</span>
+            <h3>Daily Loss Cap</h3>
+            <span class="risk-card-status neutral" id="risk-loss-cap-status">—</span>
+          </div>
+          <div class="risk-card-body">
+            <div class="risk-metric">
+              <span class="risk-metric-label">Realized P&amp;L hoy</span>
+              <span class="risk-metric-value" id="risk-loss-realized">—</span>
+            </div>
+            <div class="risk-metric">
+              <span class="risk-metric-label">Cap máximo</span>
+              <span class="risk-metric-value" id="risk-loss-cap-max">—</span>
+            </div>
+            <div class="risk-progress-bar">
+              <div class="risk-progress-fill" id="risk-loss-cap-fill" style="width: 0%;"></div>
+            </div>
+            <p class="risk-metric-note" id="risk-loss-cap-note">—</p>
+          </div>
+        </div>
+
+        <!-- Card 2: Position Slots -->
+        <div class="risk-card" id="risk-card-slots">
+          <div class="risk-card-header">
+            <span class="risk-card-icon">📊</span>
+            <h3>Position Slots</h3>
+            <span class="risk-card-status neutral" id="risk-slots-status">—</span>
+          </div>
+          <div class="risk-card-body">
+            <div class="risk-metric">
+              <span class="risk-metric-label">Abiertas</span>
+              <span class="risk-metric-value" id="risk-slots-open">—</span>
+            </div>
+            <div class="risk-metric">
+              <span class="risk-metric-label">Máximo</span>
+              <span class="risk-metric-value" id="risk-slots-max">—</span>
+            </div>
+            <div class="risk-progress-bar">
+              <div class="risk-progress-fill" id="risk-slots-fill" style="width: 0%;"></div>
+            </div>
+            <p class="risk-metric-note" id="risk-slots-note">—</p>
+          </div>
+        </div>
+
+        <!-- Card 3: Strategy Breakdown -->
+        <div class="risk-card" id="risk-card-breakdown">
+          <div class="risk-card-header">
+            <span class="risk-card-icon">🎯</span>
+            <h3>Strategy Breakdown</h3>
+            <span class="risk-card-status neutral" id="risk-breakdown-status">—</span>
+          </div>
+          <div class="risk-card-body">
+            <div id="risk-breakdown-list" class="risk-breakdown-list">
+              <p class="risk-metric-note" style="margin: 0;">—</p>
+            </div>
+            <p class="risk-metric-note">Distribución de positions por strategy tag</p>
+          </div>
+        </div>
+
+        <!-- Card 4: Capital Deployed -->
+        <div class="risk-card" id="risk-card-capital">
+          <div class="risk-card-header">
+            <span class="risk-card-icon">💰</span>
+            <h3>Capital Deployed</h3>
+            <span class="risk-card-status neutral" id="risk-capital-status">—</span>
+          </div>
+          <div class="risk-card-body">
+            <div class="risk-metric">
+              <span class="risk-metric-label">At risk (max loss)</span>
+              <span class="risk-metric-value" id="risk-capital-deployed">—</span>
+            </div>
+            <div class="risk-metric">
+              <span class="risk-metric-label">Credit cobrado hoy</span>
+              <span class="risk-metric-value" id="risk-capital-credit">—</span>
+            </div>
+            <div class="risk-metric">
+              <span class="risk-metric-label">Unrealized P&amp;L</span>
+              <span class="risk-metric-value" id="risk-capital-unrealized">—</span>
+            </div>
+            <p class="risk-metric-note" id="risk-capital-note">—</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
      PARÁMETROS ESTRATEGIA — read-only panel (Sprint S1)
 ══════════════════════════════════════════ -->
 <div class="section">
@@ -2153,6 +2382,7 @@ function render() {
   updateTrades();
   updateThetaHarvest();
   updateStatusbar();
+  updateRiskManagement();
   updateStrategyMatrices();
 }
 
@@ -3473,6 +3703,132 @@ function updateStrategyMatrices() {
   renderTickerConfig(sp);
   renderDteSchedule(sp);
   renderExitsAdvanced(sp);
+}
+
+// ══════════════════════════════════════════
+// RISK MANAGEMENT — Sprint S2.1
+// ══════════════════════════════════════════
+function updateRiskManagement() {
+  const dlc      = state.daily_loss_cap || {};
+  const cfg      = state.config || {};
+  const positions = state.positions || [];
+  const tpos     = (state.theta && state.theta.positions) || [];
+  const pnlToday = (state.theta && state.theta.pnl_today) || {};
+
+  // ── Card 1: Daily Loss Cap ──
+  const nominalEq = dlc.nominal_equity || 0;
+  const capPct    = dlc.cap || 0;
+  const maxLoss   = Math.abs(nominalEq * capPct / 100);
+  const realized  = dlc.realized || 0;
+  const consumed  = (maxLoss > 0 && realized < 0) ? Math.min(Math.abs(realized) / maxLoss * 100, 100) : 0;
+
+  const realEl = document.getElementById('risk-loss-realized');
+  realEl.textContent = (realized >= 0 ? '+$' : '-$') + Math.abs(realized).toFixed(2);
+  realEl.className = 'risk-metric-value ' + (realized < 0 ? 'bad' : (realized > 0 ? 'good' : ''));
+
+  document.getElementById('risk-loss-cap-max').textContent =
+    '-$' + maxLoss.toFixed(0) + ' (' + capPct.toFixed(1) + '%)';
+
+  const lossFill = document.getElementById('risk-loss-cap-fill');
+  lossFill.style.width = consumed.toFixed(0) + '%';
+  lossFill.className = 'risk-progress-fill' + (consumed > 80 ? ' danger' : (consumed > 50 ? ' warn' : ''));
+
+  const lossStatusEl = document.getElementById('risk-loss-cap-status');
+  if (dlc.hit) {
+    lossStatusEl.textContent = '🛑 HIT';
+    lossStatusEl.className = 'risk-card-status danger';
+  } else if (consumed > 80) {
+    lossStatusEl.textContent = 'CRÍTICO';
+    lossStatusEl.className = 'risk-card-status danger';
+  } else if (consumed > 50) {
+    lossStatusEl.textContent = 'WARN';
+    lossStatusEl.className = 'risk-card-status warn';
+  } else {
+    lossStatusEl.textContent = 'OK';
+    lossStatusEl.className = 'risk-card-status ok';
+  }
+  document.getElementById('risk-loss-cap-note').textContent =
+    'Equity nominal: $' + nominalEq.toLocaleString() +
+    ' · Si realized ≤ -$' + maxLoss.toFixed(0) + ' bot detiene nuevos trades';
+
+  // ── Card 2: Position Slots ──
+  const nOpen   = dlc.n_open != null ? dlc.n_open : positions.length;
+  const maxPos  = cfg.max_positions || 0;
+  const slotsPct = maxPos > 0 ? (nOpen / maxPos * 100) : 0;
+
+  document.getElementById('risk-slots-open').textContent = nOpen;
+  document.getElementById('risk-slots-max').textContent  = maxPos;
+
+  const slotsFill = document.getElementById('risk-slots-fill');
+  slotsFill.style.width = slotsPct.toFixed(0) + '%';
+  slotsFill.className = 'risk-progress-fill' + (slotsPct > 80 ? ' danger' : (slotsPct > 50 ? ' warn' : ''));
+
+  const slotsStatusEl = document.getElementById('risk-slots-status');
+  if (slotsPct > 80)      { slotsStatusEl.textContent = 'CRÍTICO'; slotsStatusEl.className = 'risk-card-status danger'; }
+  else if (slotsPct > 50) { slotsStatusEl.textContent = 'WARN';    slotsStatusEl.className = 'risk-card-status warn'; }
+  else if (nOpen === 0)   { slotsStatusEl.textContent = 'IDLE';    slotsStatusEl.className = 'risk-card-status neutral'; }
+  else                     { slotsStatusEl.textContent = 'OK';      slotsStatusEl.className = 'risk-card-status ok'; }
+  document.getElementById('risk-slots-note').textContent =
+    slotsPct.toFixed(0) + '% utilizado · ' + Math.max(0, maxPos - nOpen) + ' slots libres';
+
+  // ── Card 3: Strategy Breakdown ──
+  const strats = {};
+  positions.forEach(function(p) {
+    const s = (p && p.strategy) || '(untagged)';
+    strats[s] = (strats[s] || 0) + 1;
+  });
+  const total = positions.length;
+  const listEl = document.getElementById('risk-breakdown-list');
+  if (total === 0) {
+    listEl.innerHTML = '<p class="risk-metric-note" style="margin: 0;">Sin positions abiertas</p>';
+  } else {
+    const sorted = Object.entries(strats).sort(function(a, b) { return b[1] - a[1]; });
+    listEl.innerHTML = sorted.map(function(entry) {
+      const s = entry[0], n = entry[1];
+      const pct = (n / total * 100);
+      const cls = (s === '(untagged)' || s === '') ? 'warn' : '';
+      const fillCls = (s === '(untagged)' || s === '') ? ' style="background: var(--yellow);"' : '';
+      return '<div class="risk-breakdown-item">' +
+             '<span class="risk-breakdown-name">' + (s || '(empty)') + '</span>' +
+             '<span class="risk-breakdown-bar-wrap"><span class="risk-breakdown-bar"' + fillCls + ' style="width: ' + pct.toFixed(0) + '%;' + (fillCls ? '' : '') + '"></span></span>' +
+             '<span class="risk-breakdown-count">' + n + ' (' + pct.toFixed(0) + '%)</span>' +
+             '</div>';
+    }).join('');
+  }
+  const breakdownStatusEl = document.getElementById('risk-breakdown-status');
+  const untagged = (strats['(untagged)'] || 0) + (strats[''] || 0);
+  if (untagged > 0) {
+    breakdownStatusEl.textContent = untagged + ' SIN TAG';
+    breakdownStatusEl.className = 'risk-card-status warn';
+  } else if (total === 0) {
+    breakdownStatusEl.textContent = 'IDLE';
+    breakdownStatusEl.className = 'risk-card-status neutral';
+  } else {
+    breakdownStatusEl.textContent = 'OK';
+    breakdownStatusEl.className = 'risk-card-status ok';
+  }
+
+  // ── Card 4: Capital Deployed ──
+  const totalRisk    = tpos.reduce(function(acc, p) { return acc + ((p && p.max_risk) || 0); }, 0);
+  const creditToday  = pnlToday.credit_total || 0;
+  const unrealized   = pnlToday.unrealized_today != null ? pnlToday.unrealized_today : (dlc.unrealized || 0);
+  const capPctEq     = nominalEq > 0 ? (totalRisk / nominalEq * 100) : 0;
+
+  document.getElementById('risk-capital-deployed').textContent = '$' + totalRisk.toFixed(0);
+  document.getElementById('risk-capital-credit').textContent   = '$' + creditToday.toFixed(2);
+
+  const unrealEl = document.getElementById('risk-capital-unrealized');
+  unrealEl.textContent = (unrealized >= 0 ? '+$' : '-$') + Math.abs(unrealized).toFixed(2);
+  unrealEl.className = 'risk-metric-value ' + (unrealized > 0 ? 'good' : (unrealized < 0 ? 'bad' : ''));
+
+  document.getElementById('risk-capital-note').textContent =
+    capPctEq.toFixed(2) + '% del equity · ' + tpos.length + ' spreads activos';
+
+  const capStatusEl = document.getElementById('risk-capital-status');
+  if (capPctEq > 50)        { capStatusEl.textContent = 'HEAVY';  capStatusEl.className = 'risk-card-status danger'; }
+  else if (capPctEq > 20)   { capStatusEl.textContent = 'MED';    capStatusEl.className = 'risk-card-status warn'; }
+  else if (totalRisk === 0) { capStatusEl.textContent = 'IDLE';   capStatusEl.className = 'risk-card-status neutral'; }
+  else                      { capStatusEl.textContent = 'LIGHT';  capStatusEl.className = 'risk-card-status ok'; }
 }
 
 // ══════════════════════════════════════════
