@@ -1303,6 +1303,107 @@
   .pos-risk-tag.danger { background: var(--red-soft); color: var(--red); }
   .pos-empty { color: var(--muted); font-size: 0.7rem; }
   .pos-credit { font-family: ui-monospace, monospace; font-size: 0.68rem; }
+
+  /* ══════════════════════════════════════════
+     EDIT MODE — Sprint S2.3
+  ══════════════════════════════════════════ */
+  .edit-mode-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin: 12px 16px;
+    font-size: 0.85rem;
+  }
+  .edit-mode-bar.active {
+    background: rgba(210, 153, 34, 0.08);
+    border-color: var(--yellow);
+  }
+  .edit-mode-toggle {
+    background: #1c2333;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 6px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    font-weight: 600;
+  }
+  .edit-mode-toggle:hover { background: #2a3343; border-color: #58a6ff; }
+  .edit-mode-bar.active .edit-mode-toggle {
+    background: var(--yellow);
+    color: #0d1117;
+    border-color: var(--yellow);
+  }
+  .edit-mode-status {
+    color: var(--muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .edit-mode-bar.active .edit-mode-status {
+    color: var(--yellow);
+    font-weight: 700;
+  }
+  .edit-mode-toolbar {
+    margin-left: auto;
+    display: flex;
+    gap: 8px;
+  }
+  .edit-btn {
+    padding: 5px 12px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    font-family: inherit;
+    border: 1px solid var(--border);
+  }
+  .edit-btn-primary {
+    background: #58a6ff;
+    color: #0d1117;
+    border-color: #58a6ff;
+    font-weight: 600;
+  }
+  .edit-btn-primary:hover { background: #79b8ff; }
+  .edit-btn-secondary {
+    background: #1c2333;
+    color: var(--text);
+  }
+  .edit-btn-secondary:hover { background: #2a3343; }
+  .edit-btn-disabled {
+    background: #1c2333;
+    color: var(--muted);
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+  .editable-input {
+    background: #0f1419;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 3px 8px;
+    border-radius: 3px;
+    font-size: 0.75rem;
+    font-family: ui-monospace, monospace;
+    width: 90px;
+    text-align: right;
+  }
+  .editable-input:focus {
+    outline: none;
+    border-color: #58a6ff;
+    background: #1c2333;
+  }
+  .editable-input.invalid {
+    border-color: var(--red);
+    background: rgba(248, 81, 73, 0.08);
+  }
+  .editable-input.edited {
+    border-color: var(--yellow);
+    background: rgba(210, 153, 34, 0.06);
+  }
 </style>
 </head>
 <body>
@@ -1368,6 +1469,19 @@
     <h3>Spreads Abiertos</h3>
     <div class="value blue" id="kpi-spreads">0</div>
     <div class="sub" id="kpi-spreads-sub">posiciones abiertas</div>
+  </div>
+</div>
+
+<!-- Sprint S2.3: Edit Mode Toggle (global, preview-only — Sprint S3 enables backend persist) -->
+<div class="edit-mode-bar" id="edit-mode-bar">
+  <button id="edit-mode-toggle" class="edit-mode-toggle" type="button">
+    ✏️ <span id="edit-mode-label">Edit Mode</span>
+  </button>
+  <span id="edit-mode-status" class="edit-mode-status">read-only</span>
+  <div class="edit-mode-toolbar" id="edit-mode-toolbar" style="display: none;">
+    <button id="edit-mode-discard" class="edit-btn edit-btn-secondary" type="button">↺ Discard</button>
+    <button id="edit-mode-export" class="edit-btn edit-btn-primary" type="button">📋 Export JSON</button>
+    <button id="edit-mode-save" class="edit-btn edit-btn-disabled" type="button" disabled title="Sprint S3 enables backend persistence">💾 Save (Sprint S3)</button>
   </div>
 </div>
 
@@ -4031,6 +4145,108 @@ if (document.readyState === 'loading') {
 }
 
 // ══════════════════════════════════════════
+// EDIT MODE — Sprint S2.3
+// ══════════════════════════════════════════
+let isEditMode = false;
+let pendingEdits = {};
+
+function setEditMode(enabled) {
+  isEditMode = enabled;
+  const bar = document.getElementById('edit-mode-bar');
+  const label = document.getElementById('edit-mode-label');
+  const status = document.getElementById('edit-mode-status');
+  const toolbar = document.getElementById('edit-mode-toolbar');
+
+  if (enabled) {
+    bar.classList.add('active');
+    label.textContent = 'Edit Mode ON';
+    status.textContent = 'editing — changes NOT persisted (Sprint S3)';
+    toolbar.style.display = 'flex';
+  } else {
+    bar.classList.remove('active');
+    label.textContent = 'Edit Mode';
+    status.textContent = 'read-only';
+    toolbar.style.display = 'none';
+    pendingEdits = {};
+  }
+
+  if (typeof updateRiskManagement === 'function') updateRiskManagement();
+}
+
+function discardEdits() {
+  pendingEdits = {};
+  setEditMode(false);
+}
+
+function exportEditsJson() {
+  const keys = Object.keys(pendingEdits);
+  if (keys.length === 0) {
+    toast('No pending changes to export.', 'warn', 2500);
+    return;
+  }
+  const json = JSON.stringify(pendingEdits, null, 2);
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(json).then(() => {
+      toast(`Exported ${keys.length} change${keys.length !== 1 ? 's' : ''} to clipboard`, 'success', 3000);
+    }).catch(() => {
+      window.prompt('Copy this JSON:', json);
+    });
+  } else {
+    window.prompt('Copy this JSON:', json);
+  }
+}
+
+function _validateInput(input, min, max) {
+  const val = parseFloat(input.value);
+  if (isNaN(val) || val < min || val > max) {
+    input.classList.add('invalid');
+    return false;
+  }
+  input.classList.remove('invalid');
+  return true;
+}
+
+function _renderEditableNumber(currentValue, fieldId, min, max, step) {
+  step = step || 'any';
+  const pendingVal = pendingEdits[fieldId];
+  const displayVal = pendingVal != null ? pendingVal : currentValue;
+  const editedCls = pendingVal != null ? ' edited' : '';
+  return `<input type="number" class="editable-input${editedCls}" data-field="${fieldId}"
+    value="${displayVal}" min="${min}" max="${max}" step="${step}"
+    onchange="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})">`;
+}
+
+window._handleEditChange = function(fieldId, input, min, max, originalValue) {
+  if (!_validateInput(input, min, max)) {
+    return;
+  }
+  const newVal = parseFloat(input.value);
+  if (newVal === originalValue) {
+    delete pendingEdits[fieldId];
+    input.classList.remove('edited');
+  } else {
+    pendingEdits[fieldId] = newVal;
+    input.classList.add('edited');
+  }
+};
+
+function _initEditModeHandlers() {
+  const toggle = document.getElementById('edit-mode-toggle');
+  const discard = document.getElementById('edit-mode-discard');
+  const exportBtn = document.getElementById('edit-mode-export');
+
+  if (toggle) toggle.addEventListener('click', () => setEditMode(!isEditMode));
+  if (discard) discard.addEventListener('click', discardEdits);
+  if (exportBtn) exportBtn.addEventListener('click', exportEditsJson);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initEditModeHandlers);
+} else {
+  _initEditModeHandlers();
+}
+
+// ══════════════════════════════════════════
 // RISK MANAGEMENT — Sprint S2.1
 // ══════════════════════════════════════════
 function updateRiskManagement() {
@@ -4052,8 +4268,16 @@ function updateRiskManagement() {
   realEl.textContent = (realized >= 0 ? '+$' : '-$') + Math.abs(realized).toFixed(2);
   realEl.className = 'risk-metric-value ' + (realized < 0 ? 'bad' : (realized > 0 ? 'good' : ''));
 
-  document.getElementById('risk-loss-cap-max').textContent =
-    '-$' + maxLoss.toFixed(0) + ' (' + capPct.toFixed(1) + '%)';
+  // Sprint S2.3: editable in edit mode (cap_pct only; maxLoss is derived)
+  const card1El = document.getElementById('risk-loss-cap-max');
+  if (typeof isEditMode !== 'undefined' && isEditMode) {
+    const editedPct = pendingEdits['config.daily_loss_cap_pct'];
+    const displayPct = editedPct !== undefined ? editedPct : capPct;
+    card1El.innerHTML = '-$' + maxLoss.toFixed(0) + ' (' +
+      _renderEditableNumber(displayPct.toFixed(1), 'config.daily_loss_cap_pct', -10, 0, 0.1) + '%)';
+  } else {
+    card1El.textContent = '-$' + maxLoss.toFixed(0) + ' (' + capPct.toFixed(1) + '%)';
+  }
 
   const lossFill = document.getElementById('risk-loss-cap-fill');
   lossFill.style.width = consumed.toFixed(0) + '%';
@@ -4083,7 +4307,15 @@ function updateRiskManagement() {
   const slotsPct = maxPos > 0 ? (nOpen / maxPos * 100) : 0;
 
   document.getElementById('risk-slots-open').textContent = nOpen;
-  document.getElementById('risk-slots-max').textContent  = maxPos;
+  // Sprint S2.3: editable in edit mode
+  const card2El = document.getElementById('risk-slots-max');
+  if (typeof isEditMode !== 'undefined' && isEditMode) {
+    const editedMax = pendingEdits['config.max_positions'];
+    const displayMax = editedMax !== undefined ? editedMax : maxPos;
+    card2El.innerHTML = _renderEditableNumber(displayMax, 'config.max_positions', 1, 200, 1);
+  } else {
+    card2El.textContent = maxPos;
+  }
 
   const slotsFill = document.getElementById('risk-slots-fill');
   slotsFill.style.width = slotsPct.toFixed(0) + '%';
