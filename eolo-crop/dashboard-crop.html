@@ -1397,8 +1397,11 @@
     background: #1c2333;
   }
   .editable-input.invalid {
-    border-color: var(--red);
-    background: rgba(248, 81, 73, 0.08);
+    border-color: #f85149 !important;
+    border-width: 2px;
+    background: rgba(248, 81, 73, 0.15) !important;
+    color: #f85149 !important;
+    font-weight: 700;
   }
   .editable-input.edited {
     border-color: var(--yellow);
@@ -4211,13 +4214,20 @@ function _renderEditableNumber(currentValue, fieldId, min, max, step) {
   const pendingVal = pendingEdits[fieldId];
   const displayVal = pendingVal != null ? pendingVal : currentValue;
   const editedCls = pendingVal != null ? ' edited' : '';
+  // Note: min/max NOT in HTML attrs — browser would auto-revert out-of-range values
+  // before JS could mark .invalid. JS validates with min/max passed as args.
+  // oninput (not just onchange) ensures realtime validation as user types.
   return `<input type="number" class="editable-input${editedCls}" data-field="${fieldId}"
-    value="${displayVal}" min="${min}" max="${max}" step="${step}"
+    value="${displayVal}" step="${step}"
+    oninput="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})"
     onchange="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})">`;
 }
 
 window._handleEditChange = function(fieldId, input, min, max, originalValue) {
+  // _validateInput adds/removes .invalid based on range
   if (!_validateInput(input, min, max)) {
+    // Out of range: drop from pendingEdits (don't stash invalid values)
+    delete pendingEdits[fieldId];
     return;
   }
   const newVal = parseFloat(input.value);
