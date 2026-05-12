@@ -49,3 +49,6 @@ backups/
 /EOLO_CONTEXT_FOR_NEW_CHAT.md
 /EOLO_HANDOFF.md
 /EOLO_*.md
+
+# ── Analysis outputs (regenerable work product, can include large CSVs) ──
+analysis/outputs/
