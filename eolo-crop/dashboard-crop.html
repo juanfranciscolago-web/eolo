@@ -3711,7 +3711,8 @@ function updateStrategyMatrices() {
 function updateRiskManagement() {
   const dlc      = state.daily_loss_cap || {};
   const cfg      = state.config || {};
-  const positions = state.positions || [];
+  // S2.1 fix: theta.positions es la fuente confiable (state.positions top-level está vacío)
+  const positions = (state.theta && state.theta.positions) || [];
   const tpos     = (state.theta && state.theta.positions) || [];
   const pnlToday = (state.theta && state.theta.pnl_today) || {};
 
