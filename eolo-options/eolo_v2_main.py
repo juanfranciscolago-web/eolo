@@ -1504,6 +1504,21 @@ class EoloV2:
                     dte_slot    = (pos.get("dte_slot") or pos.get("dte") or "?")
                     spread_type = pos.get("spread_type", "") or ""
                     exit_reason = exit_reason or "UNKNOWN"
+                    # TODO(F2.2.b — Pure Isolation V2):
+                    # Theta harvest está DESHABILITADO (strategies_enabled.theta_harvest=False
+                    # + claude_theta_harvest_enabled=False en Firestore, 2026-05-12).
+                    #
+                    # Backlog: eliminar código theta harvest completo del V2 codebase
+                    # (similar a F2.x cleanup de CROP). Files involved:
+                    #   - eolo_v2_main.py: _theta_monitor_loop (líneas ~1380-1514)
+                    #   - eolo_v2_main.py: _theta_positions, _run_theta_harvest, _theta_*
+                    #   - eolo-options/strategies/theta_harvest.py (si existe)
+                    #   - eolo-options/theta_backtest/ (entire folder)
+                    #
+                    # Bug conocido en este código (a corregir si NO se elimina):
+                    # close_decision NO incluye "strategy" → execute_decision usa default
+                    # strategy="" → rompe Pure Isolation (opener=theta_harvest ≠ closer="").
+                    # Fix: agregar "strategy": pos.get("strategy", "theta_harvest") al dict.
                     close_decision = {
                         "action":       "CLOSE_SPREAD",
                         "ticker":       pos_ticker,

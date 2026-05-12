@@ -260,6 +260,31 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
     return order_id
 
 
+def _resolve_close_isolation_v2(opener_strategy: str, closer_strategy: str
+                                 ) -> tuple[bool, str]:
+    """
+    Pure Isolation V2 gate (simple).
+
+    Reglas:
+      • opener == closer (no vacío)  →  ALLOW (log_strategy = opener)
+      • opener != closer             →  REJECT
+
+    Nota: los safety nets de V2 (`close_all_positions`, `_auto_close_loop`,
+    /daily-open-reset) preservan el opener via `pos.get("strategy")`, así que
+    auto-pasan el gate. Decisiones Claude (`claude_high`/`claude_medium`/
+    `claude_bot`) y cualquier otro SELL_TO_CLOSE cross-strategy quedan
+    rechazadas.
+
+    Para posiciones sin match (orphan closes) este helper no se invoca →
+    pass-through legacy.
+
+    Returns (allowed, log_strategy).
+    """
+    if opener_strategy and opener_strategy == closer_strategy:
+        return True, opener_strategy
+    return False, closer_strategy
+
+
 class OptionsTrader:
     """
     Ejecuta y gestiona órdenes de opciones via Schwab REST API.
@@ -793,6 +818,17 @@ class OptionsTrader:
                 for p in self._paper_positions:
                     if (p["ticker"] == ticker and p["expiration"] == expiration
                         and p["strike"] == strike and p["option_type"] == opt_type):
+                        # Pure Isolation gate
+                        opener_strategy = p.get("strategy", "")
+                        allowed, log_strategy = _resolve_close_isolation_v2(opener_strategy, strategy)
+                        if not allowed:
+                            logger.warning(
+                                f"[ISOLATION] SELL_TO_CLOSE PAPER {symbol} bloqueado: "
+                                f"opener={opener_strategy!r} ≠ closer={strategy!r}."
+                            )
+                            return None
+                        strategy = log_strategy   # preserva atribución al opener
+
                         entry   = p.get("entry_price", 0) or 0
                         if limit is not None:
                             current = limit
@@ -875,8 +911,21 @@ class OptionsTrader:
             entry_price_override: Optional[float] = None
             opened_at_ts:         Optional[float] = None
             if instruction == "SELL_TO_CLOSE":
-                opened = self._open_positions.pop(symbol, None)
+                opened = self._open_positions.get(symbol)
                 if opened:
+                    # Pure Isolation gate
+                    opener_strategy = opened.get("strategy", "")
+                    allowed, log_strategy = _resolve_close_isolation_v2(opener_strategy, strategy)
+                    if not allowed:
+                        logger.warning(
+                            f"[ISOLATION] SELL_TO_CLOSE LIVE {symbol} bloqueado: "
+                            f"opener={opener_strategy!r} ≠ closer={strategy!r}."
+                        )
+                        return None
+                    strategy = log_strategy
+                    # Solo POP si pasamos el gate (no mutar estado si reject)
+                    self._open_positions.pop(symbol, None)
+
                     entry   = opened.get("entry_price", 0) or 0
                     if limit is not None:
                         current = limit

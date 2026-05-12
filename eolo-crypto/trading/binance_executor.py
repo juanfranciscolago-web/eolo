@@ -91,6 +91,46 @@ def _round_step(value: float, step: float) -> float:
     return float((d_value // d_step) * d_step)
 
 
+# ── Pure Isolation gate ──────────────────────────────────
+
+# Safety nets que pueden cerrar cualquier posición preservando atribución
+# al opener. Cualquier otra strategy != opener queda rechazada.
+SAFETY_NETS_CRYPTO = {"auto_close", "manual_command"}
+
+
+def _resolve_close_isolation_crypto(opener_strategy: str, closer_strategy: str,
+                                     reason: str = ""
+                                     ) -> tuple[bool, str, str]:
+    """
+    Pure Isolation Crypto gate.
+
+    Reglas:
+      • opener == closer (no vacío) → ALLOW (log_strategy=opener, reason inalterada)
+      • closer ∈ SAFETY_NETS_CRYPTO → ALLOW
+          - opener conocido → log_strategy=opener, reason=f"[{closer}] {reason}"
+          - opener vacío (legacy) → log_strategy="LEGACY", reason=f"[{closer}] {reason}"
+      • else → REJECT
+
+    Safety nets en Crypto:
+      - `auto_close` (EOD close cuando time ≥ sch.auto_close_et)
+      - `manual_command` (dashboard close manual)
+
+    `consensus:<strat>` y `claude_bot` son strategies primarias, NO safety nets:
+    quedan sujetas al check estricto opener==closer.
+
+    Returns (allowed, log_strategy, log_reason).
+    """
+    if opener_strategy and opener_strategy == closer_strategy:
+        return True, opener_strategy, reason
+
+    if closer_strategy in SAFETY_NETS_CRYPTO:
+        log_strategy = opener_strategy if opener_strategy else "LEGACY"
+        log_reason   = f"[{closer_strategy}] {reason}" if reason else f"[{closer_strategy}]"
+        return True, log_strategy, log_reason
+
+    return False, closer_strategy, reason
+
+
 # ── Executor ──────────────────────────────────────────────
 
 class BinanceExecutor:
@@ -393,6 +433,20 @@ class BinanceExecutor:
         if not position:
             logger.debug(f"[EXEC] No hay posición en {symbol} — nada que cerrar")
             return None
+
+        # Pure Isolation gate
+        opener_strategy = position.get("strategy", "")
+        allowed, log_strategy, log_reason = _resolve_close_isolation_crypto(
+            opener_strategy, strategy, reason
+        )
+        if not allowed:
+            logger.warning(
+                f"[ISOLATION] close_long {symbol} bloqueado: "
+                f"opener={opener_strategy!r} ≠ closer={strategy!r}."
+            )
+            return None
+        strategy = log_strategy
+        reason   = log_reason   # preserva info del safety net
 
         qty = position["qty"]
         # Quantize por si el asset acumula dust

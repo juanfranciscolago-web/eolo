@@ -49,6 +49,11 @@ ALL_TICKERS       = TICKERS_EMA_GAP + TICKERS_LEVERAGED
 positions     = {t: None  for t in ALL_TICKERS}
 entry_prices  = {t: None  for t in ALL_TICKERS}  # precio de entrada
 entry_open_ts = {t: None  for t in ALL_TICKERS}  # epoch seconds al BUY/SELL_SHORT
+entry_strategies = {t: None for t in ALL_TICKERS}  # strategy que abrió la posición (Pure Isolation)
+
+# Pure Isolation safety nets — closers que pueden cerrar cualquier posición
+# preservando la atribución al opener. Cualquier otra strategy != opener es rechazada.
+SAFETY_NETS = {"RISK_WATCHDOG", "CLOSE_ALL"}
 
 # ── Short selling flag ─────────────────────────────────────
 # Controlado desde Firestore (eolo-config/settings.allow_short_selling).
@@ -76,6 +81,7 @@ def save_positions():
             "positions":     {k: v for k, v in positions.items()},
             "entry_prices":  {k: v for k, v in entry_prices.items()},
             "entry_open_ts": {k: v for k, v in entry_open_ts.items()},
+            "entry_strategies": {k: v for k, v in entry_strategies.items()},
             "updated_at":    datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         })
         logger.debug(f"Positions saved to Firestore: {[t for t,v in positions.items() if v]}")
@@ -101,6 +107,7 @@ def load_positions():
         saved_pos     = data.get("positions",     {})
         saved_entry   = data.get("entry_prices",  {})
         saved_open_ts = data.get("entry_open_ts", {})
+        saved_strats  = data.get("entry_strategies", {})
         updated_at    = data.get("updated_at",    "unknown")
 
         # Aplicar solo los tickers que el bot conoce
@@ -111,6 +118,8 @@ def load_positions():
                 entry_prices[t]  = saved_entry[t]
             if t in saved_open_ts:
                 entry_open_ts[t] = saved_open_ts[t]
+            if t in saved_strats:
+                entry_strategies[t] = saved_strats[t]
 
         open_pos = [f"{t}({v})" for t, v in positions.items() if v in ("LONG", "SHORT")]
         logger.info(f"✅ Positions loaded from Firestore (saved at {updated_at})")
@@ -329,6 +338,37 @@ def _log_trade(
     logger.info(f"[{mode}] {action} {shares}x {ticker} @ ${price} (${total_usd}){pnl_part}{tf_part}{sess_part} [{strategy}] ✓")
 
 
+def _resolve_close_isolation(ticker: str, signal_strategy: str, reason: str
+                              ) -> tuple[bool, str, str]:
+    """
+    Pure Isolation gate para cierres (SELL closing LONG, BUY_TO_COVER closing SHORT).
+
+    Reglas:
+      • signal_strategy == opener_strategy  →  ALLOW  (log_strategy = signal_strategy)
+      • signal_strategy ∈ SAFETY_NETS       →  ALLOW
+          - opener conocido → log_strategy = opener_strategy
+          - opener None (legacy) → log_strategy = "LEGACY"
+          - reason se prefija con [{signal_strategy}]
+      • Cualquier otro caso → REJECT
+
+    Returns (allowed, log_strategy, log_reason).
+    """
+    opener_strategy = entry_strategies.get(ticker)
+
+    # Caso 1: misma strategy abre y cierra
+    if opener_strategy and signal_strategy == opener_strategy:
+        return True, signal_strategy, reason
+
+    # Caso 2: safety net (incluido el path legacy con opener=None)
+    if signal_strategy in SAFETY_NETS:
+        log_strategy = opener_strategy if opener_strategy else "LEGACY"
+        log_reason   = f"[{signal_strategy}] {reason}" if reason else f"[{signal_strategy}]"
+        return True, log_strategy, log_reason
+
+    # Caso 3: cross-strategy no autorizado → reject
+    return False, signal_strategy, reason
+
+
 def _place_live_order(action: str, ticker: str, shares: int):
     """Places a real market order via Schwab Trader API.
 
@@ -429,13 +469,24 @@ def execute(result: dict):
     # ── BUY ───────────────────────────────────────────────
     if signal == "BUY":
         if current == "SHORT":
+            # Pure Isolation gate
+            allowed, log_strategy, log_reason = _resolve_close_isolation(ticker, strategy, reason)
+            if not allowed:
+                opener = entry_strategies.get(ticker)
+                logger.warning(
+                    f"[ISOLATION] BUY_TO_COVER {ticker} bloqueado: "
+                    f"opener={opener!r} ≠ closer={strategy!r}. "
+                    f"Solo {opener or '<safety nets>'} o safety nets pueden cerrar."
+                )
+                return
+
             # Cerrar short (BUY TO COVER) → FLAT
             entry     = entry_prices.get(ticker)
             opened_at = entry_open_ts.get(ticker)
             pnl       = round((entry - price) * shares, 2) if entry else None  # ganancia si bajó
             pnl_str   = f"${pnl:+.2f}" if pnl is not None else "—"
-            _log_trade("BUY_TO_COVER", ticker, shares, price, strategy, pnl_usd=pnl,
-                       timeframe=tf_min, reason=reason,
+            _log_trade("BUY_TO_COVER", ticker, shares, price, log_strategy, pnl_usd=pnl,
+                       timeframe=tf_min, reason=log_reason,
                        macro_feeds=macro, expected_price=price, fill_price=price,
                        entry_price_override=entry, opened_at_ts=opened_at)
             if not PAPER_TRADING:
@@ -443,9 +494,10 @@ def execute(result: dict):
             positions[ticker]     = None
             entry_prices[ticker]  = None
             entry_open_ts[ticker] = None
+            entry_strategies[ticker] = None   # clear opener
             save_positions()
             _send_telegram(
-                f"🟡 <b>COVER SHORT — {strategy}</b>\n"
+                f"🟡 <b>COVER SHORT — {log_strategy}</b>\n"
                 f"📈 Ticker   : <b>{ticker}</b>\n"
                 f"💵 Precio   : <b>${price}</b>\n"
                 f"📦 Acciones : {shares} (≈ ${total:.0f})\n"
@@ -464,6 +516,7 @@ def execute(result: dict):
             positions[ticker]     = "LONG"
             entry_prices[ticker]  = price
             entry_open_ts[ticker] = time.time()
+            entry_strategies[ticker] = strategy   # track opener para Pure Isolation
             save_positions()
             _send_telegram(
                 f"🟢 <b>SEÑAL BUY — {strategy}</b>\n"
@@ -477,13 +530,24 @@ def execute(result: dict):
     # ── SELL ──────────────────────────────────────────────
     elif signal == "SELL":
         if current == "LONG":
+            # Pure Isolation gate
+            allowed, log_strategy, log_reason = _resolve_close_isolation(ticker, strategy, reason)
+            if not allowed:
+                opener = entry_strategies.get(ticker)
+                logger.warning(
+                    f"[ISOLATION] SELL {ticker} bloqueado: "
+                    f"opener={opener!r} ≠ closer={strategy!r}. "
+                    f"Solo {opener or '<safety nets>'} o safety nets pueden cerrar."
+                )
+                return
+
             # Cerrar LONG → FLAT
             entry     = entry_prices.get(ticker)
             opened_at = entry_open_ts.get(ticker)
             pnl       = round((price - entry) * shares, 2) if entry else None
             pnl_str   = f"${pnl:+.2f}" if pnl is not None else "—"
-            _log_trade("SELL", ticker, shares, price, strategy, pnl_usd=pnl,
-                       timeframe=tf_min, reason=reason,
+            _log_trade("SELL", ticker, shares, price, log_strategy, pnl_usd=pnl,
+                       timeframe=tf_min, reason=log_reason,
                        macro_feeds=macro, expected_price=price, fill_price=price,
                        entry_price_override=entry, opened_at_ts=opened_at)
             if not PAPER_TRADING:
@@ -491,9 +555,10 @@ def execute(result: dict):
             positions[ticker]     = None
             entry_prices[ticker]  = None
             entry_open_ts[ticker] = None
+            entry_strategies[ticker] = None   # clear opener
             save_positions()
             _send_telegram(
-                f"🔴 <b>SEÑAL SELL — {strategy}</b>\n"
+                f"🔴 <b>SEÑAL SELL — {log_strategy}</b>\n"
                 f"📉 Ticker   : <b>{ticker}</b>\n"
                 f"💵 Precio   : <b>${price}</b>\n"
                 f"📦 Acciones : {shares} (≈ ${total:.0f})\n"
@@ -512,6 +577,7 @@ def execute(result: dict):
             positions[ticker]     = "SHORT"
             entry_prices[ticker]  = price
             entry_open_ts[ticker] = time.time()
+            entry_strategies[ticker] = strategy   # track opener para Pure Isolation
             save_positions()
             _send_telegram(
                 f"🔻 <b>SEÑAL SHORT — {strategy}</b>\n"
