@@ -917,6 +917,184 @@
     header { padding: 12px 16px; }
     .grid, .grid-2col, .section { padding-left: 16px; padding-right: 16px; }
   }
+
+  /* ══════════════════════════════════════════
+     PARAMETROS ESTRATEGIA — Sprint S1
+  ══════════════════════════════════════════ */
+  .collapsible-header {
+    cursor: pointer;
+    user-select: none;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 16px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px 6px 0 0;
+  }
+  .collapsible-header:hover { border-color: var(--border-strong); }
+  .collapsible-header h2 { margin: 0; font-size: 1.1rem; color: var(--text); }
+  .toggle-indicator {
+    transition: transform 0.2s;
+    color: var(--muted);
+    font-size: 0.9rem;
+  }
+  .collapsible.collapsed .toggle-indicator { transform: rotate(-90deg); }
+  .collapsible.collapsed .collapsible-body { display: none; }
+  .collapsible-body {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-top: none;
+    border-radius: 0 0 6px 6px;
+    padding: 16px;
+  }
+
+  .matrix-block { margin-bottom: 20px; }
+  .matrix-block:last-child { margin-bottom: 0; }
+  .matrix-block h3 {
+    font-size: 0.95rem;
+    margin-bottom: 8px;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .matrix-note {
+    font-size: 0.8rem;
+    color: var(--muted);
+    margin-bottom: 10px;
+  }
+
+  .matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .matrix-table th, .matrix-table td {
+    padding: 6px 10px;
+    text-align: right;
+    border-bottom: 1px solid var(--border);
+  }
+  .matrix-table th {
+    background: rgba(48, 54, 61, 0.4);
+    color: var(--muted);
+    font-weight: 600;
+    text-align: center;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 0.04em;
+  }
+  .matrix-table th:first-child, .matrix-table td:first-child {
+    text-align: left;
+    color: var(--text);
+  }
+  .matrix-table tr.active {
+    background: var(--yellow-soft);
+    font-weight: 600;
+  }
+  .matrix-table tr.active td:first-child::before {
+    content: "▶ ";
+    color: var(--yellow);
+  }
+
+  .vix-bin-0 td, .vix-bin-1 td, .vix-bin-2 td { color: var(--text); }
+  .vix-bin-3 td { color: var(--yellow); }
+  .vix-bin-4 td { color: var(--orange); }
+  .vix-bin-5 td { color: var(--red); }
+  .matrix-table tr.active td { color: var(--yellow) !important; }
+
+  .matrix-coming-soon { opacity: 0.45; padding: 8px 0; }
+  .matrix-coming-soon h3 { color: var(--muted); }
+  .matrix-badge {
+    font-size: 0.7rem;
+    padding: 2px 8px;
+    background: rgba(48, 54, 61, 0.6);
+    color: var(--muted);
+    border-radius: 4px;
+    margin-left: 8px;
+    border: 1px solid var(--border);
+  }
+
+  /* Risk level color hints (S1.3) */
+  .matrix-table tr.risk-very_low td:first-child { color: var(--blue); }
+  .matrix-table tr.risk-low td:first-child { color: var(--cyan); }
+  .matrix-table tr.risk-mid td:first-child { color: var(--yellow); }
+  .matrix-table tr.risk-no_trade td:first-child { color: var(--muted); opacity: 0.6; }
+  .matrix-table td.muted {
+    color: var(--muted);
+    font-size: 0.85em;
+    text-align: left;
+    font-style: italic;
+  }
+
+  /* DTE Schedule (S1.4) */
+  .matrix-table td.dte-enabled {
+    color: var(--green);
+    font-weight: 600;
+    text-align: center;
+  }
+  .matrix-table td.dte-disabled {
+    color: var(--muted);
+    opacity: 0.4;
+    text-align: center;
+  }
+  .matrix-table tr.weekend td:first-child {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .matrix-table tr.weekend td.dte-enabled,
+  .matrix-table tr.weekend td.dte-disabled {
+    opacity: 0.5;
+  }
+
+  /* Exits Advanced (S1.5) */
+  .exits-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .exits-group {
+    background: rgba(48, 54, 61, 0.2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px;
+  }
+  .exits-group h4 {
+    margin: 0 0 10px 0;
+    font-size: 0.8rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 600;
+  }
+  .exit-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(48, 54, 61, 0.4);
+  }
+  .exit-card:last-child { border-bottom: none; }
+  .exit-label {
+    font-size: 0.85rem;
+    color: var(--text);
+  }
+  .exit-value {
+    font-family: 'Courier New', monospace;
+    font-size: 0.85rem;
+    color: var(--yellow);
+    font-variant-numeric: tabular-nums;
+  }
+  .badge-inline {
+    font-size: 0.65rem;
+    padding: 1px 6px;
+    background: rgba(48, 54, 61, 0.6);
+    color: var(--muted);
+    border-radius: 3px;
+    font-weight: normal;
+    text-transform: none;
+    letter-spacing: 0;
+  }
 </style>
 </head>
 <body>
@@ -1615,6 +1793,189 @@
   <span style="margin-left:auto">EOLO Theta Harvest · <span id="clock">--:--:--</span> ET</span>
 </div>
 
+<!-- ══════════════════════════════════════════
+     PARÁMETROS ESTRATEGIA — read-only panel (Sprint S1)
+══════════════════════════════════════════ -->
+<div class="section">
+  <div id="strategy-matrices" class="collapsible collapsed">
+    <header class="collapsible-header" onclick="toggleCollapsible('strategy-matrices')">
+      <h2>📊 Parámetros Estrategia</h2>
+      <span class="toggle-indicator">▼</span>
+    </header>
+    <div class="collapsible-body">
+
+      <p class="matrix-note" style="margin-bottom: 16px; font-style: italic;">
+        ⚙️ Read-only · Parámetros de Theta Harvest — estrategia única del bot CROP
+      </p>
+
+      <!-- VIX Credit Table -->
+      <div class="matrix-block">
+        <h3>VIX Credit Table — minimum credit per ticker by VIX regime</h3>
+        <p class="matrix-note">VIX actual: <span id="vix-current-display">—</span> · fila activa marcada con ▶</p>
+        <table id="vix-credit-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Rango VIX</th>
+              <th>SPY</th>
+              <th>QQQ</th>
+              <th>IWM</th>
+              <th>TQQQ</th>
+              <th>Payoff Mult</th>
+            </tr>
+          </thead>
+          <tbody id="vix-credit-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Delta by Risk Level -->
+      <div class="matrix-block">
+        <h3>Delta by Risk Level — short leg delta range per risk bucket</h3>
+        <p class="matrix-note">Risk level determinado por análisis técnico (pivots + breadth)</p>
+        <table id="delta-by-risk-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Risk Level</th>
+              <th>Delta Min</th>
+              <th>Delta Max</th>
+              <th>Interpretación</th>
+            </tr>
+          </thead>
+          <tbody id="delta-by-risk-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- Ticker Config -->
+      <div class="matrix-block">
+        <h3>Ticker Config — per-ticker spread parameters</h3>
+        <p class="matrix-note">Fallback defaults usados cuando VIX_CREDIT_TABLE no aplica</p>
+        <table id="ticker-config-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Ticker</th>
+              <th>Spread Width</th>
+              <th>Δ Min</th>
+              <th>Δ Max</th>
+              <th>Min Credit</th>
+              <th>Max DTE</th>
+            </tr>
+          </thead>
+          <tbody id="ticker-config-tbody"></tbody>
+        </table>
+      </div>
+
+      <!-- DTE Schedule -->
+      <div class="matrix-block">
+        <h3>DTE Schedule — DTEs operados por día de semana</h3>
+        <p class="matrix-note">Día actual destacado ▶ · ✓ = DTE habilitado · — = no operado</p>
+        <table id="dte-schedule-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th>Día</th>
+              <th>DTE 0</th>
+              <th>DTE 1</th>
+              <th>DTE 2</th>
+              <th>DTE 3</th>
+              <th>DTE 4</th>
+            </tr>
+          </thead>
+          <tbody id="dte-schedule-tbody"></tbody>
+        </table>
+        <p class="matrix-note">Module default (fallback): <span id="dte-default-display">—</span></p>
+      </div>
+
+      <!-- Exits Advanced -->
+      <div class="matrix-block">
+        <h3>Exits Advanced — exit triggers, gates, timing</h3>
+        <p class="matrix-note">14 parámetros hardcoded en strategy module — read-only en S1</p>
+
+        <div class="exits-grid">
+          <!-- GRUPO 1: ENTRY GATES -->
+          <div class="exits-group">
+            <h4>Entry Gates</h4>
+            <div class="exit-card">
+              <span class="exit-label">VIX max entry</span>
+              <span class="exit-value" id="exit-vix-max">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">VIX spike delta</span>
+              <span class="exit-value" id="exit-vix-spike">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">VVIX panic</span>
+              <span class="exit-value" id="exit-vvix">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 2: EXIT TRIGGERS -->
+          <div class="exits-group">
+            <h4>Exit Triggers</h4>
+            <div class="exit-card">
+              <span class="exit-label">Delta drift max</span>
+              <span class="exit-value" id="exit-delta-drift">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">SPY drop 30m</span>
+              <span class="exit-value" id="exit-spy-drop">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Stop loss mult</span>
+              <span class="exit-value" id="exit-stop-loss">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Profit target</span>
+              <span class="exit-value" id="exit-profit-target">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 3: TRANCHE TP -->
+          <div class="exits-group">
+            <h4>Tranche Take Profit</h4>
+            <div class="exit-card">
+              <span class="exit-label">T0 / T1 / T2</span>
+              <span class="exit-value" id="exit-tranches">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 4: TIMING -->
+          <div class="exits-group">
+            <h4>Timing</h4>
+            <div class="exit-card">
+              <span class="exit-label">Entry hour ET</span>
+              <span class="exit-value" id="exit-entry-hour">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Entry window</span>
+              <span class="exit-value" id="exit-entry-window">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Min mins to exp</span>
+              <span class="exit-value" id="exit-min-mins">—</span>
+            </div>
+          </div>
+
+          <!-- GRUPO 5: VIX VELOCITY -->
+          <div class="exits-group">
+            <h4>VIX Velocity <span class="badge-inline">inline literals</span></h4>
+            <div class="exit-card">
+              <span class="exit-label">Threshold UP</span>
+              <span class="exit-value" id="exit-vv-up">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Threshold DOWN</span>
+              <span class="exit-value" id="exit-vv-down">—</span>
+            </div>
+            <div class="exit-card">
+              <span class="exit-label">Window (sec)</span>
+              <span class="exit-value" id="exit-vv-window">—</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
 // ============================================================
 //  CROP — Theta Harvest Dashboard — JS
@@ -1792,6 +2153,7 @@ function render() {
   updateTrades();
   updateThetaHarvest();
   updateStatusbar();
+  updateStrategyMatrices();
 }
 
 function updateHeader() {
@@ -2896,6 +3258,221 @@ function updateThetaHarvest() {
   setFlow('th-fn-entry',   'th-fn-entry-s',
     (isNewsDay || noTrade || !vixOk || tickConf === 'block') ? 'th-fn-block' : openSlots === 0 ? 'th-fn-warn' : 'th-fn-ok',
     (isNewsDay || noTrade || !vixOk || tickConf === 'block') ? 'BLOQUEADO' : openSlots === 0 ? 'LLENO' : openSlots + ' slots libres');
+}
+
+// ══════════════════════════════════════════
+// PARÁMETROS ESTRATEGIA (Sprint S1)
+// ══════════════════════════════════════════
+function toggleCollapsible(id) {
+  const el = document.getElementById(id);
+  if (el) el.classList.toggle('collapsed');
+}
+
+function renderVixCreditTable(strategyParams, currentVix) {
+  const tbody = document.getElementById('vix-credit-tbody');
+  if (!tbody || !strategyParams || !strategyParams.vix_credit_table) return;
+
+  const table = strategyParams.vix_credit_table;
+
+  const vixDisplay = document.getElementById('vix-current-display');
+  if (vixDisplay) {
+    vixDisplay.textContent = (currentVix !== null && currentVix !== undefined)
+      ? Number(currentVix).toFixed(2)
+      : '—';
+  }
+
+  let activeIdx = -1;
+  if (currentVix !== null && currentVix !== undefined) {
+    for (let i = 0; i < table.length; i++) {
+      const ceil = table[i].vix_ceil;
+      if (ceil === null || currentVix < ceil) {
+        activeIdx = i;
+        break;
+      }
+    }
+  }
+
+  tbody.innerHTML = table.map((row, idx) => {
+    const isActive = idx === activeIdx;
+    let label;
+    if (row.vix_ceil === null) {
+      label = '≥ 30';
+    } else if (idx === 0) {
+      label = `< ${row.vix_ceil}`;
+    } else {
+      const prevCeil = table[idx - 1].vix_ceil;
+      label = `${prevCeil} – ${row.vix_ceil}`;
+    }
+    return `
+      <tr class="vix-bin-${idx}${isActive ? ' active' : ''}">
+        <td>${label}</td>
+        <td>$${row.spy.toFixed(2)}</td>
+        <td>$${row.qqq.toFixed(2)}</td>
+        <td>$${row.iwm.toFixed(2)}</td>
+        <td>$${row.tqqq.toFixed(2)}</td>
+        <td>${row.payoff_mult.toFixed(2)}×</td>
+      </tr>
+    `;
+  }).join('');
+}
+
+function renderDeltaByRisk(strategyParams) {
+  const tbody = document.getElementById('delta-by-risk-tbody');
+  if (!tbody || !strategyParams || !strategyParams.delta_by_risk) return;
+
+  const dbr = strategyParams.delta_by_risk;
+  const interpretations = {
+    VERY_LOW: 'Ultra conservador, OTM profundo (~prob asignación 10-16%)',
+    LOW:      'Conservador, OTM seguro (~prob asignación 16-22%)',
+    MID:      'Agresivo, mejor prima (~prob asignación 22-30%)',
+    NO_TRADE: 'Bucket sin operación (delta fuera de rangos)'
+  };
+
+  const order = ['VERY_LOW', 'LOW', 'MID', 'NO_TRADE'];
+
+  tbody.innerHTML = order
+    .filter(risk => dbr[risk])
+    .map(risk => {
+      const [dmin, dmax] = dbr[risk];
+      const isNoTrade = (risk === 'NO_TRADE') || (dmin === 0 && dmax === 0);
+      const label = risk.replace('_', ' ');
+      const dminLabel = isNoTrade ? '—' : dmin.toFixed(2);
+      const dmaxLabel = isNoTrade ? '—' : dmax.toFixed(2);
+      return `
+        <tr class="risk-${risk.toLowerCase()}">
+          <td><strong>${label}</strong></td>
+          <td>${dminLabel}</td>
+          <td>${dmaxLabel}</td>
+          <td class="muted">${interpretations[risk] || ''}</td>
+        </tr>
+      `;
+    }).join('');
+}
+
+function renderTickerConfig(strategyParams) {
+  const tbody = document.getElementById('ticker-config-tbody');
+  if (!tbody || !strategyParams || !strategyParams.ticker_config) return;
+
+  const tc = strategyParams.ticker_config;
+  const order = ['SPY', 'QQQ', 'IWM', 'TQQQ'];
+
+  tbody.innerHTML = order
+    .filter(t => tc[t])
+    .map(t => {
+      const cfg = tc[t];
+      return `
+        <tr>
+          <td><strong>${t}</strong></td>
+          <td>$${cfg.spread_width?.toFixed(2) ?? '—'}</td>
+          <td>${cfg.delta_min_abs?.toFixed(2) ?? '—'}</td>
+          <td>${cfg.delta_max_abs?.toFixed(2) ?? '—'}</td>
+          <td>$${cfg.min_credit?.toFixed(2) ?? '—'}</td>
+          <td>${cfg.max_dte ?? '—'}</td>
+        </tr>
+      `;
+    }).join('');
+}
+
+function renderDteSchedule(strategyParams) {
+  const tbody = document.getElementById('dte-schedule-tbody');
+  if (!tbody || !strategyParams || !strategyParams.target_dtes) return;
+
+  const sched = strategyParams.target_dtes.by_weekday || {};
+  const moduleDefault = strategyParams.target_dtes.module_default || [];
+
+  const dayMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const dayLabel = {
+    'Mon': 'Lunes', 'Tue': 'Martes', 'Wed': 'Miércoles',
+    'Thu': 'Jueves', 'Fri': 'Viernes', 'Sat': 'Sábado', 'Sun': 'Domingo'
+  };
+  const etNow = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const todayKey = dayMap[etNow.getDay()];
+
+  const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+  tbody.innerHTML = order.map(day => {
+    const dtes = sched[day] || [];
+    const isToday = day === todayKey;
+    const isWeekend = day === 'Sat' || day === 'Sun';
+
+    const cells = [0, 1, 2, 3, 4].map(dte => {
+      const enabled = dtes.includes(dte);
+      return `<td class="${enabled ? 'dte-enabled' : 'dte-disabled'}">${enabled ? '✓' : '—'}</td>`;
+    }).join('');
+
+    const rowClass = [
+      isToday ? 'active' : '',
+      isWeekend ? 'weekend' : ''
+    ].filter(Boolean).join(' ');
+
+    return `
+      <tr class="${rowClass}">
+        <td><strong>${dayLabel[day]}</strong></td>
+        ${cells}
+      </tr>
+    `;
+  }).join('');
+
+  const defaultDisplay = document.getElementById('dte-default-display');
+  if (defaultDisplay) {
+    defaultDisplay.textContent = moduleDefault.length > 0
+      ? '[' + moduleDefault.join(', ') + ']'
+      : '—';
+  }
+}
+
+function renderExitsAdvanced(strategyParams) {
+  const mountPoint = document.getElementById('exit-vix-max');
+  if (!mountPoint || !strategyParams || !strategyParams.exits_advanced) return;
+
+  const ea = strategyParams.exits_advanced;
+
+  const setValue = (id, value, formatter) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (value === null || value === undefined) { el.textContent = '—'; return; }
+    el.textContent = formatter ? formatter(value) : value;
+  };
+
+  // Grupo 1: Entry Gates
+  setValue('exit-vix-max',        ea.vix_max_entry,        v => v.toFixed(1));
+  setValue('exit-vix-spike',      ea.vix_spike_delta,      v => '+' + v.toFixed(1));
+  setValue('exit-vvix',           ea.vvix_panic_threshold, v => v.toFixed(0));
+
+  // Grupo 2: Exit Triggers
+  setValue('exit-delta-drift',    ea.delta_drift_max,      v => v.toFixed(2));
+  setValue('exit-spy-drop',       ea.spy_drop_pct_30m,     v => v.toFixed(2) + '%');
+  setValue('exit-stop-loss',      ea.stop_loss_mult,       v => v.toFixed(2) + 'x');
+  setValue('exit-profit-target',  ea.profit_target_pct,    v => (v * 100).toFixed(0) + '%');
+
+  // Grupo 3: Tranche TP
+  const tp = ea.tranche_profit_targets;
+  if (tp) {
+    const fmt = v => v === null ? 'Exp' : (v * 100).toFixed(0) + '%';
+    setValue('exit-tranches', tp, arr => arr.map(fmt).join(' / '));
+  }
+
+  // Grupo 4: Timing
+  setValue('exit-entry-hour',     ea.entry_hour_et,
+    v => Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0') + ' ET');
+  setValue('exit-entry-window',   ea.entry_window_minutes, v => v + ' min');
+  setValue('exit-min-mins',       ea.min_minutes_to_exp,   v => v + ' min');
+
+  // Grupo 5: VIX Velocity
+  setValue('exit-vv-up',          ea.vix_velocity_threshold_up_pct,   v => '+' + (v * 100).toFixed(1) + '%');
+  setValue('exit-vv-down',        ea.vix_velocity_threshold_down_pct, v => (v * 100).toFixed(1) + '%');
+  setValue('exit-vv-window',      ea.vix_velocity_window_seconds,     v => v + 's');
+}
+
+function updateStrategyMatrices() {
+  const sp = state.strategy_params;
+  if (!sp) return;
+  const currentVix = state.vix || state.vix_current || null;
+  renderVixCreditTable(sp, currentVix);
+  renderDeltaByRisk(sp);
+  renderTickerConfig(sp);
+  renderDteSchedule(sp);
+  renderExitsAdvanced(sp);
 }
 
 // ══════════════════════════════════════════
