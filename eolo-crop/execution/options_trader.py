@@ -1095,7 +1095,7 @@ class OptionsTrader:
 
     async def execute_decision(self, decision: dict) -> str | None:
         """
-        Conveniencia: recibe el dict de decisión de OptionsBrain
+        Conveniencia: recibe el dict de decisión (theta_harvest / orchestrator)
         y llama al método correcto.
         """
         action      = decision.get("action", "HOLD")
@@ -1108,7 +1108,11 @@ class OptionsTrader:
         reason      = decision.get("reason", "")
         confidence  = decision.get("confidence", "")
         mp_type     = decision.get("mispricing_type") or ""
-        _raw_strat  = mp_type if mp_type else f"claude_{confidence.lower()}" if confidence else "claude_bot"
+        _raw_strat  = (
+            decision.get("strategy")                          # respect explicit strategy field
+            or mp_type
+            or (f"claude_{confidence.lower()}" if confidence else "claude_bot")
+        )
         strategy    = _raw_strat.lower()
 
         if action == "BUY" and exp and strike:

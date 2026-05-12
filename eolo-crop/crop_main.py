@@ -8,7 +8,6 @@
 #  Módulos:
 #    1. SchwabStream     → quotes L1 + velas 1min en tiempo real
 #    2. OptionChainFetcher → cadena de opciones cada 30s
-#    3. OptionsBrain     → Claude API decide spread entry/exit
 #    4. OptionsTrader    → ejecuta spreads en Schwab
 #    5. Theta Harvest    → monitor y cierre de posiciones
 #    6. Pivots           → análisis de pivots y riesgo
@@ -52,8 +51,6 @@ from stream.options_stream import SchwabStream
 from stream.options_chain  import OptionChainFetcher
 from analysis.greeks       import enrich_contract
 from analysis.iv_surface   import IVSurface
-from claude.options_brain  import OptionsBrain
-from claude.claude_bot     import ClaudeBotEngine
 from execution.options_trader import OptionsTrader, _send_telegram
 from theta_harvest import scan_theta_harvest_tranches, ThetaHarvestSignal
 from theta_harvest.theta_harvest_strategy import (
@@ -81,7 +78,6 @@ from eolo_common.multi_tf import (
     CandleBuffer, BufferMarketData, ConfluenceFilter, load_multi_tf_config,
 )
 from eolo_common.multi_tf.normalize import from_schwab_chart_equity
-from eolo_common.routing import AutoRouter as _AutoRouter  # Strategy Auto-Router
 from eolo_common.trading_hours import (
     DEFAULTS_EQUITY,
     TradingSchedule,
@@ -172,7 +168,6 @@ CANDLE_BUFFER_SIZE = 100
 
 _FS_PRIMITIVES = (type(None), bool, int, float, str, bytes)
 
-
 def _sanitize_for_firestore(obj, _depth=0):
     """Convierte recursivamente un objeto a tipos que Firestore acepta.
     CRITICAL: Firestore rechaza valores NaN/Infinity y dicts muy anidados (>20 niveles).
@@ -259,7 +254,6 @@ def _sanitize_for_firestore(obj, _depth=0):
     # Esto evita que stats con objetos raros cause problemas
     return None
 
-
 def _is_firestore_native(obj) -> bool:
     """True si el valor es directamente escribible a Firestore sin conversión."""
     if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
@@ -275,7 +269,6 @@ def _is_firestore_native(obj) -> bool:
     if isinstance(obj, (_dt, _date)):
         return True
     return False
-
 
 def _find_unserializable_path(obj, path: str = "root", _depth: int = 0):
     """Devuelve el primer path dentro de `obj` cuyo valor NO es serializable
@@ -303,7 +296,6 @@ def _find_unserializable_path(obj, path: str = "root", _depth: int = 0):
     # Tipo exótico — reportamos
     return f"{path} = <{type(obj).__name__}>: {repr(obj)[:120]}"
 
-
 # ── Clase principal ────────────────────────────────────────
 
 class CropBotTheta:
@@ -313,20 +305,7 @@ class CropBotTheta:
         self.stream        = SchwabStream(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
         # CROP: sin MispricingScanner (solo Theta Harvest)
-        self.brain         = OptionsBrain()
         self.trader        = OptionsTrader(paper=PAPER_TRADING)
-        # Auto-Router — actualiza toggles de estrategias según régimen cada 30 min
-        self._auto_router  = _AutoRouter(bot_id="crop", update_interval_min=30)
-
-        # Claude Bot — estrategia #14 sobre acciones del underlying.
-        # Corre en paralelo con OptionsBrain (que opera opciones).
-        # Intenta instanciarse, pero si falla la API key no rompe el bot.
-        try:
-            self.claude_bot = ClaudeBotEngine(paper_mode=True)
-            logger.info("[CLAUDE_BOT_V2] Engine inicializado ✅")
-        except Exception as e:
-            self.claude_bot = None
-            logger.warning(f"[CLAUDE_BOT_V2] Engine NO disponible: {e}")
 
         mode = "📄 PAPER TRADING" if PAPER_TRADING else "💰 LIVE TRADING"
         logger.info(f"[CROP] Modo: {mode}")
@@ -356,10 +335,6 @@ class CropBotTheta:
                 self.trader.set_macro_feeds(self._macro_feeds)
         except Exception as e:
             logger.debug(f"[MACRO-v2] trader.set_macro_feeds falló: {e}")
-        # Gate de costos Claude — no llamar a OptionsBrain/ClaudeBotEngine si
-        # no hay nada accionable (señales técnicas, mispricing, posiciones).
-        # Reduce ~80-90% el consumo Anthropic en mercados laterales.
-        self._claude_gate_enabled:  bool      = os.environ.get("CLAUDE_GATE", "1") != "0"
         self._last_analysis:  dict[str, float] = {}
         self._open_positions: list[dict] = []
         self._auto_close_done_date: str | None = None
@@ -404,8 +379,6 @@ class CropBotTheta:
         self._iv_surfaces:     dict[str, dict] = {}
         self._mispricing_data: dict[str, list] = {}
         self._signals_data:    dict[str, dict] = {}
-        self._claude_decisions:dict[str, dict] = {}
-        self._claude_history:  list[dict]      = []   # últimas 50 decisiones
         self._state_file = os.path.join(BASE_DIR, "crop_state.json")
 
         # ── Token auto-refresh ────────────────────────────
@@ -464,23 +437,6 @@ class CropBotTheta:
         self._last_settings_ts:     float        = 0.0
         self._command_poll_interval = 5          # segundos
 
-        # ── Claude Bot state ─────────────────────────────────
-        # Corre en su propio loop (independiente de _on_chain_update).
-        # Settings se cargan desde Firestore vía _poll_settings() bajo las
-        # claves `claude_options_enabled`, `claude_theta_harvest_enabled`, `claude_bot_interval`, `claude_bot_paper_mode`.
-        self._claude_options_enabled:        bool = True
-        self._claude_theta_harvest_enabled:  bool = True
-        self._claude_bot_interval:   int  = 60           # segundos entre ticks
-        self._claude_bot_last_tick:  float = 0.0
-        self._claude_bot_decision:   dict | None = None   # última decisión
-        self._claude_bot_history:    list[dict]  = []     # últimas 50
-        # Budget "virtual" para el prompt (en shares el budget es por posición)
-        self._claude_bot_budget:     float = 500.0
-        # Paper mode por default — no hay stock trader en v2 todavía.
-        # Cuando se implemente, se podrá pasar a live desde Firestore.
-        # Posiciones virtuales que el bot abrió en paper (no hay trader real).
-        self._claude_bot_positions:  list[dict] = []
-
         # ── Strategy selection (dashboard toggles) ─────────
         # Keys canónicos (matchean los de Bot/bot_main.py DEFAULT_STRATEGIES).
         # El bot consulta este dict en _run() antes de llamar a cada analyzer.
@@ -520,7 +476,6 @@ class CropBotTheta:
         # (o insuficiencia de créditos), el bot se auto-pausa (self._active = False)
         # y manda Telegram + escribe flag en Firestore para que el dashboard prenda
         # un semáforo rojo. Se reanuda al redeploy, al toggle manual desde el
-        # dashboard, o al siguiente éxito de OptionsBrain (que resetea el contador).
         self._anthropic_billing_errors:    int  = 0
         self._anthropic_billing_threshold: int  = int(os.environ.get("ANTHROPIC_BILLING_THRESHOLD", "5"))
         self._anthropic_billing_paused:    bool = False
@@ -571,7 +526,6 @@ class CropBotTheta:
             self._token_refresh_loop(),
             self._state_writer_loop(),
             self._command_watcher_loop(),
-            self._claude_bot_loop(),
             self._theta_monitor_loop(),
             self._vix_velocity_loop(),          # Paso 7
         ]
@@ -751,23 +705,6 @@ class CropBotTheta:
 
         self._last_analysis[ticker] = now
 
-        # ── Auto-Router: actualizar toggles cada 30 min (solo en SPY) ─
-        if ticker == "SPY":
-            try:
-                if self._auto_router.should_update():
-                    _vix_val, _ = self._theta_get_macro_context()
-                    if _vix_val is not None:
-                        # Obtener daily_df de SPY desde los candle buffers
-                        _spy_df = self._candle_buffer.as_df_1min("SPY")
-                        if _spy_df is not None and len(_spy_df) >= 20:
-                            _toggles = self._auto_router.update(
-                                vix=float(_vix_val), spy_df=_spy_df, save_firestore=False
-                            )
-                            # CROP: solo Theta Harvest (sin VRP, 0DTE, Earnings, PutSkew)
-                            logger.debug(f"[AUTO_ROUTER] CROP (theta-only): {_toggles}")
-            except Exception as _ar_e:
-                logger.debug(f"[AUTO_ROUTER] v2 skip: {_ar_e}")
-
         # Bot pausado desde el dashboard → skip
         if not self._active:
             logger.debug(f"[CROP] Bot pausado (dashboard) — skip {ticker}")
@@ -798,12 +735,9 @@ class CropBotTheta:
 
     async def _run_analysis_cycle(self, ticker: str, chain: dict):
         """
-        Ciclo completo de análisis para un ticker:
-        1. Obtener señales Eolo v1
-        2. Construir IV surface
-        3. Escanear mispricing
-        4. Consultar Claude
-        5. Ejecutar decisión
+        Ciclo de análisis y entrada para un ticker.
+        Setup (señales + IV surface) + gates (max positions + daily loss cap),
+        luego delega al scan de Theta Harvest.
         """
         logger.info(f"[CROP] ── Ciclo de análisis: {ticker} ──")
 
@@ -864,82 +798,6 @@ class CropBotTheta:
                     f"Skipeo aperturas hasta próximo cycle / reset 8am."
                 )
             return
-
-        # 5b. Gate de costos Claude — solo llamar a OptionsBrain si hay algo
-        # accionable (señal técnica BUY/SELL, alerta de mispricing, o posición
-        # abierta que pueda querer cerrarse). Sin esto, con confluence_mode=OFF
-        # y mercado lateral, cada ticker dispara 1 llamada Claude cada 60s
-        # aunque ninguna estrategia emita señal. Esto reduce ~80-90% las
-        # llamadas en sesiones tranquilas. Override: set _claude_gate_enabled=False
-        # para deshabilitar (o CLAUDE_GATE=0 en env al arrancar).
-        if getattr(self, "_claude_gate_enabled", True):
-            now_h      = now_et()
-            hour_frac  = now_h.hour + now_h.minute / 60.0
-            window_end = self._entry_hour_et + self._entry_window_minutes / 60.0
-            if not (self._entry_hour_et <= hour_frac <= window_end):
-                logger.debug(
-                    f"[CROP] {ticker} — gate: fuera de ventana {self._entry_hour_et:.2f}-{window_end:.2f} ET, "
-                    f"skip Claude (ahorro API)"
-                )
-                return
-
-        # 6. Claude decide
-        try:
-            decision = await self.brain.analyze(
-                ticker         = ticker,
-                quote          = quote,
-                chain          = chain,
-                surface        = surface,
-                mispricing_alerts = alerts,
-                open_positions = ticker_positions,
-            )
-            # Éxito → resetear contador del circuit breaker de billing
-            self._on_anthropic_success()
-        except Exception as e:
-            logger.error(f"[CROP] Error en OptionsBrain para {ticker}: {e}")
-            # Circuit breaker: si es un error 400 billing, incrementa contador
-            # y eventualmente pausa el bot + Telegram + Firestore flag.
-            self._check_anthropic_billing_error(e)
-            return
-
-        # 7. Guardar decisión de Claude para dashboard
-        decision_record = {
-            **decision,
-            "ts": time.time(),
-            "ts_str": datetime.now(timezone.utc).strftime("%H:%M:%S"),
-            "ticker": ticker,
-            # Guardar inputs que usó Claude (para trazabilidad)
-            "inputs": {
-                "mispricing_count": len(alerts),
-                "atm_iv": self._iv_surfaces.get(ticker, {}).get("atm_iv"),
-                "skew_index": self._iv_surfaces.get(ticker, {}).get("skew_index"),
-            },
-        }
-        self._claude_decisions[ticker] = decision_record
-        self._claude_history.insert(0, decision_record)
-        self._claude_history = self._claude_history[:50]  # últimas 50
-
-        # 7b. Persistir decisión en Firestore para auditoría + dashboard cross-bot
-        # Path: eolo-claude-decisions-v2/{YYYY-MM-DD}/decisions/{ts}
-        try:
-            from google.cloud import firestore as _fs
-            _db = _fs.Client(project=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent"))
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            tsid  = f"{time.time():.3f}"
-            _db.collection("eolo-claude-decisions-v2") \
-               .document(today).collection("decisions").document(tsid) \
-               .set({**decision_record, "recorded_ts": time.time()})
-        except Exception as _e:
-            logger.warning(f"[CROP] Firestore write de decisión falló: {_e}")
-
-        # 8. Ejecutar si hay señal
-        action = decision.get("action", "HOLD")
-        if action in ("BUY", "SELL_TO_CLOSE"):
-            await self._execute_decision(decision)
-        else:
-            logger.info(
-                f"[CROP] {ticker} → HOLD | {decision.get('reason','')[:100]}"
-            )
 
         # 9. Escribir estado al disco para el dashboard
         self._write_state()
@@ -1474,6 +1332,7 @@ class CropBotTheta:
                         "long_strike":  pos.get("long_strike"),
                         "contracts":    pos.get("contracts", 1),
                         "reason":       f"ThetaHarvest {exit_reason or '?'}",
+                        "strategy":     "theta_harvest",
                     }
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
@@ -1580,34 +1439,6 @@ class CropBotTheta:
                     logger.error(f"[ThetaHarvest] Error cerrando spread {pos_ticker}: {e}")
 
     # ── Ejecución de orden ─────────────────────────────────
-
-    async def _execute_decision(self, decision: dict):
-        """Ejecuta la decisión de Claude via OptionsTrader."""
-        ticker    = decision.get("ticker", "")
-        action    = decision.get("action")
-        opt_type  = decision.get("option_type", "")
-        exp       = decision.get("expiration", "")
-        strike    = decision.get("strike", 0)
-        contracts = decision.get("contracts", 1)
-        limit     = decision.get("limit_price")
-        reason    = decision.get("reason", "")
-
-        logger.info(
-            f"[CROP] EJECUTANDO: {action} {contracts}x "
-            f"{ticker} {opt_type} K={strike} exp={exp} "
-            f"limit=${limit} | {reason[:80]}"
-        )
-
-        try:
-            order_id = await self.trader.execute_decision(decision)
-            if order_id:
-                logger.info(f"[CROP] Orden ejecutada ✅ order_id={order_id}")
-            else:
-                logger.warning(f"[CROP] Orden no ejecutada para {ticker}")
-        except Exception as e:
-            logger.error(f"[CROP] Error ejecutando orden: {e}")
-
-    # ── Señales Eolo v1 ────────────────────────────────────
 
     def _get_eolo_signals(self, ticker: str) -> dict:
         """
@@ -1829,288 +1660,6 @@ class CropBotTheta:
 
     # ── Claude Bot (estrategia #14 sobre acciones) ─────────
 
-    async def _claude_bot_loop(self):
-        """
-        Loop del Claude Bot para acciones del underlying.
-        Corre cada `_claude_bot_interval` segundos (por default 60s).
-        En paper mode: solo registra decisiones en Firestore, no ejecuta.
-        """
-        # Espera inicial: darle tiempo al stream a llenar buffers
-        await asyncio.sleep(45)
-        logger.info(
-            f"[CLAUDE_BOT_V2] Loop iniciado — interval={self._claude_bot_interval}s "
-            f"options_enabled={self._claude_options_enabled} "
-            f"theta_enabled={self._claude_theta_harvest_enabled}"
-        )
-
-        while self._running:
-            try:
-                if (
-                    self._active
-                    and self._should_run_claude_bot()
-                    and self.claude_bot is not None
-                    and not self._is_after_close_time()
-                ):
-                    await self._claude_bot_tick()
-            except Exception as e:
-                import traceback
-                logger.error(
-                    f"[CLAUDE_BOT_V2] Error en tick: {e}\n{traceback.format_exc()}"
-                )
-                # Circuit breaker: si Claude-bot #14 también tira 400 billing,
-                # cuenta hacia el mismo umbral compartido con OptionsBrain.
-                self._check_anthropic_billing_error(e)
-
-            await asyncio.sleep(max(10, int(self._claude_bot_interval)))
-
-    def _should_run_claude_bot(self) -> bool:
-        """Determine if Claude Bot should run based on strategy toggles.
-
-        - If theta_harvest is enabled → check self._claude_theta_harvest_enabled
-        - If other strategies are enabled → check self._claude_options_enabled
-        - If both are enabled → Claude runs if either is enabled (OR logic)
-        """
-        theta_harvest_active = self._strategies_enabled.get("theta_harvest", False)
-        other_strategies_active = any(
-            v for k, v in self._strategies_enabled.items() if k != "theta_harvest"
-        )
-
-        should_run = False
-        if theta_harvest_active and self._claude_theta_harvest_enabled:
-            should_run = True
-        if other_strategies_active and self._claude_options_enabled:
-            should_run = True
-
-        return should_run
-
-    async def _claude_bot_tick(self):
-        """Construye snapshot, llama a Claude y persiste la decisión."""
-        snapshot = self._build_claude_bot_snapshot()
-
-        prices = snapshot.get("prices") or {}
-        if not any(prices.values()):
-            logger.warning(
-                "[CLAUDE_BOT_V2] No hay datos de precios para ningún ticker — "
-                "skip este tick"
-            )
-            return
-
-        # Gate de costos: sin señales técnicas BUY/SELL y sin posiciones
-        # abiertas, no hay nada útil que decidir → saltar la llamada Claude.
-        # Con ANALYSIS_INTERVAL=180s y gate activo, en sesiones laterales
-        # consumimos prácticamente 0 tokens. Override: CLAUDE_GATE=0 en env.
-        if getattr(self, "_claude_gate_enabled", True):
-            recent = snapshot.get("recent_signals") or []
-            has_sig = any(
-                (s or {}).get("signal") in ("BUY", "SELL") for s in recent
-            )
-            has_pos = bool(snapshot.get("open_positions"))
-            if not (has_sig or has_pos):
-                logger.debug(
-                    "[CLAUDE_BOT_V2] Gate: sin signals BUY/SELL recientes "
-                    "ni posiciones abiertas — skip tick (ahorro API)"
-                )
-                return
-
-        # [CLAUDE_BOT_SNAP] — visibilidad sobre qué recibe Claude
-        sample = next(iter(self._quotes.values()), None) if self._quotes else None
-        candles_summary = snapshot.get("candles_summary", {})
-        sample_candle = None
-        for t in snapshot.get("tickers", []):
-            buf = self._candle_buffer.raw_candles(t)
-            if buf:
-                sample_candle = buf[-1]
-                break
-        logger.info(
-            f"[CLAUDE_BOT_SNAP] prices={prices} | "
-            f"sample_quote={sample} | "
-            f"candles_summary={candles_summary} | "
-            f"raw_last_candle={sample_candle}"
-        )
-
-        decision = await self.claude_bot.decide(snapshot)
-        # Éxito Anthropic → resetear contador del billing breaker
-        self._on_anthropic_success()
-        self._claude_bot_last_tick = time.time()
-        self._claude_bot_decision  = decision
-
-        decision_record = {
-            **decision,
-            "ts":     time.time(),
-            "ts_str": datetime.now(timezone.utc).strftime("%H:%M:%S"),
-        }
-        self._claude_bot_history.insert(0, decision_record)
-        self._claude_bot_history = self._claude_bot_history[:50]
-
-        logger.info(
-            f"[CLAUDE_BOT_V2] Decisión: {decision.get('ticker')} "
-            f"→ {decision.get('signal')} @ ${decision.get('price')} "
-            f"| conf={decision.get('confidence')} "
-            f"| strat={decision.get('strategy_used')} "
-            f"| reasoning={decision.get('reasoning','')[:500]}"
-        )
-
-        # Persistir en Firestore (namespace separado de OptionsBrain)
-        # Path: eolo-claude-bot-decisions-v2/{YYYY-MM-DD}/decisions/{ts}
-        try:
-            from google.cloud import firestore as _fs
-            _db = _fs.Client(
-                project=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
-            )
-            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-            tsid  = f"{time.time():.3f}"
-            _db.collection("eolo-claude-bot-decisions-v2") \
-               .document(today).collection("decisions").document(tsid) \
-               .set({**decision_record, "recorded_ts": time.time()})
-        except Exception as _e:
-            logger.warning(f"[CLAUDE_BOT_V2] Firestore write falló: {_e}")
-
-        # Ejecución en paper: registrar posición virtual pero sin broker real.
-        # Hay un TODO de integrar stock trader en v2 — hasta entonces,
-        # mantenemos tracking de paper positions en memoria.
-        if decision.get("signal") in ("BUY", "SELL") and not self.claude_bot.paper_mode:
-            logger.warning(
-                "[CLAUDE_BOT_V2] ⚠️  Modo LIVE solicitado pero no hay stock trader "
-                "en v2 — la decisión se loggea pero NO se ejecuta"
-            )
-        elif decision.get("signal") == "BUY":
-            self._claude_bot_positions.append({
-                "ticker":    decision.get("ticker"),
-                "entry":     decision.get("price"),
-                "entry_ts":  time.time(),
-                "strategy":  decision.get("strategy_used"),
-                "reasoning": decision.get("reasoning"),
-                "stop_loss_pct":   decision.get("stop_loss_pct"),
-                "take_profit_pct": decision.get("take_profit_pct"),
-                "paper":     True,
-            })
-        elif decision.get("signal") == "SELL":
-            tkr = decision.get("ticker")
-            self._claude_bot_positions = [
-                p for p in self._claude_bot_positions if p.get("ticker") != tkr
-            ]
-
-    def _build_claude_bot_snapshot(self) -> dict:
-        """
-        Arma el dict de entrada para ClaudeBotEngine.decide() usando
-        los buffers del stream (velas 1m + quotes L1).
-        """
-        from zoneinfo import ZoneInfo
-        et_now = datetime.now(ZoneInfo("America/New_York"))
-
-        tickers = sorted(TICKERS)
-
-        # prices: mark > last > mid(bid,ask) por ticker
-        prices: dict[str, float | None] = {}
-        candles_summary: dict[str, dict] = {}
-
-        for t in tickers:
-            q = self._quotes.get(t) or {}
-            p = q.get("mark") or q.get("last")
-            if not p:
-                bid, ask = q.get("bid"), q.get("ask")
-                if bid and ask:
-                    p = (bid + ask) / 2
-            prices[t] = p
-
-            # Resumen de la última vela + trend aproximada de 1m/5m/15m
-            buf = self._candle_buffer.raw_candles(t)
-            if buf:
-                last = buf[-1]
-                o = last.get("open"); h = last.get("high")
-                l = last.get("low");  cl = last.get("close")
-                vol = last.get("volume")
-                change_pct = None
-                if o and cl:
-                    try:
-                        change_pct = round((float(cl) - float(o)) / float(o) * 100, 3)
-                    except (TypeError, ValueError, ZeroDivisionError):
-                        change_pct = None
-
-                # Trends: dirección del close sobre N velas pasadas
-                def _trend(n: int) -> str:
-                    if len(buf) < n + 1:
-                        return "n/a"
-                    try:
-                        past  = float(buf[-n-1].get("close") or 0)
-                        now_c = float(buf[-1].get("close") or 0)
-                        if not past:
-                            return "n/a"
-                        d = (now_c - past) / past * 100
-                        if d > 0.15:
-                            return "up"
-                        if d < -0.15:
-                            return "down"
-                        return "flat"
-                    except (TypeError, ValueError):
-                        return "n/a"
-
-                candles_summary[t] = {
-                    "open":  o, "high": h, "low": l, "close": cl,
-                    "volume": vol,
-                    "change_pct_open": change_pct,
-                    "trend_1m":  _trend(1),
-                    "trend_5m":  _trend(5),
-                    "trend_15m": _trend(15),
-                }
-
-        # recent_signals: usamos las señales técnicas que ya calculan las
-        # estrategias v1 y que guardamos en _signals_data.
-        recent_signals: list[dict] = []
-        for tkr, strat_map in (self._signals_data or {}).items():
-            for strat_name, sig in (strat_map or {}).items():
-                if sig.get("signal") in ("BUY", "SELL"):
-                    recent_signals.append({
-                        "ts":       et_now.strftime("%H:%M:%S"),
-                        "strategy": strat_name,
-                        "ticker":   tkr,
-                        "signal":   sig.get("signal"),
-                        "price":    sig.get("price"),
-                    })
-
-        # open_positions: paper positions del propio Claude Bot
-        open_positions = []
-        for p in self._claude_bot_positions:
-            tkr = p.get("ticker")
-            cur = prices.get(tkr)
-            entry = p.get("entry")
-            pnl_pct = None
-            if cur and entry:
-                try:
-                    pnl_pct = (float(cur) - float(entry)) / float(entry) * 100
-                except (TypeError, ValueError, ZeroDivisionError):
-                    pnl_pct = None
-            open_positions.append({
-                "ticker":  tkr,
-                "entry":   entry,
-                "current": cur,
-                "unrealized_pnl_pct": pnl_pct,
-            })
-
-        # stats del día — usamos lo que tenemos a mano
-        stats_today = {
-            "trades_today":  len(self._claude_bot_history),
-            "signals_today": sum(
-                1 for d in self._claude_bot_history
-                if d.get("signal") in ("BUY", "SELL")
-            ),
-            "total_pnl":     0,   # sin broker real todavía en paper v2
-            "win_rate":      "n/a",
-        }
-
-        return {
-            "tickers":         list(tickers),
-            "prices":          prices,
-            "candles_summary": candles_summary,
-            "recent_signals":  recent_signals,
-            "open_positions":  open_positions,
-            "budget":          self._claude_bot_budget,
-            "market_time_et":  et_now.strftime("%Y-%m-%d %H:%M ET"),
-            "stats_today":     stats_today,
-        }
-
-    # ── Monitor de posiciones ──────────────────────────────
-
     async def _position_monitor_loop(self):
         """
         Actualiza la lista de posiciones abiertas cada 60 segundos.
@@ -2321,8 +1870,8 @@ class CropBotTheta:
         porque es safety net de salida, no restricción de entrada.
 
         Bug descubierto 5-may-2026 en V1, mismo bug en CROP:
-        si trading_hours_enabled=False, las posiciones de OptionsBrain
-        quedaban abiertas overnight con riesgo de gap.
+        si trading_hours_enabled=False, las posiciones quedaban abiertas
+        overnight con riesgo de gap.
         Theta Harvest tiene safety net propio (TIME_STOP en _theta_monitor_loop).
         """
         now = now_et()
@@ -2607,8 +2156,8 @@ class CropBotTheta:
                     if new_val != self._budget_per_trade:
                         old = self._budget_per_trade
                         self._budget_per_trade = new_val
-                        # Propagar al brain y al trader si tienen el setter
-                        for obj in (self.brain, self.trader):
+                        # Propagar al trader si tiene el setter
+                        for obj in (self.trader,):
                             if hasattr(obj, "set_budget"):
                                 try:
                                     obj.set_budget(new_val)
@@ -2724,57 +2273,6 @@ class CropBotTheta:
                 self._confluence_min_agree = mtf.confluence_min_agree
                 changed.append(f"confluence_min_agree={old}→{mtf.confluence_min_agree}")
 
-            # ── Claude Bot settings (Options + Theta Harvest separados) ─────────────────────
-            if "claude_options_enabled" in cfg:
-                try:
-                    new_val = bool(cfg["claude_options_enabled"])
-                    if new_val != self._claude_options_enabled:
-                        old = self._claude_options_enabled
-                        self._claude_options_enabled = new_val
-                        changed.append(f"claude_options_enabled={old}→{new_val}")
-                except (TypeError, ValueError):
-                    pass
-
-            if "claude_theta_harvest_enabled" in cfg:
-                try:
-                    new_val = bool(cfg["claude_theta_harvest_enabled"])
-                    if new_val != self._claude_theta_harvest_enabled:
-                        old = self._claude_theta_harvest_enabled
-                        self._claude_theta_harvest_enabled = new_val
-                        changed.append(f"claude_theta_harvest_enabled={old}→{new_val}")
-                except (TypeError, ValueError):
-                    pass
-
-            if "claude_bot_interval" in cfg:
-                try:
-                    new_val = int(cfg["claude_bot_interval"])
-                    if new_val >= 10 and new_val != self._claude_bot_interval:
-                        old = self._claude_bot_interval
-                        self._claude_bot_interval = new_val
-                        changed.append(f"claude_bot_interval={old}→{new_val}")
-                except (TypeError, ValueError):
-                    pass
-
-            if "claude_bot_budget" in cfg:
-                try:
-                    new_val = float(cfg["claude_bot_budget"])
-                    if new_val != self._claude_bot_budget:
-                        old = self._claude_bot_budget
-                        self._claude_bot_budget = new_val
-                        changed.append(f"claude_bot_budget={old}→{new_val}")
-                except (TypeError, ValueError):
-                    pass
-
-            if "claude_bot_paper_mode" in cfg and self.claude_bot is not None:
-                try:
-                    new_val = bool(cfg["claude_bot_paper_mode"])
-                    if new_val != self.claude_bot.paper_mode:
-                        old = self.claude_bot.paper_mode
-                        self.claude_bot.paper_mode = new_val
-                        changed.append(f"claude_bot_paper_mode={old}→{new_val}")
-                except (TypeError, ValueError):
-                    pass
-
             # ── Strategy selection (toggles del dashboard) ──
             # Dashboard escribe cfg["strategies_enabled"] = {canonical_key: bool}.
             # Merge con los defaults para no perder keys; overrides explícitos
@@ -2827,17 +2325,6 @@ class CropBotTheta:
 
             if changed:
                 logger.info(f"[COMMANDS] ⚙️  Config actualizada: {', '.join(changed)}")
-
-            # Propagar defaults SL/TP al OptionsBrain para que los use como
-            # fallback cuando Claude no mande valores propios.
-            try:
-                if hasattr(self, "brain") and hasattr(self.brain, "set_risk_defaults"):
-                    self.brain.set_risk_defaults(
-                        self._default_stop_loss_pct,
-                        self._default_take_profit_pct,
-                    )
-            except Exception as e:
-                logger.debug(f"[COMMANDS] no pude propagar defaults al brain: {e}")
 
         except Exception as e:
             logger.debug(f"[COMMANDS] poll_settings error: {e}")
@@ -2931,12 +2418,6 @@ class CropBotTheta:
                 # Señales Eolo v1 por ticker
                 "signals":      self._signals_data,
 
-                # Última decisión de Claude por ticker
-                "claude_last":  self._claude_decisions,
-
-                # Historial de decisiones (últimas 20 para Firestore)
-                "claude_history": self._claude_history[:20],
-
                 # Posiciones abiertas
                 "positions":    self._open_positions,
 
@@ -2948,7 +2429,6 @@ class CropBotTheta:
 
                 # Stats del bot
                 "stats": {
-                    "claude_calls":    self.brain.call_count,
                     "analysis_count":  len(self._last_analysis),
                     "candle_buffers":  {
                         t: self._candle_buffer.size(t)
@@ -2964,35 +2444,6 @@ class CropBotTheta:
 
                 # Toggles activos para el dashboard (source of truth live)
                 "strategies_enabled": dict(self._strategies_enabled),
-
-                # Claude Bot (Options + Theta Harvest separados)
-                "claude_bot": {
-                    "options_enabled":       self._claude_options_enabled,
-                    "theta_harvest_enabled": self._claude_theta_harvest_enabled,
-                    "interval":      self._claude_bot_interval,
-                    "paper_mode":    (
-                        self.claude_bot.paper_mode if self.claude_bot else True
-                    ),
-                    "budget":        self._claude_bot_budget,
-                    "model":         (
-                        self.claude_bot.model if self.claude_bot else None
-                    ),
-                    "call_count":    (
-                        self.claude_bot.call_count if self.claude_bot else 0
-                    ),
-                    "last_tick_ts":  self._claude_bot_last_tick,
-                    "last_tick_str": (
-                        datetime.fromtimestamp(
-                            self._claude_bot_last_tick,
-                            tz=ZoneInfo("America/New_York"),
-                        ).strftime("%H:%M:%S")
-                        if self._claude_bot_last_tick else None
-                    ),
-                    "last_decision": self._claude_bot_decision,
-                    "history":       self._claude_bot_history[:30],
-                    "paper_positions": self._claude_bot_positions,
-                    "available":     self.claude_bot is not None,
-                },
 
                 # ── Theta Harvest state ───────────────────────────
                 "theta": {
@@ -3706,13 +3157,11 @@ class CropBotTheta:
         except Exception as _e:
             logger.warning(f"[ThetaHarvest][FS] daily_summary write failed: {_e}")
 
-
 # ── Entry point ────────────────────────────────────────────
 
 # Instancia global del bot (leída por main.py en /status para exponer
 # el estado del circuit breaker de billing al dashboard / curl).
 bot_instance: "CropBotTheta | None" = None
-
 
 async def main():
     global bot_instance
@@ -3723,7 +3172,6 @@ async def main():
     except KeyboardInterrupt:
         logger.info("Interrupción manual — deteniendo EOLO v2...")
         bot.stop()
-
 
 if __name__ == "__main__":
     asyncio.run(main())
