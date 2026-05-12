@@ -105,18 +105,20 @@ class ConfluenceFilter:
     def snapshot(self) -> dict[str, dict]:
         """
         Dump de estado para el state.json del bot.
-        Formato:
+        Formato (Firestore-compatible: dict por timeframe en lugar de list-of-lists):
           {
             "mode": True,
             "min_agree": 2,
-            "signals": {"TICKER|strategy": [[1,"BUY"],[5,"BUY"],[15,"HOLD"]]}
+            "signals": {"TICKER|strategy": {"1": "BUY", "5": "BUY", "15": "HOLD"}}
           }
+        Bug AE fix: Firestore rechaza arrays-of-arrays. Antes era
+        `[[tf, sig], ...]` que disparaba `Error con stats field` cada write.
         """
         return {
             "mode":      self.mode,
             "min_agree": self.min_agree,
             "signals": {
-                f"{t}|{s}": [[tf, sig] for tf, sig in sigs]
+                f"{t}|{s}": {str(tf): sig for tf, sig in sigs}
                 for (t, s), sigs in self._signals.items()
             },
         }
