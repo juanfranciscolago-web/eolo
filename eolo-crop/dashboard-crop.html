@@ -839,14 +839,7 @@
     letter-spacing: 0.07em; font-weight: 600; margin-bottom: 10px;
   }
 
-  /* PayoffScore bars */
-  .th-pos-row { margin-bottom: 9px; }
-  .th-pos-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .th-pos-label { font-size: 0.72rem; font-weight: 700; font-family: 'SF Mono', Menlo, monospace; }
-  .th-pos-score { font-size: 0.72rem; font-weight: 700; }
-  .th-pos-meta  { display: flex; justify-content: space-between; font-size: 0.65rem; color: var(--dim); margin-top: 3px; }
-  .th-bar-track { height: 7px; border-radius: 4px; background: #21262d; overflow: hidden; }
-  .th-bar-fill  { height: 100%; border-radius: 4px; transition: width .5s; }
+  /* PayoffScore bars CSS removed in Sprint S2.2 (panel replaced by .pos-table) */
 
   /* Sector bars */
   .th-sector-row { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; }
@@ -1217,6 +1210,99 @@
   @media (max-width: 720px) {
     .risk-grid { grid-template-columns: 1fr; }
   }
+
+  /* ══════════════════════════════════════════
+     ACTIVE POSITIONS TABLE — Sprint S2.2
+  ══════════════════════════════════════════ */
+  .pos-controls {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+    font-size: 0.75rem;
+  }
+  .pos-filter {
+    background: #0f1419;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  .pos-filter:focus { outline: none; border-color: #58a6ff; }
+  .pos-count {
+    margin-left: auto;
+    color: var(--muted);
+    font-size: 0.72rem;
+  }
+  .pos-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+  .pos-table th { cursor: pointer; user-select: none; white-space: nowrap; }
+  .pos-table th:hover { color: var(--text); }
+  .pos-table th .sort-arrow { font-size: 0.6rem; color: var(--muted); margin-left: 2px; }
+  .pos-table th .sort-arrow.active { color: #58a6ff; }
+  .pos-table td { vertical-align: middle; padding: 6px 8px; }
+  .pos-spread { font-size: 0.68rem; font-family: ui-monospace, monospace; }
+  .pos-dte-tranche { font-size: 0.68rem; font-family: ui-monospace, monospace; white-space: nowrap; }
+  .pos-tranche-mini {
+    display: inline-block;
+    font-size: 0.55rem;
+    padding: 1px 4px;
+    border-radius: 2px;
+    background: rgba(63,185,80,.15);
+    color: var(--green);
+    margin-left: 4px;
+    font-weight: 700;
+  }
+  .pos-score-mini {
+    display: inline-block;
+    background: rgba(88,166,255,.15);
+    color: #58a6ff;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 700;
+    font-size: 0.68rem;
+  }
+  .pos-progress-cell {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 60px;
+  }
+  .pos-progress-bar {
+    flex: 1;
+    height: 6px;
+    background: rgba(139,148,158,.15);
+    border-radius: 3px;
+    overflow: hidden;
+    min-width: 30px;
+  }
+  .pos-progress-fill { height: 100%; background: var(--green); }
+  .pos-progress-fill.warn { background: var(--yellow); }
+  .pos-progress-fill.danger { background: var(--red); }
+  .pos-progress-pct {
+    font-size: 0.65rem;
+    color: var(--muted);
+    min-width: 24px;
+    text-align: right;
+  }
+  .pos-pnl-pos { color: var(--green); font-weight: 700; font-family: ui-monospace, monospace; }
+  .pos-pnl-neg { color: var(--red); font-weight: 700; font-family: ui-monospace, monospace; }
+  .pos-risk-stack { display: flex; flex-direction: column; gap: 2px; }
+  .pos-risk-tag {
+    font-size: 0.58rem;
+    padding: 1px 4px;
+    border-radius: 2px;
+    display: inline-block;
+    text-align: center;
+    font-weight: 700;
+  }
+  .pos-risk-tag.warn { background: var(--yellow-soft); color: var(--yellow); }
+  .pos-risk-tag.danger { background: var(--red-soft); color: var(--red); }
+  .pos-empty { color: var(--muted); font-size: 0.7rem; }
+  .pos-credit { font-family: ui-monospace, monospace; font-size: 0.68rem; }
 </style>
 </head>
 <body>
@@ -1403,13 +1489,47 @@
   <!-- 3 Panels: Positions+Score / Sectores / Pivots+Exits -->
   <div class="th-panels">
 
-    <!-- Panel 1: Posiciones abiertas + PayoffScore -->
+    <!-- Panel 1: Active Positions Tracker — Sprint S2.2 (replaces PayoffScore cards) -->
     <div class="th-panel">
-      <div class="th-panel-title">📊 Posiciones activas — PayoffScore</div>
-      <div id="th-positions-list">
-        <div style="color:var(--dim);font-size:0.75rem;text-align:center;padding:20px 0">Sin posiciones abiertas</div>
+      <div class="th-panel-title">📊 Active Positions Tracker</div>
+
+      <!-- Filters + sort controls -->
+      <div class="pos-controls">
+        <select id="pos-filter-ticker" class="pos-filter">
+          <option value="">Todos los tickers</option>
+          <option value="SPY">SPY</option>
+          <option value="QQQ">QQQ</option>
+          <option value="IWM">IWM</option>
+          <option value="TQQQ">TQQQ</option>
+        </select>
+        <select id="pos-filter-strategy" class="pos-filter">
+          <option value="">Todas las strategies</option>
+          <option value="theta_harvest">theta_harvest</option>
+        </select>
+        <span class="pos-count" id="pos-count">— positions</span>
       </div>
+
+      <table class="trade-table pos-table" id="pos-table">
+        <thead>
+          <tr>
+            <th data-sort="ticker">Ticker <span class="sort-arrow">↕</span></th>
+            <th>Spread</th>
+            <th data-sort="dte">DTE/T <span class="sort-arrow">↕</span></th>
+            <th data-sort="score">Score <span class="sort-arrow">↕</span></th>
+            <th>Cred/Curr</th>
+            <th data-sort="tp">TP % <span class="sort-arrow">↕</span></th>
+            <th data-sort="sl">SL % <span class="sort-arrow">↕</span></th>
+            <th data-sort="pnl">PnL <span class="sort-arrow">↕</span></th>
+            <th data-sort="eod">EOD <span class="sort-arrow active">↑</span></th>
+            <th>Risk</th>
+          </tr>
+        </thead>
+        <tbody id="pos-tbody">
+          <tr><td colspan="10" class="empty-row">Sin posiciones — esperando primer scan</td></tr>
+        </tbody>
+      </table>
     </div>
+
 
     <!-- Panel 2: Sector direction -->
     <div class="th-panel">
@@ -2381,6 +2501,7 @@ function render() {
   populateFilters();
   updateTrades();
   updateThetaHarvest();
+  updateActivePositions();
   updateStatusbar();
   updateRiskManagement();
   updateStrategyMatrices();
@@ -3322,51 +3443,7 @@ function updateThetaHarvest() {
     });
   }
 
-  // ── Positions + PayoffScore ───────────────────────────────
-  const listEl = $th('th-positions-list');
-  if (listEl) {
-    if (pos.length === 0) {
-      listEl.innerHTML = '<div style="color:var(--dim);font-size:0.75rem;text-align:center;padding:16px 0">Sin posiciones abiertas</div>';
-    } else {
-      // Sort by ticker, then DTE, then tranche_id
-      const sortedPos = [...pos].sort((a,b) => {
-        if (a.ticker !== b.ticker) return a.ticker < b.ticker ? -1 : 1;
-        if ((a.dte_slot||a.dte) !== (b.dte_slot||b.dte)) return (a.dte_slot||a.dte) - (b.dte_slot||b.dte);
-        return (a.tranche_id||0) - (b.tranche_id||0);
-      });
-      const TRANCHE_COL = ['#f59e0b','#58a6ff','#22c55e'];
-      listEl.innerHTML = sortedPos.map(p => {
-        const isPut   = (p.spread_type || '').includes('put');
-        const score   = p.composite_score || 0;
-        const payoff  = p.payoff_ratio || 0;
-        const beMove  = p.breakeven_move_pct || 0;
-        const pnl     = p.unrealized_pnl ?? null;
-        const credit  = p.net_credit || 0;
-        const scoreColor = score >= 70 ? 'var(--green)' : score >= 45 ? 'var(--yellow)' : 'var(--red)';
-        const tid     = p.tranche_id ?? 0;
-        const tTarget = p.tranche_target;
-        const tColor  = TRANCHE_COL[tid] || 'var(--dim)';
-        const tLabel  = tTarget !== null && tTarget !== undefined
-          ? `T${tid}·${(tTarget*100).toFixed(0)}%`
-          : `T${tid}·EXP`;
-        const dteSlot = p.dte_slot ?? p.dte;
-        return `<div class="th-pos-row">
-          <div class="th-pos-head">
-            <span class="th-pos-label">${p.ticker} ${isPut?'▼PUT':'▲CALL'} ${dteSlot}DTE · K${p.short_strike}/${p.long_strike}</span>
-            <span style="font-size:.62rem;font-weight:700;color:${tColor};border:1px solid ${tColor};border-radius:3px;padding:1px 5px">${tLabel}</span>
-            <span class="th-pos-score" style="color:${scoreColor}">Score ${score.toFixed(0)}</span>
-          </div>
-          <div class="th-bar-track"><div class="th-bar-fill" style="width:${score}%;background:${scoreColor}"></div></div>
-          <div class="th-pos-meta">
-            <span>Crédito $${credit.toFixed(2)}</span>
-            <span>Payoff ${(payoff*100).toFixed(1)}%</span>
-            <span>BE ${beMove.toFixed(2)}%</span>
-            <span style="color:${pnl>0?'var(--green)':pnl<0?'var(--red)':'var(--muted)'}">${pnl !== null ? fmtPnl(pnl) : ''}</span>
-          </div>
-        </div>`;
-      }).join('');
-    }
-  }
+  // ── Positions + PayoffScore: moved to updateActivePositions() (Sprint S2.2) ──
 
   // ── Sector bars ───────────────────────────────────────────
   const sectorBarsEl = $th('th-sector-bars');
@@ -3703,6 +3780,234 @@ function updateStrategyMatrices() {
   renderTickerConfig(sp);
   renderDteSchedule(sp);
   renderExitsAdvanced(sp);
+}
+
+// ══════════════════════════════════════════
+// ACTIVE POSITIONS TABLE — Sprint S2.2
+// ══════════════════════════════════════════
+let posSortKey = 'eod';
+let posSortDir = 'asc';
+let posFilterTicker = '';
+let posFilterStrategy = '';
+
+function _parseAutoCloseEt(s) {
+  if (!s || typeof s !== 'string') return 15.5;
+  const parts = s.split(':');
+  return parseInt(parts[0]) + (parts[1] ? parseInt(parts[1])/60 : 0);
+}
+
+function _minsToEod(autoCloseStr) {
+  // Returns minutes until auto-close in NY local time (Intl handles EDT/EST DST automatically).
+  const target = _parseAutoCloseEt(autoCloseStr); // e.g. 15.5 for "15:30"
+  const nowNyStr = new Date().toLocaleString('en-US', {
+    timeZone: 'America/New_York',
+    hour: 'numeric',
+    minute: 'numeric',
+    second: 'numeric',
+    hour12: false
+  });
+  // hour12:false guarantees "15:30:45" 24h format
+  const parts = nowNyStr.split(':').map(s => parseInt(s, 10));
+  const h = parts[0] === 24 ? 0 : parts[0]; // midnight edge case
+  const m = parts[1] || 0;
+  const s = parts[2] || 0;
+  const hours = h + m/60 + s/3600;
+  return Math.max(0, (target - hours) * 60);
+}
+
+function _fmtMins(mins) {
+  if (mins == null || isNaN(mins)) return '—';
+  if (mins < 60) return `${Math.round(mins)}m`;
+  const h = Math.floor(mins / 60);
+  const m = Math.round(mins % 60);
+  return `${h}h ${m}m`;
+}
+
+function _tpProgress(p) {
+  const credit = p.net_credit || 0;
+  const current = p.current_value || 0;
+  const target = p.profit_target;
+  if (target == null || target < 0 || credit <= target) return null;
+  const pct = ((credit - current) / (credit - target)) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
+function _slProgress(p) {
+  const current = p.current_value || 0;
+  const stop = p.stop_loss || 0;
+  if (stop <= 0) return null;
+  const pct = (current / stop) * 100;
+  return Math.max(0, Math.min(100, pct));
+}
+
+function _progressBarHtml(pct, type) {
+  if (pct == null) {
+    return `<span class="pos-empty">${type === 'tp' ? 'EXP' : '—'}</span>`;
+  }
+  let cls = '';
+  if (type === 'sl') {
+    if (pct > 80) cls = ' danger';
+    else if (pct > 50) cls = ' warn';
+  } else if (type === 'tp') {
+    if (pct > 80) cls = '';
+    else if (pct > 40) cls = ' warn';
+    else cls = ' danger';
+  }
+  return `<div class="pos-progress-cell">
+    <div class="pos-progress-bar"><div class="pos-progress-fill${cls}" style="width:${pct.toFixed(0)}%"></div></div>
+    <span class="pos-progress-pct">${pct.toFixed(0)}%</span>
+  </div>`;
+}
+
+function _riskBadges(p, state) {
+  const badges = [];
+  const slPct = _slProgress(p);
+  const vix = state.vix || 0;
+  const vixEntry = p.vix_at_entry || 0;
+  const minsEod = _minsToEod((state.config || {}).auto_close_et);
+
+  if (slPct != null && slPct > 80) badges.push('<span class="pos-risk-tag danger">SL CRIT</span>');
+  else if (slPct != null && slPct > 70) badges.push('<span class="pos-risk-tag warn">SL&gt;70</span>');
+
+  if (vix && vixEntry && (vix - vixEntry) > 1.5) {
+    badges.push(`<span class="pos-risk-tag warn">VIX+${(vix - vixEntry).toFixed(1)}</span>`);
+  }
+
+  if (minsEod < 15 && minsEod > 0) {
+    badges.push('<span class="pos-risk-tag danger">EOD&lt;15m</span>');
+  }
+
+  return badges.length
+    ? `<div class="pos-risk-stack">${badges.join('')}</div>`
+    : '<span class="pos-empty">—</span>';
+}
+
+function _sortPositions(positions, key, dir) {
+  const sorted = [...positions];
+  sorted.sort((a, b) => {
+    let av, bv;
+    switch (key) {
+      case 'ticker': av = a.ticker || ''; bv = b.ticker || ''; break;
+      case 'dte': av = a.dte || 0; bv = b.dte || 0; break;
+      case 'score': av = a.composite_score || 0; bv = b.composite_score || 0; break;
+      case 'tp':
+        av = _tpProgress(a); bv = _tpProgress(b);
+        av = av == null ? -1 : av; bv = bv == null ? -1 : bv;
+        break;
+      case 'sl':
+        av = _slProgress(a); bv = _slProgress(b);
+        av = av == null ? -1 : av; bv = bv == null ? -1 : bv;
+        break;
+      case 'pnl': av = a.unrealized_pnl || 0; bv = b.unrealized_pnl || 0; break;
+      case 'eod':
+      default:
+        // EOD ascending = closest to EOD first; theta positions share same EOD
+        // Tiebreaker: opened_at ascending (oldest first — more exposure, closer to time-stop)
+        av = a.opened_at || 0; bv = b.opened_at || 0;
+        return dir === 'asc' ? av - bv : bv - av;
+    }
+    if (typeof av === 'string') {
+      return dir === 'asc' ? av.localeCompare(bv) : bv.localeCompare(av);
+    }
+    return dir === 'asc' ? av - bv : bv - av;
+  });
+  return sorted;
+}
+
+function updateActivePositions() {
+  const tbody = document.getElementById('pos-tbody');
+  const countEl = document.getElementById('pos-count');
+  if (!tbody) return;
+
+  const positions = (state.theta && state.theta.positions) || [];
+
+  let filtered = positions.filter(p => {
+    if (posFilterTicker && p.ticker !== posFilterTicker) return false;
+    if (posFilterStrategy && p.strategy !== posFilterStrategy) return false;
+    return true;
+  });
+
+  if (countEl) {
+    countEl.textContent = `${filtered.length} position${filtered.length !== 1 ? 's' : ''}${posFilterTicker ? ` · filter: ${posFilterTicker}` : ''}`;
+  }
+
+  if (filtered.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty-row">Sin posiciones que mostrar</td></tr>';
+    return;
+  }
+
+  const sorted = _sortPositions(filtered, posSortKey, posSortDir);
+  const minsEod = _minsToEod((state.config || {}).auto_close_et);
+
+  tbody.innerHTML = sorted.map(p => {
+    const tpPct = _tpProgress(p);
+    const slPct = _slProgress(p);
+    const pnl = p.unrealized_pnl || 0;
+    const pnlClass = pnl > 0 ? 'pos-pnl-pos' : (pnl < 0 ? 'pos-pnl-neg' : '');
+    const pnlStr = (pnl >= 0 ? '+$' : '-$') + Math.abs(pnl).toFixed(2);
+    const dteStr = `${p.dte || 0}d`;
+    const tId = p.tranche_id != null ? `T${p.tranche_id}` : '';
+    const isPut = (p.spread_type || '').includes('put');
+    const spreadStr = `${isPut ? '▼PUT' : '▲CALL'} K${p.short_strike}/${p.long_strike}`;
+
+    return `<tr>
+      <td class="ticker-cell"><strong>${p.ticker || '—'}</strong></td>
+      <td class="pos-spread">${spreadStr}</td>
+      <td class="pos-dte-tranche">${dteStr}${tId ? ` <span class="pos-tranche-mini">${tId}</span>` : ''}</td>
+      <td><span class="pos-score-mini">${(p.composite_score || 0).toFixed(0)}</span></td>
+      <td class="pos-credit">$${(p.net_credit || 0).toFixed(2)}/$${(p.current_value || 0).toFixed(2)}</td>
+      <td>${_progressBarHtml(tpPct, 'tp')}</td>
+      <td>${_progressBarHtml(slPct, 'sl')}</td>
+      <td class="${pnlClass}">${pnlStr}</td>
+      <td class="pos-credit">${_fmtMins(minsEod)}</td>
+      <td>${_riskBadges(p, state)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function _initPositionsTableHandlers() {
+  const tEl = document.getElementById('pos-filter-ticker');
+  const sEl = document.getElementById('pos-filter-strategy');
+  if (tEl) {
+    tEl.addEventListener('change', e => {
+      posFilterTicker = e.target.value;
+      updateActivePositions();
+    });
+  }
+  if (sEl) {
+    sEl.addEventListener('change', e => {
+      posFilterStrategy = e.target.value;
+      updateActivePositions();
+    });
+  }
+
+  document.querySelectorAll('#pos-table th[data-sort]').forEach(th => {
+    th.addEventListener('click', () => {
+      const key = th.dataset.sort;
+      if (posSortKey === key) {
+        posSortDir = posSortDir === 'asc' ? 'desc' : 'asc';
+      } else {
+        posSortKey = key;
+        posSortDir = 'asc';
+      }
+      document.querySelectorAll('#pos-table th .sort-arrow').forEach(a => {
+        a.classList.remove('active');
+        a.textContent = '↕';
+      });
+      const arrow = th.querySelector('.sort-arrow');
+      if (arrow) {
+        arrow.classList.add('active');
+        arrow.textContent = posSortDir === 'asc' ? '↑' : '↓';
+      }
+      updateActivePositions();
+    });
+  });
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', _initPositionsTableHandlers);
+} else {
+  _initPositionsTableHandlers();
 }
 
 // ══════════════════════════════════════════
