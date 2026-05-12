@@ -518,6 +518,7 @@ class OptionsTrader:
                 contracts   = contracts,
                 entry_price = net_credit,       # crédito cobrado (precio efectivo)
                 order_id    = trade_id,
+                strategy    = strategy,         # Bug AC.2 fix: propagar tag
             )
             return trade_id
 
