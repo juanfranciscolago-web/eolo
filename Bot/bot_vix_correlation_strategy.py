@@ -87,10 +87,10 @@ def detect_signal(
 
     if flip and spy_uptrend and vix_uptrend:
         logger.info(
-            f"[{STRATEGY_NAME}] {ticker} SHORT setup (long-only → HOLD) | "
+            f"[{STRATEGY_NAME}] {ticker} SHORT setup → SELL | "
             f"corr={correlation:+.2f}"
         )
-        return "HOLD"
+        return "SELL"
 
     return "HOLD"
 

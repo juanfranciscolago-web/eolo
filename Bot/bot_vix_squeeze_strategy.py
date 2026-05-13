@@ -90,10 +90,10 @@ def detect_signal(
         vwap = calculate_vwap(df).iloc[-1]
         if price < float(vwap):
             logger.info(
-                f"[{STRATEGY_NAME}] {ticker} SHORT setup (long-only → HOLD) | "
+                f"[{STRATEGY_NAME}] {ticker} SHORT setup → SELL | "
                 f"SPY<VWAP vix_br={vix.iloc[-1]:.2f} > {bb_upper.iloc[-2]:.2f}"
             )
-            return "HOLD"
+            return "SELL"
         logger.debug(
             f"[{STRATEGY_NAME}] {ticker} squeeze+breakout pero SPY>VWAP → esperar"
         )
