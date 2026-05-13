@@ -1407,6 +1407,49 @@
     border-color: var(--yellow);
     background: rgba(210, 153, 34, 0.06);
   }
+
+  /* Sprint S2.3 Bloque 3: input wrapper con sufijo de unidad */
+  .editable-wrap {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .editable-wrap .editable-input {
+    width: 80px;
+    text-align: right;
+  }
+  .editable-input.empty-placeholder {
+    color: var(--muted);
+    font-style: italic;
+  }
+  .editable-suffix {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: ui-monospace, monospace;
+    flex-shrink: 0;
+  }
+  .exit-card .editable-wrap .editable-input {
+    width: 72px;
+    font-size: 0.72rem;
+    padding: 2px 6px;
+  }
+  /* Tranches array: 3 inputs en linea */
+  .editable-array {
+    display: inline-flex;
+    gap: 6px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .editable-array-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .editable-array-label {
+    font-size: 0.65rem;
+    color: var(--muted);
+    font-weight: 700;
+  }
 </style>
 </head>
 <body>
@@ -3857,42 +3900,60 @@ function renderExitsAdvanced(strategyParams) {
   if (!mountPoint || !strategyParams || !strategyParams.exits_advanced) return;
 
   const ea = strategyParams.exits_advanced;
+  const FIELD_BASE = 'strategy_params.exits_advanced';
+  const editing = typeof isEditMode !== 'undefined' && isEditMode;
 
-  const setValue = (id, value, formatter) => {
+  // Sprint S2.3 Bloque 3: setter respects edit mode (input with suffix, or readonly text)
+  const setValueEditable = (id, value, fieldKey, min, max, step, suffix, formatter) => {
     const el = document.getElementById(id);
     if (!el) return;
     if (value === null || value === undefined) { el.textContent = '—'; return; }
-    el.textContent = formatter ? formatter(value) : value;
+    if (editing) {
+      const fieldId = `${FIELD_BASE}.${fieldKey}`;
+      el.innerHTML = _renderEditableNumberWithSuffix(value, fieldId, min, max, step, suffix);
+    } else {
+      el.textContent = formatter ? formatter(value) : value;
+    }
   };
 
   // Grupo 1: Entry Gates
-  setValue('exit-vix-max',        ea.vix_max_entry,        v => v.toFixed(1));
-  setValue('exit-vix-spike',      ea.vix_spike_delta,      v => '+' + v.toFixed(1));
-  setValue('exit-vvix',           ea.vvix_panic_threshold, v => v.toFixed(0));
+  setValueEditable('exit-vix-max',       ea.vix_max_entry,        'vix_max_entry',        10,   80,  0.5,  '',  v => v.toFixed(1));
+  setValueEditable('exit-vix-spike',     ea.vix_spike_delta,      'vix_spike_delta',      0.5,  20,  0.5,  '',  v => '+' + v.toFixed(1));
+  setValueEditable('exit-vvix',          ea.vvix_panic_threshold, 'vvix_panic_threshold', 80,   200, 1,    '',  v => v.toFixed(0));
 
   // Grupo 2: Exit Triggers
-  setValue('exit-delta-drift',    ea.delta_drift_max,      v => v.toFixed(2));
-  setValue('exit-spy-drop',       ea.spy_drop_pct_30m,     v => v.toFixed(2) + '%');
-  setValue('exit-stop-loss',      ea.stop_loss_mult,       v => v.toFixed(2) + 'x');
-  setValue('exit-profit-target',  ea.profit_target_pct,    v => (v * 100).toFixed(0) + '%');
+  setValueEditable('exit-delta-drift',   ea.delta_drift_max,      'delta_drift_max',      0.1,  0.5, 0.01, '',  v => v.toFixed(2));
+  setValueEditable('exit-spy-drop',      ea.spy_drop_pct_30m,     'spy_drop_pct_30m',     0.1,  5,   0.1,  '%', v => v.toFixed(2) + '%');
+  setValueEditable('exit-stop-loss',     ea.stop_loss_mult,       'stop_loss_mult',       1.0,  3.0, 0.05, 'x', v => v.toFixed(2) + 'x');
+  setValueEditable('exit-profit-target', ea.profit_target_pct,    'profit_target_pct',    0.1,  0.95,0.05, '', v => (v * 100).toFixed(0) + '%');
 
-  // Grupo 3: Tranche TP
-  const tp = ea.tranche_profit_targets;
-  if (tp) {
-    const fmt = v => v === null ? 'Exp' : (v * 100).toFixed(0) + '%';
-    setValue('exit-tranches', tp, arr => arr.map(fmt).join(' / '));
+  // Grupo 3: Tranche TP (array — special case)
+  const tranchesEl = document.getElementById('exit-tranches');
+  if (tranchesEl) {
+    const tp = ea.tranche_profit_targets || [null, null, null];
+    if (editing) {
+      tranchesEl.innerHTML = _renderEditableArray(
+        tp,
+        `${FIELD_BASE}.tranche_profit_targets`,
+        0, 0.95, 0.05,
+        ['T0', 'T1', 'T2']
+      );
+    } else {
+      const fmt = v => v === null ? 'Exp' : (v * 100).toFixed(0) + '%';
+      tranchesEl.textContent = tp.map(fmt).join(' / ');
+    }
   }
 
   // Grupo 4: Timing
-  setValue('exit-entry-hour',     ea.entry_hour_et,
+  setValueEditable('exit-entry-hour',    ea.entry_hour_et,        'entry_hour_et',        9.5,  15.0, 0.25, 'ET',
     v => Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0') + ' ET');
-  setValue('exit-entry-window',   ea.entry_window_minutes, v => v + ' min');
-  setValue('exit-min-mins',       ea.min_minutes_to_exp,   v => v + ' min');
+  setValueEditable('exit-entry-window',  ea.entry_window_minutes, 'entry_window_minutes', 15,   240,  5,    'min', v => v + ' min');
+  setValueEditable('exit-min-mins',      ea.min_minutes_to_exp,   'min_minutes_to_exp',   5,    120,  1,    'min', v => v + ' min');
 
   // Grupo 5: VIX Velocity
-  setValue('exit-vv-up',          ea.vix_velocity_threshold_up_pct,   v => '+' + (v * 100).toFixed(1) + '%');
-  setValue('exit-vv-down',        ea.vix_velocity_threshold_down_pct, v => (v * 100).toFixed(1) + '%');
-  setValue('exit-vv-window',      ea.vix_velocity_window_seconds,     v => v + 's');
+  setValueEditable('exit-vv-up',         ea.vix_velocity_threshold_up_pct,    'vix_velocity_threshold_up_pct',    0.005,  0.2,    0.005, '', v => '+' + (v * 100).toFixed(1) + '%');
+  setValueEditable('exit-vv-down',       ea.vix_velocity_threshold_down_pct,  'vix_velocity_threshold_down_pct',  -0.2,  -0.005,  0.005, '', v => (v * 100).toFixed(1) + '%');
+  setValueEditable('exit-vv-window',     ea.vix_velocity_window_seconds,      'vix_velocity_window_seconds',      30,    600,    10,    's', v => v + 's');
 }
 
 function updateStrategyMatrices() {
@@ -4243,6 +4304,71 @@ window._handleEditChange = function(fieldId, input, min, max, originalValue) {
     // But keep in inputDraftValues so user sees what they typed
     delete pendingEdits[fieldId];
     input.classList.remove('edited');  // can't be both invalid and edited
+    return;
+  }
+  const newVal = parseFloat(rawVal);
+  if (newVal === originalValue) {
+    delete pendingEdits[fieldId];
+    input.classList.remove('edited');
+  } else {
+    pendingEdits[fieldId] = newVal;
+    input.classList.add('edited');
+  }
+};
+
+// Sprint S2.3 Bloque 3: helpers para input con sufijo + array
+function _renderEditableNumberWithSuffix(currentValue, fieldId, min, max, step, suffix) {
+  const inputHtml = _renderEditableNumber(currentValue, fieldId, min, max, step);
+  const suffixHtml = suffix ? `<span class="editable-suffix">${suffix}</span>` : '';
+  return `<div class="editable-wrap">${inputHtml}${suffixHtml}</div>`;
+}
+
+function _renderEditableArray(values, fieldIdBase, min, max, step, labels) {
+  // Renders inline array of inputs (e.g. T0/T1/T2 tranche profit targets).
+  // values: list, may contain null (rendered as empty input with EXP placeholder).
+  // fieldIdBase: e.g. 'strategy_params.exits_advanced.tranche_profit_targets'
+  const items = values.map((v, i) => {
+    const fieldId = `${fieldIdBase}[${i}]`;
+    const label = labels[i] || `[${i}]`;
+    const draftVal = inputDraftValues[fieldId];
+    const pendingVal = pendingEdits[fieldId];
+    const stateVal = v === null || v === undefined ? '' : v;
+    const displayVal = draftVal !== undefined ? draftVal : (pendingVal !== undefined ? pendingVal : stateVal);
+    const numVal = parseFloat(displayVal);
+    const isInvalid = displayVal !== '' && !isNaN(numVal) && (numVal < min || numVal > max);
+    const isEdited = pendingVal !== undefined && !isInvalid;
+    const isEmpty = displayVal === '';
+    const cssClass = isInvalid ? ' invalid' : (isEdited ? ' edited' : (isEmpty ? ' empty-placeholder' : ''));
+    return `<div class="editable-array-item">
+      <span class="editable-array-label">${label}</span>
+      <input type="number" class="editable-input${cssClass}" data-field="${fieldId}"
+        value="${displayVal}" step="${step}" placeholder="EXP"
+        oninput="window._handleEditChangeAllowEmpty('${fieldId}', this, ${min}, ${max}, ${v === null ? 'null' : v})"
+        onchange="window._handleEditChangeAllowEmpty('${fieldId}', this, ${min}, ${max}, ${v === null ? 'null' : v})">
+    </div>`;
+  });
+  return `<div class="editable-array">${items.join('')}</div>`;
+}
+
+window._handleEditChangeAllowEmpty = function(fieldId, input, min, max, originalValue) {
+  const rawVal = input.value;
+  inputDraftValues[fieldId] = rawVal;
+  // Empty means null. If original was null too → no change pending.
+  if (rawVal === '' || rawVal === null) {
+    input.classList.remove('invalid');
+    if (originalValue === null) {
+      delete pendingEdits[fieldId];
+      input.classList.remove('edited');
+    } else {
+      // User cleared a value (originalValue was non-null) — stash null as pending
+      pendingEdits[fieldId] = null;
+      input.classList.add('edited');
+    }
+    return;
+  }
+  if (!_validateInput(input, min, max)) {
+    delete pendingEdits[fieldId];
+    input.classList.remove('edited');
     return;
   }
   const newVal = parseFloat(rawVal);
