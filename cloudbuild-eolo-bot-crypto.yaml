@@ -1,0 +1,66 @@
+# ============================================================
+#  EOLO Crypto — Cloud Build Pipeline (NO-SCALING variant)
+#
+#  Servicio: eolo-bot-crypto (southamerica-east1)
+#
+#  Diferencia con eolo-crypto/cloudbuild.yaml:
+#    Este yaml NO incluye --max-instances / --min-instances.
+#    gcloud preserva los valores existentes del service.
+#    Usado para deploys que NO deben revertir pausas manuales
+#    (ej. min=0 durante mantenimiento).
+#
+#  IMPORTANTE: --concurrency=1 explícito porque Crypto tiene
+#  _eolo_positions in-memory que no es thread-safe.
+#
+#  IMPORTANTE: region southamerica-east1 — Binance bloquea US.
+#
+#  Submit desde la RAÍZ del repo:
+#    cd /Users/JUAN/PycharmProjects/eolo
+#    gcloud builds submit --config cloudbuild-eolo-bot-crypto.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  # ── Step 1: Build Docker image ────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-crypto/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+      - '.'
+
+  # ── Step 2: Push ──────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+
+  # ── Step 3: Deploy to Cloud Run (NO scaling flags) ────
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot-crypto'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+      - '--region=southamerica-east1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--cpu-boost'
+      - '--no-cpu-throttling'
+      - '--timeout=3600'
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID,BINANCE_MODE=TESTNET'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-crypto:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

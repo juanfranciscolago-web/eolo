@@ -1,0 +1,65 @@
+# ============================================================
+#  EOLO v2 — Cloud Build Pipeline (NO-SCALING variant)
+#
+#  Servicio: eolo-bot-v2 (us-east1)
+#
+#  Diferencia con eolo-options/cloudbuild.yaml:
+#    Este yaml NO incluye --max-instances / --min-instances.
+#    gcloud preserva los valores existentes del service.
+#    Usado para deploys que NO deben revertir pausas manuales
+#    (ej. min=0 durante mantenimiento).
+#
+#  IMPORTANTE: --concurrency=1 se especifica explícitamente
+#  porque V2 tiene state in-memory crítico (_paper_positions,
+#  _open_positions, _theta_positions) que NO es thread-safe.
+#
+#  Submit desde la RAÍZ del repo:
+#    cd /Users/JUAN/PycharmProjects/eolo
+#    gcloud builds submit --config cloudbuild-eolo-bot-v2.yaml . \
+#        --project eolo-schwab-agent
+# ============================================================
+
+steps:
+  # ── Step 1: Build Docker image ────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-options/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:$BUILD_ID'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+      - '.'
+
+  # ── Step 2: Push ──────────────────────────────────────
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+
+  # ── Step 3: Deploy to Cloud Run (NO scaling flags) ────
+  - name: 'gcr.io/cloud-builders/gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'eolo-bot-v2'
+      - '--image=gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+      - '--region=us-east1'
+      - '--platform=managed'
+      - '--allow-unauthenticated'
+      - '--memory=2Gi'
+      - '--cpu=1'
+      - '--cpu-boost'
+      - '--no-cpu-throttling'
+      - '--timeout=3600'
+      - '--concurrency=1'
+      - '--set-env-vars=GOOGLE_CLOUD_PROJECT=$PROJECT_ID'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:latest'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
