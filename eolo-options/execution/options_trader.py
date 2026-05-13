@@ -136,7 +136,8 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
                      entry_price_override: Optional[float] = None,
                      opened_at_ts: Optional[float] = None,
                      expected_price: Optional[float] = None,
-                     fill_price: Optional[float] = None) -> str:
+                     fill_price: Optional[float] = None,
+                     isolation_info: dict | None = None) -> str:
     """
     Loguea una orden paper en CSV + Firestore y retorna un order_id fake.
     Si la orden es SELL_TO_CLOSE el caller puede pasar pnl_usd/pnl_pct ya calculados
@@ -227,6 +228,16 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
     }
     if enrich:
         trade_payload.update(enrich)
+
+    # Logging de safety net (Pure Isolation Opción C)
+    if isolation_info:
+        cs = isolation_info.get("closer_strategy")
+        cr = isolation_info.get("closer_reason")
+        if cs is not None:
+            trade_payload["closer_strategy"] = cs
+        if cr is not None:
+            trade_payload["closer_reason"] = cr
+
     _persist_trade_to_firestore(trade_payload)
 
     # Telegram
@@ -247,29 +258,31 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
     return order_id
 
 
-def _resolve_close_isolation_v2(opener_strategy: str, closer_strategy: str
-                                 ) -> tuple[bool, str]:
+def _resolve_close_isolation_v2(opener_strategy: str, closer_strategy: str,
+                                 reason: str = ""
+                                 ) -> tuple[bool, str, str, dict]:
     """
     Pure Isolation V2 gate (simple).
 
     Reglas:
-      • opener == closer (no vacío)  →  ALLOW (log_strategy = opener)
+      • opener == closer (no vacío)  →  ALLOW
       • opener != closer             →  REJECT
 
-    Nota: los safety nets de V2 (`close_all_positions`, `_auto_close_loop`,
-    /daily-open-reset) preservan el opener via `pos.get("strategy")`, así que
-    auto-pasan el gate. Decisiones Claude (`claude_high`/`claude_medium`/
-    `claude_bot`) y cualquier otro SELL_TO_CLOSE cross-strategy quedan
-    rechazadas.
+    Nota: los safety nets de V2 (auto_close_loop, close_all_positions) llaman a
+    close_long_call/put pasando closer_override explícito, NO a través de este
+    gate. Por eso el gate solo distingue allow/reject sin safety nets en código.
 
-    Para posiciones sin match (orphan closes) este helper no se invoca →
-    pass-through legacy.
-
-    Returns (allowed, log_strategy).
+    Returns (allowed, log_strategy, log_reason, isolation_info).
     """
     if opener_strategy and opener_strategy == closer_strategy:
-        return True, opener_strategy
-    return False, closer_strategy
+        return True, opener_strategy, reason, {
+            "closer_strategy": None,
+            "closer_reason":   None,
+        }
+    return False, closer_strategy, reason, {
+        "closer_strategy": None,
+        "closer_reason":   None,
+    }
 
 
 class OptionsTrader:
@@ -409,12 +422,23 @@ class OptionsTrader:
         limit:      float | None = None,
         strategy:   str = "",
         reason:     str = "",
+        closer_override: str | None = None,
+        closer_reason_override: str | None = None,
     ) -> str | None:
-        """Cierra una posición larga de call (SELL TO CLOSE)."""
+        """
+        Cierra una posición larga de call (SELL TO CLOSE).
+
+        closer_override: si se pasa, identifica un safety net cerrando la posición.
+            Bypasea el gate de Pure Isolation y se loguea en el trade payload.
+            Valores esperados: "auto_close" | "close_all" | "manual"
+        closer_reason_override: categoría del cierre (p.ej. "eod_15_27", "operator_command").
+        """
         return await self._place_single(
             ticker, expiration, strike, "call",
             "SELL_TO_CLOSE", contracts, limit,
             strategy=strategy, reason=reason,
+            closer_override=closer_override,
+            closer_reason_override=closer_reason_override,
         )
 
     async def close_long_put(
@@ -426,12 +450,23 @@ class OptionsTrader:
         limit:      float | None = None,
         strategy:   str = "",
         reason:     str = "",
+        closer_override: str | None = None,
+        closer_reason_override: str | None = None,
     ) -> str | None:
-        """Cierra una posición larga de put (SELL TO CLOSE)."""
+        """
+        Cierra una posición larga de put (SELL TO CLOSE).
+
+        closer_override: si se pasa, identifica un safety net cerrando la posición.
+            Bypasea el gate de Pure Isolation y se loguea en el trade payload.
+            Valores esperados: "auto_close" | "close_all" | "manual"
+        closer_reason_override: categoría del cierre (p.ej. "eod_15_27", "operator_command").
+        """
         return await self._place_single(
             ticker, expiration, strike, "put",
             "SELL_TO_CLOSE", contracts, limit,
             strategy=strategy, reason=reason,
+            closer_override=closer_override,
+            closer_reason_override=closer_reason_override,
         )
 
     # ── Debit Spread ───────────────────────────────────────
@@ -658,8 +693,19 @@ class OptionsTrader:
         limit:      float | None,
         strategy:   str = "",
         reason:     str = "",
+        closer_override: str | None = None,
+        closer_reason_override: str | None = None,
     ) -> str | None:
         symbol = self.build_occ_symbol(ticker, expiration, opt_type, strike)
+
+        # Pure Isolation logging: si vino un safety net override, lo usamos.
+        # Si no, el gate determinará el closer (None si intra-strategy, rechazo si cross).
+        isolation_info: dict | None = None
+        if closer_override is not None:
+            isolation_info = {
+                "closer_strategy": closer_override,
+                "closer_reason":   closer_reason_override,
+            }
 
         # ── PAPER MODE ────────────────────────────────────
         if self.paper:
@@ -676,14 +722,22 @@ class OptionsTrader:
                         and p["strike"] == strike and p["option_type"] == opt_type):
                         # Pure Isolation gate
                         opener_strategy = p.get("strategy", "")
-                        allowed, log_strategy = _resolve_close_isolation_v2(opener_strategy, strategy)
-                        if not allowed:
-                            logger.warning(
-                                f"[ISOLATION] SELL_TO_CLOSE PAPER {symbol} bloqueado: "
-                                f"opener={opener_strategy!r} ≠ closer={strategy!r}."
-                            )
-                            return None
-                        strategy = log_strategy   # preserva atribución al opener
+                        if closer_override is not None:
+                            # Safety net externo: bypass del gate, usar strategy del opener
+                            strategy = opener_strategy if opener_strategy else strategy
+                            log_strategy = strategy
+                            # isolation_info ya viene seteado de la inicialización
+                        else:
+                            allowed, log_strategy, log_reason, gate_isolation_info = _resolve_close_isolation_v2(opener_strategy, strategy, reason)
+                            if not allowed:
+                                logger.warning(
+                                    f"[ISOLATION] SELL_TO_CLOSE PAPER {symbol} bloqueado: "
+                                    f"opener={opener_strategy!r} ≠ closer={strategy!r}."
+                                )
+                                return None
+                            strategy = log_strategy   # preserva atribución al opener
+                            reason = log_reason
+                            isolation_info = gate_isolation_info  # siempre {None, None} si pasamos por aquí
 
                         entry   = p.get("entry_price", 0) or 0
                         if limit is not None:
@@ -712,6 +766,7 @@ class OptionsTrader:
                 macro_feeds = self._macro_feeds,
                 entry_price_override = entry_price_override,
                 opened_at_ts         = opened_at_ts,
+                isolation_info       = isolation_info,
             )
             # Actualizar posiciones paper en memoria
             self._update_paper_positions(
@@ -752,12 +807,16 @@ class OptionsTrader:
             pnl_pct = None
             entry_price_override: Optional[float] = None
             opened_at_ts:         Optional[float] = None
+            # TODO(safety_net_logging): Path LIVE no tiene closer_strategy/closer_reason
+            # implementados todavía. Cuando se active LIVE trading, replicar el patrón
+            # de PAPER (closer_override passthrough + isolation_info al log).
+            # Decisión del 13-may-2026: EOLO es paper-only, no es prioridad mes 1.
             if instruction == "SELL_TO_CLOSE":
                 opened = self._open_positions.get(symbol)
                 if opened:
                     # Pure Isolation gate
                     opener_strategy = opened.get("strategy", "")
-                    allowed, log_strategy = _resolve_close_isolation_v2(opener_strategy, strategy)
+                    allowed, log_strategy, _log_reason, _gate_info = _resolve_close_isolation_v2(opener_strategy, strategy, reason)
                     if not allowed:
                         logger.warning(
                             f"[ISOLATION] SELL_TO_CLOSE LIVE {symbol} bloqueado: "
