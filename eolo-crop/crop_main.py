@@ -301,6 +301,11 @@ def _find_unserializable_path(obj, path: str = "root", _depth: int = 0):
 class CropBotTheta:
 
     def __init__(self):
+        # Sprint S3.B: overrides in-memory para _strategy_params() merge.
+        # Editados via POST /api/state/edit. Sin Firestore (in-memory only).
+        # Estructura: dict[path_str, value] donde path es fieldId convention.
+        self._strategy_overrides: dict = {}
+        
         # Módulos
         self.stream        = SchwabStream(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
@@ -3037,9 +3042,27 @@ class CropBotTheta:
         DTEs válidos según weekday — opciones expiran lun-vie.
         Lun: [0,1,2,3,4]  Mar: [0,1,2,3]  Mié: [0,1,2]  Jue: [0,1]  Vie: [0]
         Sáb/Dom: [] (no se opera, igual hay guard de fin de semana antes).
+
+        Sprint S3.C: lee _strategy_overrides primero (set via POST /api/state/edit).
+        Override key: "strategy_params.target_dtes.by_weekday.<DAY>" (Mon..Sun).
+        Validation inline: debe ser list de ints en rango 0..4. Si no, fallback.
         """
         from datetime import datetime, timezone
         wd = datetime.now(timezone.utc).weekday()  # 0=Lun, 6=Dom
+
+        # Sprint S3.C: check _strategy_overrides primero
+        _weekday_names = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri', 5: 'Sat', 6: 'Sun'}
+        _day_name = _weekday_names.get(wd)
+        _override_key = f"strategy_params.target_dtes.by_weekday.{_day_name}"
+        _overrides = getattr(self, '_strategy_overrides', {}) or {}
+        if _override_key in _overrides:
+            _override_value = _overrides[_override_key]
+            if isinstance(_override_value, list) and all(
+                isinstance(d, int) and 0 <= d <= 4 for d in _override_value
+            ):
+                return _override_value
+
+        # Fallback hardcoded (preservado del comportamiento original)
         mapping = {
             0: [0, 1, 2, 3, 4],   # Lunes
             1: [0, 1, 2, 3],      # Martes
