@@ -3754,6 +3754,8 @@ function renderVixCreditTable(strategyParams, currentVix) {
   if (!tbody || !strategyParams || !strategyParams.vix_credit_table) return;
 
   const table = strategyParams.vix_credit_table;
+  const FIELD_BASE = 'strategy_params.vix_credit_table';
+  const editing = typeof isEditMode !== 'undefined' && isEditMode;
 
   const vixDisplay = document.getElementById('vix-current-display');
   if (vixDisplay) {
@@ -3775,23 +3777,41 @@ function renderVixCreditTable(strategyParams, currentVix) {
 
   tbody.innerHTML = table.map((row, idx) => {
     const isActive = idx === activeIdx;
+    // Label de rango VIX (readonly siempre — vix_ceil NO editable per Opción D)
     let label;
     if (row.vix_ceil === null) {
-      label = '≥ 30';
+      const prev = table[idx - 1] && table[idx - 1].vix_ceil;
+      label = '≥ ' + (prev != null ? prev : '30');
     } else if (idx === 0) {
       label = `< ${row.vix_ceil}`;
     } else {
       const prevCeil = table[idx - 1].vix_ceil;
       label = `${prevCeil} – ${row.vix_ceil}`;
     }
+    // Sprint S2.3 Bloque 6: 5 cols editables (spy, qqq, iwm, tqqq, payoff_mult)
+    let spyCell, qqqCell, iwmCell, tqqqCell, pmCell;
+    if (editing) {
+      const base = `${FIELD_BASE}[${idx}]`;
+      spyCell  = _renderEditableNumber(row.spy,         `${base}.spy`,         0.05, 5.0, 0.05);
+      qqqCell  = _renderEditableNumber(row.qqq,         `${base}.qqq`,         0.05, 5.0, 0.05);
+      iwmCell  = _renderEditableNumber(row.iwm,         `${base}.iwm`,         0.05, 5.0, 0.05);
+      tqqqCell = _renderEditableNumber(row.tqqq,        `${base}.tqqq`,        0.05, 5.0, 0.05);
+      pmCell   = _renderEditableNumber(row.payoff_mult, `${base}.payoff_mult`, 0.1,  3.0, 0.05);
+    } else {
+      spyCell  = `$${row.spy.toFixed(2)}`;
+      qqqCell  = `$${row.qqq.toFixed(2)}`;
+      iwmCell  = `$${row.iwm.toFixed(2)}`;
+      tqqqCell = `$${row.tqqq.toFixed(2)}`;
+      pmCell   = `${row.payoff_mult.toFixed(2)}×`;
+    }
     return `
       <tr class="vix-bin-${idx}${isActive ? ' active' : ''}">
         <td>${label}</td>
-        <td>$${row.spy.toFixed(2)}</td>
-        <td>$${row.qqq.toFixed(2)}</td>
-        <td>$${row.iwm.toFixed(2)}</td>
-        <td>$${row.tqqq.toFixed(2)}</td>
-        <td>${row.payoff_mult.toFixed(2)}×</td>
+        <td>${spyCell}</td>
+        <td>${qqqCell}</td>
+        <td>${iwmCell}</td>
+        <td>${tqqqCell}</td>
+        <td>${pmCell}</td>
       </tr>
     `;
   }).join('');
