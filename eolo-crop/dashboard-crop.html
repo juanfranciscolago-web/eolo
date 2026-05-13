@@ -1428,6 +1428,13 @@
     font-family: ui-monospace, monospace;
     flex-shrink: 0;
   }
+  .editable-prefix {
+    font-size: 0.72rem;
+    color: var(--muted);
+    font-family: ui-monospace, monospace;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
   .exit-card .editable-wrap .editable-input {
     width: 72px;
     font-size: 0.72rem;
@@ -3918,7 +3925,19 @@ function renderExitsAdvanced(strategyParams) {
 
   // Grupo 1: Entry Gates
   setValueEditable('exit-vix-max',       ea.vix_max_entry,        'vix_max_entry',        10,   80,  0.5,  '',  v => v.toFixed(1));
-  setValueEditable('exit-vix-spike',     ea.vix_spike_delta,      'vix_spike_delta',      0.5,  20,  0.5,  '',  v => '+' + v.toFixed(1));
+  // exit-vix-spike: visible '+' prefix before input in edit mode
+  (function() {
+    const el = document.getElementById('exit-vix-spike');
+    if (!el) return;
+    const value = ea.vix_spike_delta;
+    if (value === null || value === undefined) { el.textContent = '—'; return; }
+    if (editing) {
+      const fieldId = `${FIELD_BASE}.vix_spike_delta`;
+      el.innerHTML = _renderEditableNumberLiveSuffix(value, fieldId, 0.5, 20, 0.5, v => '', '+');
+    } else {
+      el.textContent = '+' + value.toFixed(1);
+    }
+  })();
   setValueEditable('exit-vvix',          ea.vvix_panic_threshold, 'vvix_panic_threshold', 80,   200, 1,    '',  v => v.toFixed(0));
 
   // Grupo 2: Exit Triggers
@@ -3951,8 +3970,36 @@ function renderExitsAdvanced(strategyParams) {
   setValueEditable('exit-min-mins',      ea.min_minutes_to_exp,   'min_minutes_to_exp',   5,    120,  1,    'min', v => v + ' min');
 
   // Grupo 5: VIX Velocity
-  setValueEditable('exit-vv-up',         ea.vix_velocity_threshold_up_pct,    'vix_velocity_threshold_up_pct',    0.005,  0.2,    0.005, '', v => '+' + (v * 100).toFixed(1) + '%');
-  setValueEditable('exit-vv-down',       ea.vix_velocity_threshold_down_pct,  'vix_velocity_threshold_down_pct',  -0.2,  -0.005,  0.005, '', v => (v * 100).toFixed(1) + '%');
+  // exit-vv-up: live-computed suffix "= +X.X%" since decimal 0.03 ↔ 3%
+  (function() {
+    const el = document.getElementById('exit-vv-up');
+    if (!el) return;
+    const value = ea.vix_velocity_threshold_up_pct;
+    if (value === null || value === undefined) { el.textContent = '—'; return; }
+    if (editing) {
+      const fieldId = `${FIELD_BASE}.vix_velocity_threshold_up_pct`;
+      const fn = v => '= +' + (v * 100).toFixed(1) + '%';
+      window._liveSuffixFormatters[fieldId] = fn;
+      el.innerHTML = _renderEditableNumberLiveSuffix(value, fieldId, 0.005, 0.2, 0.005, fn, null);
+    } else {
+      el.textContent = '+' + (value * 100).toFixed(1) + '%';
+    }
+  })();
+  // exit-vv-down: live-computed suffix "= X.X%" (negative)
+  (function() {
+    const el = document.getElementById('exit-vv-down');
+    if (!el) return;
+    const value = ea.vix_velocity_threshold_down_pct;
+    if (value === null || value === undefined) { el.textContent = '—'; return; }
+    if (editing) {
+      const fieldId = `${FIELD_BASE}.vix_velocity_threshold_down_pct`;
+      const fn = v => '= ' + (v * 100).toFixed(1) + '%';
+      window._liveSuffixFormatters[fieldId] = fn;
+      el.innerHTML = _renderEditableNumberLiveSuffix(value, fieldId, -0.2, -0.005, 0.005, fn, null);
+    } else {
+      el.textContent = (value * 100).toFixed(1) + '%';
+    }
+  })();
   setValueEditable('exit-vv-window',     ea.vix_velocity_window_seconds,      'vix_velocity_window_seconds',      30,    600,    10,    's', v => v + 's');
 }
 
@@ -4317,6 +4364,58 @@ window._handleEditChange = function(fieldId, input, min, max, originalValue) {
 };
 
 // Sprint S2.3 Bloque 3: helpers para input con sufijo + array
+// Registry of live-suffix formatters (populated by renderers; used by _handleEditChangeLive)
+window._liveSuffixFormatters = window._liveSuffixFormatters || {};
+
+function _renderEditableNumberLiveSuffix(currentValue, fieldId, min, max, step, computeFn, prefix) {
+  // Variant of _renderEditableNumberWithSuffix where suffix is computed live as user types.
+  // computeFn: (numValue) => string (e.g. v => '= ' + (v*100).toFixed(1) + '%')
+  // prefix:    optional string rendered BEFORE the input (e.g. '+')
+  step = step || 'any';
+  const draftVal = inputDraftValues[fieldId];
+  const pendingVal = pendingEdits[fieldId];
+  const displayVal = draftVal !== undefined ? draftVal : (pendingVal !== undefined ? pendingVal : currentValue);
+  const numVal = parseFloat(displayVal);
+  const isInvalid = !isNaN(numVal) && (numVal < min || numVal > max);
+  const isEdited = pendingVal !== undefined && !isInvalid;
+  const cssClass = isInvalid ? ' invalid' : (isEdited ? ' edited' : '');
+  // Compute initial suffix (preserves correct hint across re-renders)
+  const initialSuffix = !isNaN(numVal) ? computeFn(numVal) : '';
+  // Unique suffix element id so _handleEditChangeLive can update it
+  const suffixId = 'suffix-' + fieldId.replace(/[.\[\]]/g, '-');
+  const prefixHtml = prefix ? `<span class="editable-prefix">${prefix}</span>` : '';
+  return `<div class="editable-wrap">${prefixHtml}<input type="number" class="editable-input${cssClass}"
+    data-field="${fieldId}" value="${displayVal}" step="${step}"
+    oninput="window._handleEditChangeLive('${fieldId}', this, ${min}, ${max}, '${suffixId}', ${currentValue})"
+    onchange="window._handleEditChangeLive('${fieldId}', this, ${min}, ${max}, '${suffixId}', ${currentValue})"><span id="${suffixId}" class="editable-suffix">${initialSuffix}</span></div>`;
+}
+
+window._handleEditChangeLive = function(fieldId, input, min, max, suffixId, originalValue) {
+  const rawVal = input.value;
+  inputDraftValues[fieldId] = rawVal;
+  // Update live suffix
+  const suffixEl = document.getElementById(suffixId);
+  if (suffixEl) {
+    const numVal = parseFloat(rawVal);
+    const fn = window._liveSuffixFormatters[fieldId];
+    suffixEl.textContent = (!isNaN(numVal) && fn) ? fn(numVal) : '';
+  }
+  // Validate + stash
+  if (!_validateInput(input, min, max)) {
+    delete pendingEdits[fieldId];
+    input.classList.remove('edited');
+    return;
+  }
+  const newVal = parseFloat(rawVal);
+  if (newVal === originalValue) {
+    delete pendingEdits[fieldId];
+    input.classList.remove('edited');
+  } else {
+    pendingEdits[fieldId] = newVal;
+    input.classList.add('edited');
+  }
+};
+
 function _renderEditableNumberWithSuffix(currentValue, fieldId, min, max, step, suffix) {
   const inputHtml = _renderEditableNumber(currentValue, fieldId, min, max, step);
   const suffixHtml = suffix ? `<span class="editable-suffix">${suffix}</span>` : '';
