@@ -136,7 +136,9 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
                      entry_price_override: Optional[float] = None,
                      opened_at_ts: Optional[float] = None,
                      expected_price: Optional[float] = None,
-                     fill_price: Optional[float] = None) -> str:
+                     fill_price: Optional[float] = None,
+                     quote_snapshot: dict | None = None,
+                     data_quality: str = "n/a") -> str:
     """
     Loguea una orden paper en CSV + Firestore y retorna un order_id fake.
     Si la orden es SELL_TO_CLOSE el caller puede pasar pnl_usd/pnl_pct ya calculados
@@ -224,9 +226,20 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
         "order_id":    order_id,
         "pnl_usd":     pnl_usd,
         "pnl_pct":     pnl_pct,
+        "data_quality": data_quality,
     }
     if enrich:
         trade_payload.update(enrich)
+
+    # Sprint 1 fix: snapshot completo del quote (9 keys). Si quote_snapshot is None
+    # (BUY_TO_OPEN, o close con limit explícito), las 9 keys quedan en None —
+    # el dashboard debe distinguir None (sin dato) vs 0 (precio cero).
+    quote_keys = ("quote_bid", "quote_ask", "quote_mid", "quote_last", "quote_mark",
+                  "quote_spot", "quote_iv", "quote_fetched_at", "quote_source")
+    qs = quote_snapshot or {}
+    for k in quote_keys:
+        trade_payload[k] = qs.get(k)
+
     _persist_trade_to_firestore(trade_payload)
 
     # Telegram
@@ -258,7 +271,8 @@ class OptionsTrader:
       - close_all_positions() limpia el estado paper
     """
 
-    def __init__(self, paper: bool = PAPER_TRADING, macro_feeds=None):
+    def __init__(self, paper: bool = PAPER_TRADING, macro_feeds=None,
+                 chain_fetcher=None):
         self.paper         = paper
         self._account_id   = None
         self._open_positions: dict[str, dict] = {}   # order_id → position_dict
@@ -268,6 +282,10 @@ class OptionsTrader:
         # MacroFeeds inyectado desde eolo_v2_main (para VIX snapshot en enrichment).
         # Se puede setear después con set_macro_feeds(); None → campos VIX quedan vacíos.
         self._macro_feeds = macro_feeds
+        # OptionChainFetcher inyectado desde eolo_v2_main (para resolver bid en SELL_TO_CLOSE).
+        # Se puede setear después con set_chain_fetcher(); None → _resolve_close_limit
+        # devuelve fail-loud y trade se persiste con data_quality=quote_unavailable.
+        self._chain_fetcher = chain_fetcher
 
         mode = "📄 PAPER" if self.paper else "💰 LIVE"
         logger.info(f"[TRADER] Modo: {mode}")
@@ -275,6 +293,10 @@ class OptionsTrader:
     def set_macro_feeds(self, macro_feeds):
         """Inyecta MacroFeeds post-init (eolo_v2_main lo crea async)."""
         self._macro_feeds = macro_feeds
+
+    def set_chain_fetcher(self, chain_fetcher):
+        """Inyecta OptionChainFetcher post-init (eolo_v2_main puede crearlo después)."""
+        self._chain_fetcher = chain_fetcher
 
     # ── Autenticación y cuenta ─────────────────────────────
 
@@ -386,10 +408,17 @@ class OptionsTrader:
         reason:     str = "",
     ) -> str | None:
         """Cierra una posición larga de call (SELL TO CLOSE)."""
+        # Si caller no pasó limit, resolver desde chain (Sprint 1 fix exit_price).
+        quote_snapshot: dict | None = None
+        if limit is None:
+            limit, quote_snapshot = self._resolve_close_limit(
+                ticker, expiration, strike, "call"
+            )
         return await self._place_single(
             ticker, expiration, strike, "call",
             "SELL_TO_CLOSE", contracts, limit,
             strategy=strategy, reason=reason,
+            quote_snapshot=quote_snapshot,
         )
 
     async def close_long_put(
@@ -403,10 +432,17 @@ class OptionsTrader:
         reason:     str = "",
     ) -> str | None:
         """Cierra una posición larga de put (SELL TO CLOSE)."""
+        # Si caller no pasó limit, resolver desde chain (Sprint 1 fix exit_price).
+        quote_snapshot: dict | None = None
+        if limit is None:
+            limit, quote_snapshot = self._resolve_close_limit(
+                ticker, expiration, strike, "put"
+            )
         return await self._place_single(
             ticker, expiration, strike, "put",
             "SELL_TO_CLOSE", contracts, limit,
             strategy=strategy, reason=reason,
+            quote_snapshot=quote_snapshot,
         )
 
     # ── Debit Spread ───────────────────────────────────────
@@ -620,6 +656,113 @@ class OptionsTrader:
 
         return await self._submit_order(account_id, order, tag)
 
+    # ── Close quote helper ────────────────────────────────
+
+    def _resolve_close_limit(
+        self,
+        ticker:     str,
+        expiration: str,
+        strike:     float,
+        opt_type:   Literal["call", "put"],
+    ) -> tuple[float | None, dict]:
+        """
+        Resuelve precio de cierre (BID) + arma snapshot del quote para persistencia.
+
+        Política (Sprint 1 fix forward, 2026-05-13):
+          - Usa BID puro como `limit` (consistente con SELL_TO_CLOSE live,
+            que en orden MARKET se ejecuta cerca del bid en el peor caso).
+          - Si bid es None o <= 0: fail-loud (retorna limit=None). El caller
+            debe persistir el trade con data_quality="quote_unavailable" y
+            pnl_usd/pnl_pct = None.
+          - NO hay fallback a last/mark/spot (paper simula live worst-case).
+          - Snapshot completo del quote SIEMPRE va a Firestore para auditoría,
+            incluso si bid era inválido.
+
+        Returns:
+            (limit, snapshot)
+              limit:    float si chain está OK y bid > 0; None en fallos.
+              snapshot: dict con keys quote_* (siempre presente; en fallos
+                        los campos numéricos quedan None, quote_source
+                        indica la razón).
+        """
+        strike = float(strike)   # blindaje: previene str(45) vs str(45.0) mismatch en lookup
+        symbol = self.build_occ_symbol(ticker, expiration, opt_type, strike)
+
+        def _fail(reason: str) -> tuple[None, dict]:
+            """Snapshot vacío con quote_source=reason."""
+            return None, {
+                "quote_bid":        None,
+                "quote_ask":        None,
+                "quote_mid":        None,
+                "quote_last":       None,
+                "quote_mark":       None,
+                "quote_spot":       None,
+                "quote_iv":         None,
+                "quote_fetched_at": None,
+                "quote_source":     reason,
+            }
+
+        # (a) chain_fetcher no inyectado → WARNING (config issue, no runtime)
+        if self._chain_fetcher is None:
+            logger.warning(
+                f"[CLOSE_QUOTE] chain_fetcher not injected — cannot quote {symbol}"
+            )
+            return _fail("no_fetcher")
+
+        # (b)-(c) Lookup contract en cache → ERROR (cierre sin precio = bug original)
+        option_type_plural = opt_type + "s"   # "call" → "calls"
+        contract = self._chain_fetcher.get_contract(
+            ticker, expiration, strike, option_type_plural
+        )
+        if not contract:
+            logger.error(
+                f"[CLOSE_QUOTE] no chain data for {symbol} "
+                f"(ticker={ticker} exp={expiration} strike={strike} type={opt_type})"
+            )
+            return _fail("no_chain_data")
+
+        # (d) Campos del contract
+        bid  = contract.get("bid")
+        ask  = contract.get("ask")
+        mark = contract.get("mark")
+        last = contract.get("last")
+        iv   = contract.get("iv")
+
+        # (e) Spot + timestamp del chain entero (API pública)
+        chain      = self._chain_fetcher.get_chain(ticker) or {}
+        underlying = chain.get("underlying") or {}
+        spot       = underlying.get("price")
+        chain_ts   = chain.get("ts")   # unix time.time() local del último fetch
+
+        # (f) Mid si ambos lados existen
+        mid = round((bid + ask) / 2, 4) if (bid is not None and ask is not None) else None
+
+        # Snapshot completo (siempre presente, fail-loud o no)
+        snapshot = {
+            "quote_bid":        bid,
+            "quote_ask":        ask,
+            "quote_mid":        mid,
+            "quote_last":       last,    # último trade real ejecutado (puede ser stale)
+            "quote_mark":       mark,    # mid calculado por Schwab
+            "quote_spot":       spot,
+            "quote_iv":         iv,
+            "quote_fetched_at": chain_ts,
+            "quote_source":     None,
+        }
+
+        # (g) bid null / no positivo → ERROR (cierre sin precio = bug original)
+        if bid is None or bid <= 0:
+            logger.error(
+                f"[CLOSE_QUOTE] bid unavailable for {symbol} "
+                f"(bid={bid} ask={ask} mark={mark}) — fail-loud, no fallback"
+            )
+            snapshot["quote_source"] = "bid_null"
+            return None, snapshot
+
+        # (h) OK
+        snapshot["quote_source"] = "schwab_chain"
+        return float(bid), snapshot
+
     # ── Orden genérica ─────────────────────────────────────
 
     async def _place_single(
@@ -633,6 +776,7 @@ class OptionsTrader:
         limit:      float | None,
         strategy:   str = "",
         reason:     str = "",
+        quote_snapshot: dict | None = None,
     ) -> str | None:
         symbol = self.build_occ_symbol(ticker, expiration, opt_type, strike)
 
@@ -655,10 +799,22 @@ class OptionsTrader:
                             if entry:
                                 pnl_pct = round((current - entry) / entry * 100, 2)
                             pnl_usd = round((current - entry) * p["contracts"] * 100, 2)
-                        # else: limit ausente → pnl_usd y pnl_pct quedan None (init)
+                        # else: limit ausente → pnl_usd y pnl_pct quedan None
+                        # (data_quality="quote_unavailable" se setea más abajo)
                         entry_price_override = float(entry) if entry else None
                         opened_at_ts         = p.get("opened_at_ts")
                         break
+
+            # Sprint 1 fix: data_quality refleja si el quote fue resuelto.
+            data_quality = "quote_resolved"
+            if limit is None:
+                qs = quote_snapshot or {}
+                data_quality = "quote_unavailable"
+                logger.error(
+                    f"[CLOSE_PAPER] limit unavailable for {symbol} "
+                    f"(quote_source={qs.get('quote_source', 'unknown')}) "
+                    f"— persisting with pnl=None, data_quality=quote_unavailable"
+                )
 
             order_id = _log_paper_trade(
                 action      = instruction,
@@ -676,6 +832,8 @@ class OptionsTrader:
                 macro_feeds = self._macro_feeds,
                 entry_price_override = entry_price_override,
                 opened_at_ts         = opened_at_ts,
+                quote_snapshot       = quote_snapshot,
+                data_quality         = data_quality,
             )
             # Actualizar posiciones paper en memoria
             self._update_paper_positions(
