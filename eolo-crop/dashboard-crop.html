@@ -1380,6 +1380,34 @@
     cursor: not-allowed;
     opacity: 0.5;
   }
+  /* Sprint S3.E: readonly hint en edit mode para fields que viven en /api/config */
+  .s3-readonly-edit-mode {
+    font-style: italic;
+    color: var(--muted);
+    border-bottom: 1px dashed var(--border);
+    cursor: help;
+    padding: 0 2px;
+  }
+  /* Sprint S3.E: server-side validation error (rojo más fuerte que client .invalid) */
+  .editable-input.invalid-server {
+    border-color: var(--red);
+    background: rgba(248, 81, 73, 0.15);
+  }
+  /* Sprint S3.E: Save button cuando hay cambios pendientes */
+  .edit-btn-save {
+    background: #58a6ff;
+    color: #0d1117;
+    border-color: #58a6ff;
+    font-weight: 700;
+  }
+  .edit-btn-save:hover { background: #79b8ff; }
+  .edit-btn-save:disabled {
+    background: #1c2333;
+    color: var(--muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+    font-weight: 400;
+  }
   .editable-input {
     background: #0f1419;
     border: 1px solid var(--border);
@@ -1547,7 +1575,7 @@
   <div class="edit-mode-toolbar" id="edit-mode-toolbar" style="display: none;">
     <button id="edit-mode-discard" class="edit-btn edit-btn-secondary" type="button">↺ Discard</button>
     <button id="edit-mode-export" class="edit-btn edit-btn-primary" type="button">📋 Export JSON</button>
-    <button id="edit-mode-save" class="edit-btn edit-btn-disabled" type="button" disabled title="Sprint S3 enables backend persistence">💾 Save (Sprint S3)</button>
+    <button id="edit-mode-save" class="edit-btn edit-btn-save" type="button" title="Persiste cambios al bot in-memory (perdidos en restart)">💾 Save</button>
   </div>
 </div>
 
@@ -4037,8 +4065,19 @@ function renderExitsAdvanced(strategyParams) {
   }
 
   // Grupo 4: Timing
-  setValueEditable('exit-entry-hour',    ea.entry_hour_et,        'entry_hour_et',        9.5,  15.0, 0.25, 'ET',
-    v => Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0') + ' ET');
+  // Sprint S3.E: entry_hour_et es readonly en edit mode (vive en /api/config, no /api/state/edit)
+  (function() {
+    const el = document.getElementById('exit-entry-hour');
+    if (!el) return;
+    const v = ea.entry_hour_et;
+    if (v === null || v === undefined) { el.textContent = '—'; return; }
+    const display = Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0') + ' ET';
+    if (editing) {
+      el.innerHTML = `<span class="s3-readonly-edit-mode" title="Configurable desde el modal Theta Harvest config (/api/config). No editable aquí.">${display}</span>`;
+    } else {
+      el.textContent = display;
+    }
+  })();
   setValueEditable('exit-entry-window',  ea.entry_window_minutes, 'entry_window_minutes', 15,   240,  5,    'min', v => v + ' min');
   setValueEditable('exit-min-mins',      ea.min_minutes_to_exp,   'min_minutes_to_exp',   5,    120,  1,    'min', v => v + ' min');
 
@@ -4354,6 +4393,7 @@ function setEditMode(enabled) {
     toolbar.style.display = 'none';
     pendingEdits = {};
     inputDraftValues = {};  // Sprint S2.3 fix: clear drafts on mode-off
+    if (typeof _clearServerErrors === 'function') _clearServerErrors();  // Sprint S3.E
   }
 
   if (typeof updateRiskManagement === 'function') updateRiskManagement();
@@ -4362,7 +4402,70 @@ function setEditMode(enabled) {
 function discardEdits() {
   pendingEdits = {};
   inputDraftValues = {};  // Sprint S2.3 fix: clear drafts on discard
+  _clearServerErrors();   // Sprint S3.E: limpia marcas de error servidor
   setEditMode(false);
+}
+
+// Sprint S3.E: limpia indicadores de error del servidor en todos los inputs
+function _clearServerErrors() {
+  document.querySelectorAll('.editable-input.invalid-server').forEach(el => {
+    el.classList.remove('invalid-server');
+    el.removeAttribute('title');
+  });
+}
+
+// Sprint S3.E: marca inputs con errores del servidor por path
+function _markServerErrors(errors) {
+  Object.entries(errors).forEach(([path, reason]) => {
+    const sel = `[data-field="${CSS.escape(path)}"]`;
+    const input = document.querySelector(sel);
+    if (input) {
+      input.classList.add('invalid-server');
+      input.title = String(reason);
+    }
+  });
+}
+
+// Sprint S3.E: persiste pendingEdits al backend via POST /api/state/edit
+async function saveEdits() {
+  const keys = Object.keys(pendingEdits);
+  if (keys.length === 0) {
+    toast('No hay cambios pendientes', 'info', 2000);
+    return;
+  }
+
+  _clearServerErrors();
+
+  const saveBtn = document.getElementById('edit-mode-save');
+  if (saveBtn) saveBtn.disabled = true;
+
+  try {
+    const r = await fetch('/api/state/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(pendingEdits),
+    });
+    const res = await r.json().catch(() => ({}));
+
+    if (r.ok) {
+      const applied = res.applied || keys.length;
+      toast(`✅ ${applied} cambio${applied !== 1 ? 's' : ''} guardado${applied !== 1 ? 's' : ''}`, 'success', 3000);
+      pendingEdits = {};
+      inputDraftValues = {};
+      setEditMode(false);
+      fetchState();
+    } else if (r.status === 422 && res.errors) {
+      const errCount = Object.keys(res.errors).length;
+      toast(`❌ ${errCount} error${errCount !== 1 ? 'es' : ''} de validación — revisá campos resaltados`, 'error', 4000);
+      _markServerErrors(res.errors);
+    } else {
+      toast('Error: ' + (res.error || `status ${r.status}`), 'error', 4000);
+    }
+  } catch (e) {
+    toast('Error de red: ' + e.message, 'error', 4000);
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
 }
 
 function exportEditsJson() {
@@ -4589,10 +4692,12 @@ function _initEditModeHandlers() {
   const toggle = document.getElementById('edit-mode-toggle');
   const discard = document.getElementById('edit-mode-discard');
   const exportBtn = document.getElementById('edit-mode-export');
+  const saveBtn = document.getElementById('edit-mode-save');
 
   if (toggle) toggle.addEventListener('click', () => setEditMode(!isEditMode));
   if (discard) discard.addEventListener('click', discardEdits);
   if (exportBtn) exportBtn.addEventListener('click', exportEditsJson);
+  if (saveBtn) saveBtn.addEventListener('click', saveEdits);
 }
 
 if (document.readyState === 'loading') {
@@ -4623,13 +4728,11 @@ function updateRiskManagement() {
   realEl.textContent = (realized >= 0 ? '+$' : '-$') + Math.abs(realized).toFixed(2);
   realEl.className = 'risk-metric-value ' + (realized < 0 ? 'bad' : (realized > 0 ? 'good' : ''));
 
-  // Sprint S2.3: editable in edit mode (cap_pct only; maxLoss is derived)
+  // Sprint S3.E: daily_loss_cap_pct es readonly en edit mode (vive en /api/config, no /api/state/edit)
   const card1El = document.getElementById('risk-loss-cap-max');
   if (typeof isEditMode !== 'undefined' && isEditMode) {
-    const editedPct = pendingEdits['config.daily_loss_cap_pct'];
-    const displayPct = editedPct !== undefined ? editedPct : capPct;
-    card1El.innerHTML = '-$' + maxLoss.toFixed(0) + ' (' +
-      _renderEditableNumber(displayPct.toFixed(1), 'config.daily_loss_cap_pct', -10, 0, 0.1) + '%)';
+    card1El.innerHTML = '-$' + maxLoss.toFixed(0) + ' (<span class="s3-readonly-edit-mode" title="Configurable desde el modal Theta Harvest config (/api/config). No editable aquí.">' +
+      capPct.toFixed(1) + '%</span>)';
   } else {
     card1El.textContent = '-$' + maxLoss.toFixed(0) + ' (' + capPct.toFixed(1) + '%)';
   }
@@ -4662,12 +4765,11 @@ function updateRiskManagement() {
   const slotsPct = maxPos > 0 ? (nOpen / maxPos * 100) : 0;
 
   document.getElementById('risk-slots-open').textContent = nOpen;
-  // Sprint S2.3: editable in edit mode
+  // Sprint S3.E: max_positions es readonly en edit mode (vive en /api/config, no /api/state/edit)
   const card2El = document.getElementById('risk-slots-max');
   if (typeof isEditMode !== 'undefined' && isEditMode) {
-    const editedMax = pendingEdits['config.max_positions'];
-    const displayMax = editedMax !== undefined ? editedMax : maxPos;
-    card2El.innerHTML = _renderEditableNumber(displayMax, 'config.max_positions', 1, 200, 1);
+    card2El.innerHTML = '<span class="s3-readonly-edit-mode" title="Configurable desde el modal Theta Harvest config (/api/config). No editable aquí.">' +
+      maxPos + '</span>';
   } else {
     card2El.textContent = maxPos;
   }

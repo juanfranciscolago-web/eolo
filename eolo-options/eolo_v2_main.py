@@ -320,7 +320,10 @@ class EoloV2:
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
         self.mispricing    = MispricingScanner()
         self.brain         = OptionsBrain()
-        self.trader        = OptionsTrader(paper=PAPER_TRADING)
+        self.trader        = OptionsTrader(
+            paper=PAPER_TRADING,
+            chain_fetcher=self.chain_fetcher,
+        )
         # Auto-Router — actualiza toggles de estrategias según régimen cada 30 min
         self._auto_router  = _AutoRouter(bot_id="v2", update_interval_min=30)
 

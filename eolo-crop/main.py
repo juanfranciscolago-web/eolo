@@ -21,6 +21,247 @@ from loguru import logger
 
 import crop_main
 
+# Sprint S3.A: lock para edits in-memory de _strategy_overrides
+# Asegura no race conditions con bot loop (asyncio thread)
+_state_edit_lock = threading.Lock()
+
+# Sprint S3.A: allowlist de paths editables vía /api/state/edit
+# Excluye campos que viven en /api/config (entry_hour_et, max_positions, daily_loss_cap_pct)
+EDITABLE_ALLOWLIST_PREFIXES = [
+    "strategy_params.exits_advanced.",        # 14/15 (excluye entry_hour_et)
+    "strategy_params.delta_by_risk.",          # 8 fieldIds
+    "strategy_params.ticker_config.",          # 20 fieldIds
+    "strategy_params.vix_credit_table[",       # 30 fieldIds (excluye vix_ceil)
+    "strategy_params.target_dtes.by_weekday.", # 7 per-day arrays
+]
+EDITABLE_BLOCKLIST_EXACT = {
+    # Overlap con /api/config — readonly UI, rechazo backend
+    "strategy_params.exits_advanced.entry_hour_et",
+    "config.max_positions",
+    "config.daily_loss_cap_pct",
+    # vix_ceil readonly (decisión arquitectónica B6)
+    # Estos no matchean por prefix pero por si acaso:
+}
+
+def _is_allowed_path(path: str) -> bool:
+    """Verifica si un fieldId path está en allowlist."""
+    if path in EDITABLE_BLOCKLIST_EXACT:
+        return False
+    for prefix in EDITABLE_ALLOWLIST_PREFIXES:
+        if path.startswith(prefix):
+            # Check específico para vix_credit_table que excluye vix_ceil
+            if "vix_credit_table[" in path and path.endswith(".vix_ceil"):
+                return False
+            return True
+    return False
+
+
+# Sprint S3.D: range bounds por field exacto (path completo → (min, max, type)).
+# Para paths variables (con índices o ticker) la lógica se aplica en
+# _validate_value_range según el último segmento del path.
+RANGE_BOUNDS_EXACT = {
+    "strategy_params.exits_advanced.vix_max_entry":              (10.0, 80.0, float),
+    "strategy_params.exits_advanced.vix_spike_delta":            (0.5, 20.0, float),
+    "strategy_params.exits_advanced.vvix_panic_threshold":       (80.0, 200.0, float),
+    "strategy_params.exits_advanced.delta_drift_max":            (0.1, 0.5, float),
+    "strategy_params.exits_advanced.spy_drop_pct_30m":           (0.1, 5.0, float),
+    "strategy_params.exits_advanced.stop_loss_mult":             (1.0, 3.0, float),
+    "strategy_params.exits_advanced.profit_target_pct":          (0.1, 0.95, float),
+    "strategy_params.exits_advanced.entry_window_minutes":       (15, 240, int),
+    "strategy_params.exits_advanced.min_minutes_to_exp":         (5, 120, int),
+    "strategy_params.exits_advanced.vix_velocity_threshold_up_pct":   (0.005, 0.2, float),
+    "strategy_params.exits_advanced.vix_velocity_threshold_down_pct": (-0.2, -0.005, float),
+    "strategy_params.exits_advanced.vix_velocity_window_seconds":     (30, 600, int),
+}
+
+
+def _validate_value_range(path: str, value):
+    """Sprint S3.D: validate que value está en rango/tipo esperado.
+    Returns (ok: bool, reason: str | None).
+    """
+    # Strict exact match primero
+    if path in RANGE_BOUNDS_EXACT:
+        lo, hi, expected_type = RANGE_BOUNDS_EXACT[path]
+        if expected_type is int:
+            if isinstance(value, bool) or not isinstance(value, int):
+                return False, f"expected int, got {type(value).__name__}"
+        elif expected_type is float:
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False, f"expected number, got {type(value).__name__}"
+            value = float(value)
+        if not (lo <= value <= hi):
+            return False, f"value {value} out of range [{lo}, {hi}]"
+        return True, None
+
+    # Tranche profit targets: None permitido (sentinel EXP) en cualquier tranche
+    if path.startswith("strategy_params.exits_advanced.tranche_profit_targets["):
+        if value is None:
+            return True, None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False, f"expected number or null, got {type(value).__name__}"
+        v = float(value)
+        if not (0.0 <= v <= 0.95):
+            return False, f"value {v} out of range [0.0, 0.95]"
+        return True, None
+
+    # Delta by Risk: e.g. strategy_params.delta_by_risk.LOW[0]
+    if path.startswith("strategy_params.delta_by_risk."):
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            return False, f"expected number, got {type(value).__name__}"
+        v = float(value)
+        if not (0.0 <= v <= 0.5):
+            return False, f"value {v} out of range [0.0, 0.5]"
+        return True, None
+
+    # Ticker Config: e.g. strategy_params.ticker_config.SPY.spread_width
+    if path.startswith("strategy_params.ticker_config."):
+        last = path.rsplit(".", 1)[-1]
+        if last == "spread_width":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False, f"expected number, got {type(value).__name__}"
+            v = float(value)
+            if not (1.0 <= v <= 20.0):
+                return False, f"value {v} out of range [1.0, 20.0]"
+            return True, None
+        if last in ("delta_min_abs", "delta_max_abs"):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False, f"expected number, got {type(value).__name__}"
+            v = float(value)
+            if not (0.0 <= v <= 0.5):
+                return False, f"value {v} out of range [0.0, 0.5]"
+            return True, None
+        if last == "min_credit":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False, f"expected number, got {type(value).__name__}"
+            v = float(value)
+            if not (0.05 <= v <= 5.0):
+                return False, f"value {v} out of range [0.05, 5.0]"
+            return True, None
+        if last == "max_dte":
+            if isinstance(value, bool) or not isinstance(value, int):
+                return False, f"expected int, got {type(value).__name__}"
+            if not (0 <= value <= 30):
+                return False, f"value {value} out of range [0, 30]"
+            return True, None
+
+    # VIX Credit Table: e.g. strategy_params.vix_credit_table[0].spy
+    if path.startswith("strategy_params.vix_credit_table["):
+        last = path.rsplit(".", 1)[-1]
+        if last in ("spy", "qqq", "iwm", "tqqq"):
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False, f"expected number, got {type(value).__name__}"
+            v = float(value)
+            if not (0.05 <= v <= 5.0):
+                return False, f"value {v} out of range [0.05, 5.0]"
+            return True, None
+        if last == "payoff_mult":
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                return False, f"expected number, got {type(value).__name__}"
+            v = float(value)
+            if not (0.1 <= v <= 3.0):
+                return False, f"value {v} out of range [0.1, 3.0]"
+            return True, None
+
+    # DTE Schedule: e.g. strategy_params.target_dtes.by_weekday.Mon
+    if path.startswith("strategy_params.target_dtes.by_weekday."):
+        if not isinstance(value, list):
+            return False, f"expected list, got {type(value).__name__}"
+        for i, d in enumerate(value):
+            if isinstance(d, bool) or not isinstance(d, int):
+                return False, f"element [{i}] expected int, got {type(d).__name__}"
+            if not (0 <= d <= 4):
+                return False, f"element [{i}] value {d} out of range [0, 4]"
+        if len(value) != len(set(value)):
+            return False, "duplicate DTE values not allowed"
+        return True, None
+
+    # Path no matchea ningún pattern — allowlist es authoritative
+    return True, None
+
+
+def _validate_cross_field(payload: dict, current_state: dict) -> dict:
+    """Sprint S3.D: validations que cruzan múltiples fields.
+
+    Mergea payload sobre current_state y verifica consistency post-edit.
+    Returns dict { path: reason } con errores (vacío si OK).
+
+    Validations:
+    - Ticker Config: delta_min_abs < delta_max_abs por ticker
+    - Tranches: T0 < T1 (T2 puede ser null/EXP)
+    - VIX Credit Table: credits + payoff_mult ascendentes por ticker
+      (mayor VIX → mayor credit/payoff)
+    """
+    import copy
+    errors = {}
+
+    # Build merged view: current_state + payload
+    merged = copy.deepcopy(current_state)
+    for path, value in payload.items():
+        if not path.startswith("strategy_params."):
+            continue
+        try:
+            _set_path(merged, path[len("strategy_params."):], value)
+        except Exception:
+            pass
+
+    # === Ticker Config: delta_min < delta_max ===
+    tc = merged.get("ticker_config", {})
+    for ticker, cfg in tc.items():
+        if not isinstance(cfg, dict):
+            continue
+        dmin = cfg.get("delta_min_abs")
+        dmax = cfg.get("delta_max_abs")
+        if dmin is not None and dmax is not None and dmin >= dmax:
+            path_min = f"strategy_params.ticker_config.{ticker}.delta_min_abs"
+            path_max = f"strategy_params.ticker_config.{ticker}.delta_max_abs"
+            attributed = False
+            for p in (path_min, path_max):
+                if p in payload:
+                    errors[p] = f"delta_min_abs ({dmin}) must be < delta_max_abs ({dmax}) for {ticker}"
+                    attributed = True
+                    break
+            if not attributed:
+                errors[path_min] = f"delta_min_abs ({dmin}) >= delta_max_abs ({dmax}) for {ticker} (existing state inconsistent)"
+
+    # === Tranches T0 < T1 ===
+    ea = merged.get("exits_advanced", {})
+    tranches = ea.get("tranche_profit_targets")
+    if isinstance(tranches, list) and len(tranches) >= 2:
+        t0, t1 = tranches[0], tranches[1]
+        if t0 is not None and t1 is not None and t0 >= t1:
+            path0 = "strategy_params.exits_advanced.tranche_profit_targets[0]"
+            path1 = "strategy_params.exits_advanced.tranche_profit_targets[1]"
+            attributed = False
+            for p in (path0, path1):
+                if p in payload:
+                    errors[p] = f"T0 ({t0}) must be < T1 ({t1})"
+                    attributed = True
+                    break
+            if not attributed:
+                errors[path0] = f"T0 ({t0}) >= T1 ({t1}) (existing state inconsistent)"
+
+    # === VIX Credit Table: credits + payoff_mult ascending por ticker ===
+    vct = merged.get("vix_credit_table", [])
+    if isinstance(vct, list) and len(vct) >= 2:
+        for col in ("spy", "qqq", "iwm", "tqqq", "payoff_mult"):
+            for i in range(1, len(vct)):
+                prev = vct[i-1].get(col) if isinstance(vct[i-1], dict) else None
+                curr = vct[i].get(col) if isinstance(vct[i], dict) else None
+                if prev is None or curr is None:
+                    continue
+                if curr < prev:
+                    path_curr = f"strategy_params.vix_credit_table[{i}].{col}"
+                    path_prev = f"strategy_params.vix_credit_table[{i-1}].{col}"
+                    if path_curr in payload:
+                        errors[path_curr] = f"{col} at row {i} ({curr}) must be >= prev row ({prev}) — credits/payoff ascending by VIX"
+                        break
+                    if path_prev in payload:
+                        errors[path_prev] = f"{col} at row {i-1} ({prev}) > row {i} ({curr}) after edit — credits/payoff must ascend by VIX"
+                        break
+
+    return errors
+
+
 from theta_harvest.theta_harvest_strategy import (
     VIX_CREDIT_TABLE,
     TICKER_CONFIG,
@@ -234,9 +475,73 @@ def _pnl_from_bot(bot):
     }
 
 
+def _set_path(d: dict, path: str, value):
+    """Sprint S3.B helper: set value in dict by dotted/bracketed path.
+    Examples:
+      _set_path(d, "exits_advanced.stop_loss_mult", 1.5)
+      _set_path(d, "delta_by_risk.LOW[0]", 0.15)
+      _set_path(d, "vix_credit_table[3].spy", 0.45)
+      _set_path(d, "target_dtes.by_weekday.Mon", [0,1,2])
+    """
+    import re as _re
+    parts = []
+    for chunk in path.split("."):
+        m = _re.match(r'^([^\[]+)((?:\[\d+\])+)$', chunk)
+        if m:
+            parts.append(m.group(1))
+            for idx in _re.findall(r'\[(\d+)\]', m.group(2)):
+                parts.append(int(idx))
+        else:
+            parts.append(chunk)
+
+    cur = d
+    for i, part in enumerate(parts[:-1]):
+        next_part = parts[i + 1]
+        if isinstance(part, int):
+            if not isinstance(cur, list):
+                return
+            while len(cur) <= part:
+                cur.append({})
+            if cur[part] is None:
+                cur[part] = {} if not isinstance(next_part, int) else []
+            cur = cur[part]
+        else:
+            if part not in cur or cur[part] is None:
+                cur[part] = {} if not isinstance(next_part, int) else []
+            cur = cur[part]
+
+    final_key = parts[-1]
+    if isinstance(final_key, int):
+        if isinstance(cur, list):
+            while len(cur) <= final_key:
+                cur.append(None)
+            cur[final_key] = value
+    else:
+        if isinstance(cur, dict):
+            cur[final_key] = value
+
+
+def _apply_overrides(snapshot: dict, overrides: dict) -> dict:
+    """Sprint S3.B: aplica overrides flat sobre el snapshot de _strategy_params().
+
+    overrides es flat dict {path: value}. Modifica snapshot in-place y lo devuelve.
+    Strips "strategy_params." prefix porque snapshot no incluye ese wrapper.
+    Si un path no encaja con la estructura, se ignora silenciosamente.
+    """
+    for path, value in overrides.items():
+        if path.startswith("strategy_params."):
+            sub_path = path[len("strategy_params."):]
+            try:
+                _set_path(snapshot, sub_path, value)
+            except Exception:
+                pass
+    return snapshot
+
+
 def _strategy_params() -> dict:
-    """Snapshot read-only de constantes ThetaHarvest. Para /api/state (Sprint S1)."""
-    return {
+    """Snapshot read-only de constantes ThetaHarvest. Para /api/state (Sprint S1).
+    Sprint S3.B: aplica _strategy_overrides in-memory si bot_instance los tiene."""
+    snapshot = {
         "vix_credit_table": [
             {
                 "vix_ceil":    (None if vc == float("inf") else vc),
@@ -293,6 +598,18 @@ def _strategy_params() -> dict:
             ),
         },
     }
+
+    # Sprint S3.B: aplicar overrides in-memory si bot_instance los tiene
+    try:
+        from crop_main import bot_instance as _bot
+        if _bot is not None and hasattr(_bot, '_strategy_overrides'):
+            _ovr = getattr(_bot, '_strategy_overrides', {})
+            if _ovr:
+                snapshot = _apply_overrides(snapshot, _ovr)
+    except Exception:
+        pass  # never break /api/state on override failure
+
+    return snapshot
 
 
 @app.route("/api/state")
@@ -485,6 +802,92 @@ def daily_open_reset():
 # ── Entry point local (dev) ───────────────────────────────
 # En Cloud Run se arranca con gunicorn; este if solo sirve para correr
 # `python main.py` en el Mac como alternativa a start_eolo.sh.
+
+@app.route("/api/state/edit", methods=["POST"])
+def api_state_edit():
+    """Sprint S3.A — POST endpoint para editar strategy_params in-memory.
+
+    Body JSON: { "path.to.field": value, ... }
+
+    Behavior:
+    - Validation all-or-nothing: si algún path falla, rechaza todo
+    - Allowlist estricta (excluye campos de /api/config)
+    - Aplica a bot_instance._strategy_overrides (in-memory only)
+    - threading.Lock para concurrencia con bot loop
+
+    Returns:
+    - 200 { "ok": True, "applied": N, "overrides": {...} } si éxito
+    - 422 { "ok": False, "errors": {path: reason, ...} } si validation falla
+    - 503 si bot_instance no inicializado todavía
+    """
+    from crop_main import bot_instance
+
+    if bot_instance is None:
+        return jsonify({"ok": False, "error": "bot_instance not initialized"}), 503
+
+    try:
+        payload = request.get_json(force=True, silent=False)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"invalid JSON: {e}"}), 400
+
+    if not isinstance(payload, dict):
+        return jsonify({"ok": False, "error": "expected dict {path: value}"}), 400
+
+    errors = {}
+    accepted = {}
+
+    # Capa 1 — Validación de paths (allowlist + tipo base)
+    for path, value in payload.items():
+        if not isinstance(path, str):
+            errors[str(path)] = "path must be string"
+            continue
+        if not _is_allowed_path(path):
+            errors[path] = "path not in allowlist (likely a /api/config field, configure there)"
+            continue
+        if not isinstance(value, (int, float, list, str, bool, type(None))):
+            errors[path] = f"unsupported value type: {type(value).__name__}"
+            continue
+        accepted[path] = value
+
+    # Capa 2 — Sprint S3.D: validation de rango/tipo por field
+    for path, value in list(accepted.items()):
+        ok, reason = _validate_value_range(path, value)
+        if not ok:
+            errors[path] = reason
+            del accepted[path]
+
+    # Capa 3 — Sprint S3.D: cross-field validation (solo si capas 1+2 limpias)
+    if not errors:
+        try:
+            current_state = _strategy_params()
+            cross_errors = _validate_cross_field(accepted, current_state)
+            errors.update(cross_errors)
+        except Exception as _cross_e:
+            logger.warning(f"[API /state/edit] cross-field validation skipped: {_cross_e}")
+
+    # All-or-nothing: si hay errors, rechazar todo
+    if errors:
+        return jsonify({"ok": False, "errors": errors, "accepted_count": len(accepted)}), 422
+
+    # Aplicar al state in-memory bajo lock
+    with _state_edit_lock:
+        if not hasattr(bot_instance, '_strategy_overrides'):
+            bot_instance._strategy_overrides = {}
+
+        for path, value in accepted.items():
+            bot_instance._strategy_overrides[path] = value
+
+        # Snapshot del state actual para response
+        current_overrides = dict(bot_instance._strategy_overrides)
+
+    return jsonify({
+        "ok": True,
+        "applied": len(accepted),
+        "overrides": current_overrides,
+        "note": "in-memory only — lost on restart. Firestore persistence in Sprint S3.X."
+    }), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
