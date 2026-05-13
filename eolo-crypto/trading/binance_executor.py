@@ -98,9 +98,18 @@ def _round_step(value: float, step: float) -> float:
 SAFETY_NETS_CRYPTO = {"auto_close", "manual_command"}
 
 
+def _categorize_crypto_reason(safety_net: str, reason: str) -> str:
+    """Categoriza el motivo del cierre safety net a vocabulario controlado."""
+    if safety_net == "auto_close":
+        return "auto_close_timeout"  # auto-close por timeout/EOD en crypto
+    if safety_net == "manual_command":
+        return "manual_command"
+    return "unknown_safety_net"
+
+
 def _resolve_close_isolation_crypto(opener_strategy: str, closer_strategy: str,
                                      reason: str = ""
-                                     ) -> tuple[bool, str, str]:
+                                     ) -> tuple[bool, str, str, dict]:
     """
     Pure Isolation Crypto gate.
 
@@ -118,17 +127,27 @@ def _resolve_close_isolation_crypto(opener_strategy: str, closer_strategy: str,
     `consensus:<strat>` y `claude_bot` son strategies primarias, NO safety nets:
     quedan sujetas al check estricto opener==closer.
 
-    Returns (allowed, log_strategy, log_reason).
+    Returns (allowed, log_strategy, log_reason, isolation_info).
+    isolation_info: {"closer_strategy": str | None, "closer_reason": str | None}.
     """
     if opener_strategy and opener_strategy == closer_strategy:
-        return True, opener_strategy, reason
+        return True, opener_strategy, reason, {
+            "closer_strategy": None,
+            "closer_reason":   None,
+        }
 
     if closer_strategy in SAFETY_NETS_CRYPTO:
         log_strategy = opener_strategy if opener_strategy else "LEGACY"
         log_reason   = f"[{closer_strategy}] {reason}" if reason else f"[{closer_strategy}]"
-        return True, log_strategy, log_reason
+        return True, log_strategy, log_reason, {
+            "closer_strategy": closer_strategy,
+            "closer_reason":   _categorize_crypto_reason(closer_strategy, reason),
+        }
 
-    return False, closer_strategy, reason
+    return False, closer_strategy, reason, {
+        "closer_strategy": None,
+        "closer_reason":   None,
+    }
 
 
 # ── Executor ──────────────────────────────────────────────
@@ -436,7 +455,7 @@ class BinanceExecutor:
 
         # Pure Isolation gate
         opener_strategy = position.get("strategy", "")
-        allowed, log_strategy, log_reason = _resolve_close_isolation_crypto(
+        allowed, log_strategy, log_reason, isolation_info = _resolve_close_isolation_crypto(
             opener_strategy, strategy, reason
         )
         if not allowed:
@@ -457,9 +476,11 @@ class BinanceExecutor:
             return None
 
         if self.mode == "PAPER":
-            return self._paper_sell(symbol, qty, price, strategy, reason)
+            return self._paper_sell(symbol, qty, price, strategy, reason,
+                                    isolation_info=isolation_info)
         else:
-            return self._market_sell(symbol, qty, price, strategy, reason)
+            return self._market_sell(symbol, qty, price, strategy, reason,
+                                     isolation_info=isolation_info)
 
     # ── PAPER ─────────────────────────────────────────────
 
@@ -480,7 +501,8 @@ class BinanceExecutor:
         )
         return {"symbol": symbol, "side": "BUY", "qty": qty, "price": price, "paper": True}
 
-    def _paper_sell(self, symbol, qty, price, strategy, reason):
+    def _paper_sell(self, symbol, qty, price, strategy, reason,
+                    isolation_info: dict | None = None):
         position = self._eolo_positions.pop(symbol, None)
         if not position:
             return None
@@ -492,6 +514,7 @@ class BinanceExecutor:
             symbol, "SELL", qty, price, notional, strategy, pnl, reason,
             entry_price = float(position.get("entry_price") or 0) or None,
             opened_at_ts = float(position.get("ts") or 0) or None,
+            isolation_info = isolation_info,
         )
         logger.info(
             f"[PAPER] 🔴 SELL {symbol} qty={qty} @ ${price:.4f} "
@@ -502,7 +525,8 @@ class BinanceExecutor:
 
     def _log_paper(self, symbol, side, qty, price, notional, strategy, pnl, reason,
                    entry_price: float | None = None,
-                   opened_at_ts: float | None = None):
+                   opened_at_ts: float | None = None,
+                   isolation_info: dict | None = None):
         """
         Loggea trade en CSV + Firestore. Enriquece con session_bucket, slippage,
         hold_seconds, etc. via eolo_common.trade_enrichment (Phase 1 — 2026-04-21).
@@ -554,6 +578,16 @@ class BinanceExecutor:
         }
         if enrich:
             payload.update(enrich)
+
+        # Logging de safety net (Pure Isolation)
+        if isolation_info:
+            cs = isolation_info.get("closer_strategy")
+            cr = isolation_info.get("closer_reason")
+            if cs is not None:
+                payload["closer_strategy"] = cs
+            if cr is not None:
+                payload["closer_reason"] = cr
+
         try:
             firestore_write(
                 settings.FIRESTORE_TRADES_COLLECTION,
@@ -603,7 +637,8 @@ class BinanceExecutor:
             logger.error(f"[EXEC] MARKET BUY {symbol} falló: {e}")
             return None
 
-    def _market_sell(self, symbol, qty, price, strategy, reason):
+    def _market_sell(self, symbol, qty, price, strategy, reason,
+                     isolation_info: dict | None = None):
         # Capturar posición antes del sell para poder calcular PnL
         position_pre = self._eolo_positions.get(symbol)
 
@@ -650,6 +685,7 @@ class BinanceExecutor:
                 strategy, pnl, reason,
                 entry_price = float((position_pre or {}).get("entry_price") or 0) or None,
                 opened_at_ts = float((position_pre or {}).get("ts") or 0) or None,
+                isolation_info = isolation_info,
             )
             return order
         except Exception as e:
