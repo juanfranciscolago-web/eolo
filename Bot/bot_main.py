@@ -150,31 +150,49 @@ DEFAULT_STRATEGIES = {
     # ── FASE 7a Winners: MACD Confluence + Momentum Score (PF 4.58 QQQ / 3.14 SPY, 30m)
     "macd_confluence_fase7a": True,
     "momentum_score_fase7a": True,
-    # ── Suite "EMA 3/8 y MACD" (v3) ─────────────────────────
-    "ema_3_8":             True,
-    "ema_8_21":            True,
-    "macd_accel":          True,
-    "volume_breakout":     True,
-    "buy_pressure":        True,
-    "sell_pressure":       True,
-    "vwap_momentum":       True,
-    "orb_v3":              True,
-    "donchian_turtle":     True,
-    "bulls_bsp":           True,
-    "net_bsv":             True,
+    # ── Suite "EMA 3/8 y MACD" (v3) — directional (Approach B) ──
+    "ema_3_8_long":          True,
+    "ema_3_8_short":         True,
+    "ema_8_21_long":         True,
+    "ema_8_21_short":        True,
+    "macd_accel_long":       True,
+    "macd_accel_short":      True,
+    "volume_breakout_long":  True,
+    "volume_breakout_short": True,
+    "buy_pressure_long":     True,
+    "buy_pressure_short":    True,
+    "sell_pressure_long":    True,
+    "sell_pressure_short":   True,
+    "vwap_momentum_long":    True,
+    "vwap_momentum_short":   True,
+    "orb_v3_long":           True,
+    "orb_v3_short":          True,
+    "donchian_turtle_long":  True,
+    "donchian_turtle_short": True,
+    "bulls_bsp_long":        True,
+    "bulls_bsp_short":       True,
+    "net_bsv_long":          True,
+    "net_bsv_short":         True,
     # ── Nuevas estrategias (2026-04-27) ──────────────────────
     "overnight_drift":     True,   # Overnight carry: BUY 15:45, SELL 9:35 ET
     "vix_spike_fade":      True,   # Fade pánico intraday de VIX (>5% spike → BUY)
     "spy_qqq_divergence":  True,   # Mean-reversion: SPY/QQQ ratio z-score ±2σ
     "sector_rrg":          True,   # Sector rotation: Leading quadrant (RS-Ratio > 100, RS-Mom > 100)
-    # ── Combos Ganadores (2026-04) ────────────────────────────
-    "combo1_ema_scalper":  True,   # ALTA  — EMA3/8 + EMA stack 8>21>34>55>89
-    "combo2_rubber_band":  True,   # ALTA  — Rubber Band VWAP 09:45-14:30 ET
-    "combo3_nino_squeeze": True,   # MEDIA — Nino Squeeze ⭐ (stack+TTM+vol+MACD)
-    "combo4_slimribbon":   True,   # MEDIA — SlimRibbon EMA8>13>21 + MACD + TDI
-    "combo5_btd":          True,   # MEDIA — BTD % cross0 + stack + PullBack34
-    "combo6_fractalccix":  True,   # BAJA  — TEMA/HA + CCI extremo + squeeze≥4
-    "combo7_campbell":     True,   # BAJA  — EMA34 trend + EMA3 cross + Supertrend
+    # ── Combos Ganadores (2026-04) — directional (Approach B) ──
+    "combo1_ema_scalper_long":   True,   # ALTA  — EMA3/8 + EMA stack 8>21>34>55>89 (LONG)
+    "combo1_ema_scalper_short":  True,   #                                          (SHORT)
+    "combo2_rubber_band_long":   True,   # ALTA  — Rubber Band VWAP 09:45-14:30 ET  (LONG)
+    "combo2_rubber_band_short":  True,   #                                          (SHORT)
+    "combo3_nino_squeeze_long":  True,   # MEDIA — Nino Squeeze ⭐ (stack+TTM+vol+MACD) (LONG)
+    "combo3_nino_squeeze_short": True,   #                                              (SHORT)
+    "combo4_slimribbon_long":    True,   # MEDIA — SlimRibbon EMA8>13>21 + MACD + TDI (LONG)
+    "combo4_slimribbon_short":   True,   #                                            (SHORT)
+    "combo5_btd_long":           True,   # MEDIA — BTD % cross0 + stack + PullBack34 (LONG)
+    "combo5_btd_short":          True,   #                                           (SHORT)
+    "combo6_fractalccix_long":   True,   # BAJA  — TEMA/HA + CCI extremo + squeeze≥4 (LONG)
+    "combo6_fractalccix_short":  True,   #                                           (SHORT)
+    "combo7_campbell_long":      True,   # BAJA  — EMA34 trend + EMA3 cross + Supertrend (LONG)
+    "combo7_campbell_short":     True,   #                                               (SHORT)
 }
 
 
@@ -918,82 +936,148 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     # ═══════════════════════════════════════════════════════════
     tickers_v3 = list(dict.fromkeys(tickers_ema_gap + tickers_leveraged))
 
-    # ── EMA Crossover 3/8 ───────────────────────────────
-    if strategies.get("ema_3_8"):
-        print(f"\n  [EMA_3_8] Tickers: {tickers_v3}")
+    # ── EMA Crossover 3/8 (directional) ─────────────────
+    if strategies.get("ema_3_8_long"):
+        print(f"\n  [EMA_3_8_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_ema_3_8(market_data, ticker)
-            _exec(result, "EMA_3_8")
+            result = v3_strategy.analyze_ema_3_8_long(market_data, ticker)
+            _exec(result, "EMA_3_8_LONG")
 
-    # ── EMA Crossover 8/21 ──────────────────────────────
-    if strategies.get("ema_8_21"):
-        print(f"\n  [EMA_8_21] Tickers: {tickers_v3}")
+    if strategies.get("ema_3_8_short"):
+        print(f"\n  [EMA_3_8_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_ema_8_21(market_data, ticker)
-            _exec(result, "EMA_8_21")
+            result = v3_strategy.analyze_ema_3_8_short(market_data, ticker)
+            _exec(result, "EMA_3_8_SHORT")
 
-    # ── MACD Accel ──────────────────────────────────────
-    if strategies.get("macd_accel"):
-        print(f"\n  [MACD_ACCEL] Tickers: {tickers_v3}")
+    # ── EMA Crossover 8/21 (directional) ────────────────
+    if strategies.get("ema_8_21_long"):
+        print(f"\n  [EMA_8_21_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_macd_accel(market_data, ticker)
-            _exec(result, "MACD_ACCEL")
+            result = v3_strategy.analyze_ema_8_21_long(market_data, ticker)
+            _exec(result, "EMA_8_21_LONG")
 
-    # ── Volume Breakout (v3) ────────────────────────────
-    if strategies.get("volume_breakout"):
-        print(f"\n  [VOLUME_BREAKOUT] Tickers: {tickers_v3}")
+    if strategies.get("ema_8_21_short"):
+        print(f"\n  [EMA_8_21_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_volume_breakout(market_data, ticker)
-            _exec(result, "VOLUME_BREAKOUT")
+            result = v3_strategy.analyze_ema_8_21_short(market_data, ticker)
+            _exec(result, "EMA_8_21_SHORT")
 
-    # ── Buy Pressure Trend ──────────────────────────────
-    if strategies.get("buy_pressure"):
-        print(f"\n  [BUY_PRESSURE] Tickers: {tickers_v3}")
+    # ── MACD Accel (directional) ────────────────────────────
+    if strategies.get("macd_accel_long"):
+        print(f"\n  [MACD_ACCEL_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_buy_pressure(market_data, ticker)
-            _exec(result, "BUY_PRESSURE")
+            result = v3_strategy.analyze_macd_accel_long(market_data, ticker)
+            _exec(result, "MACD_ACCEL_LONG")
 
-    # ── Sell Pressure / Net Pressure ────────────────────
-    if strategies.get("sell_pressure"):
-        print(f"\n  [SELL_PRESSURE] Tickers: {tickers_v3}")
+    if strategies.get("macd_accel_short"):
+        print(f"\n  [MACD_ACCEL_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_sell_pressure(market_data, ticker)
-            _exec(result, "SELL_PRESSURE")
+            result = v3_strategy.analyze_macd_accel_short(market_data, ticker)
+            _exec(result, "MACD_ACCEL_SHORT")
 
-    # ── VWAP Momentum ───────────────────────────────────
-    if strategies.get("vwap_momentum"):
-        print(f"\n  [VWAP_MOMENTUM] Tickers: {tickers_v3}")
+    # ── Volume Breakout (v3) (directional) ──────────────
+    if strategies.get("volume_breakout_long"):
+        print(f"\n  [VOLUME_BREAKOUT_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_vwap_momentum(market_data, ticker)
-            _exec(result, "VWAP_MOMENTUM")
+            result = v3_strategy.analyze_volume_breakout_long(market_data, ticker)
+            _exec(result, "VOLUME_BREAKOUT_LONG")
 
-    # ── Opening Range Breakout (v3) — equity-only ───────
-    if strategies.get("orb_v3"):
-        print(f"\n  [ORB_V3] Tickers: {tickers_v3}")
+    if strategies.get("volume_breakout_short"):
+        print(f"\n  [VOLUME_BREAKOUT_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_orb_v3(market_data, ticker)
-            _exec(result, "ORB_V3")
+            result = v3_strategy.analyze_volume_breakout_short(market_data, ticker)
+            _exec(result, "VOLUME_BREAKOUT_SHORT")
 
-    # ── Donchian Turtle ─────────────────────────────────
-    if strategies.get("donchian_turtle"):
-        print(f"\n  [DONCHIAN_TURTLE] Tickers: {tickers_v3}")
+    # ── Buy Pressure Trend (directional) ────────────────
+    if strategies.get("buy_pressure_long"):
+        print(f"\n  [BUY_PRESSURE_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_donchian_turtle(market_data, ticker)
-            _exec(result, "DONCHIAN_TURTLE")
+            result = v3_strategy.analyze_buy_pressure_long(market_data, ticker)
+            _exec(result, "BUY_PRESSURE_LONG")
 
-    # ── Bulls-gated BSP ─────────────────────────────────
-    if strategies.get("bulls_bsp"):
-        print(f"\n  [BULLS_BSP] Tickers: {tickers_v3}")
+    if strategies.get("buy_pressure_short"):
+        print(f"\n  [BUY_PRESSURE_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_bulls_bsp(market_data, ticker)
-            _exec(result, "BULLS_BSP")
+            result = v3_strategy.analyze_buy_pressure_short(market_data, ticker)
+            _exec(result, "BUY_PRESSURE_SHORT")
 
-    # ── Net BSV Trend ───────────────────────────────────
-    if strategies.get("net_bsv"):
-        print(f"\n  [NET_BSV] Tickers: {tickers_v3}")
+    # ── Sell Pressure / Net Pressure (directional) ──────
+    if strategies.get("sell_pressure_long"):
+        print(f"\n  [SELL_PRESSURE_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_net_bsv(market_data, ticker)
-            _exec(result, "NET_BSV")
+            result = v3_strategy.analyze_sell_pressure_long(market_data, ticker)
+            _exec(result, "SELL_PRESSURE_LONG")
+
+    if strategies.get("sell_pressure_short"):
+        print(f"\n  [SELL_PRESSURE_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_sell_pressure_short(market_data, ticker)
+            _exec(result, "SELL_PRESSURE_SHORT")
+
+    # ── VWAP Momentum (directional) ─────────────────────
+    if strategies.get("vwap_momentum_long"):
+        print(f"\n  [VWAP_MOMENTUM_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_vwap_momentum_long(market_data, ticker)
+            _exec(result, "VWAP_MOMENTUM_LONG")
+
+    if strategies.get("vwap_momentum_short"):
+        print(f"\n  [VWAP_MOMENTUM_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_vwap_momentum_short(market_data, ticker)
+            _exec(result, "VWAP_MOMENTUM_SHORT")
+
+    # ── Opening Range Breakout (v3) — equity-only (directional) ───
+    if strategies.get("orb_v3_long"):
+        print(f"\n  [ORB_V3_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_orb_v3_long(market_data, ticker)
+            _exec(result, "ORB_V3_LONG")
+
+    if strategies.get("orb_v3_short"):
+        print(f"\n  [ORB_V3_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_orb_v3_short(market_data, ticker)
+            _exec(result, "ORB_V3_SHORT")
+
+    # ── Donchian Turtle (directional) ───────────────────
+    if strategies.get("donchian_turtle_long"):
+        print(f"\n  [DONCHIAN_TURTLE_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_donchian_turtle_long(market_data, ticker)
+            _exec(result, "DONCHIAN_TURTLE_LONG")
+
+    if strategies.get("donchian_turtle_short"):
+        print(f"\n  [DONCHIAN_TURTLE_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_donchian_turtle_short(market_data, ticker)
+            _exec(result, "DONCHIAN_TURTLE_SHORT")
+
+    # ── Bulls-gated BSP (directional) ───────────────────
+    if strategies.get("bulls_bsp_long"):
+        print(f"\n  [BULLS_BSP_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_bulls_bsp_long(market_data, ticker)
+            _exec(result, "BULLS_BSP_LONG")
+
+    if strategies.get("bulls_bsp_short"):
+        print(f"\n  [BULLS_BSP_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_bulls_bsp_short(market_data, ticker)
+            _exec(result, "BULLS_BSP_SHORT")
+
+    # ── Net BSV Trend (directional) ─────────────────────
+    if strategies.get("net_bsv_long"):
+        print(f"\n  [NET_BSV_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_net_bsv_long(market_data, ticker)
+            _exec(result, "NET_BSV_LONG")
+
+    if strategies.get("net_bsv_short"):
+        print(f"\n  [NET_BSV_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_net_bsv_short(market_data, ticker)
+            _exec(result, "NET_BSV_SHORT")
 
     # ═══════════════════════════════════════════════════════════
     #  Combos Ganadores (2026-04) — 7 estrategias
@@ -1001,54 +1085,96 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
     #  COMBO2_RUBBER_BAND es equity-only (excluida de crypto).
     # ═══════════════════════════════════════════════════════════
 
-    # ── Combo 1 — EMA Scalper 3/8 ──────────────────────
-    if strategies.get("combo1_ema_scalper"):
-        print(f"\n  [COMBO1_EMA_SCALPER] Tickers: {tickers_v3}")
+    # ── Combo 1 — EMA Scalper 3/8 (directional) ────────
+    if strategies.get("combo1_ema_scalper_long"):
+        print(f"\n  [COMBO1_EMA_SCALPER_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo1_ema_scalper(market_data, ticker)
-            _exec(result, "COMBO1_EMA_SCALPER")
+            result = v3_strategy.analyze_combo1_ema_scalper_long(market_data, ticker)
+            _exec(result, "COMBO1_EMA_SCALPER_LONG")
 
-    # ── Combo 2 — Rubber Band VWAP (equity only) ───────
-    if strategies.get("combo2_rubber_band"):
-        print(f"\n  [COMBO2_RUBBER_BAND] Tickers: {tickers_v3}")
+    if strategies.get("combo1_ema_scalper_short"):
+        print(f"\n  [COMBO1_EMA_SCALPER_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo2_rubber_band(market_data, ticker)
-            _exec(result, "COMBO2_RUBBER_BAND")
+            result = v3_strategy.analyze_combo1_ema_scalper_short(market_data, ticker)
+            _exec(result, "COMBO1_EMA_SCALPER_SHORT")
 
-    # ── Combo 3 — Nino Squeeze ⭐ ────────────────────────
-    if strategies.get("combo3_nino_squeeze"):
-        print(f"\n  [COMBO3_NINO_SQUEEZE] Tickers: {tickers_v3}")
+    # ── Combo 2 — Rubber Band VWAP (equity only) (directional) ───
+    if strategies.get("combo2_rubber_band_long"):
+        print(f"\n  [COMBO2_RUBBER_BAND_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo3_nino_squeeze(market_data, ticker)
-            _exec(result, "COMBO3_NINO_SQUEEZE")
+            result = v3_strategy.analyze_combo2_rubber_band_long(market_data, ticker)
+            _exec(result, "COMBO2_RUBBER_BAND_LONG")
 
-    # ── Combo 4 — SlimRibbon + MACD ─────────────────────
-    if strategies.get("combo4_slimribbon"):
-        print(f"\n  [COMBO4_SLIMRIBBON] Tickers: {tickers_v3}")
+    if strategies.get("combo2_rubber_band_short"):
+        print(f"\n  [COMBO2_RUBBER_BAND_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo4_slimribbon(market_data, ticker)
-            _exec(result, "COMBO4_SLIMRIBBON")
+            result = v3_strategy.analyze_combo2_rubber_band_short(market_data, ticker)
+            _exec(result, "COMBO2_RUBBER_BAND_SHORT")
 
-    # ── Combo 5 — BTD + Stacked + PullBack34 ────────────
-    if strategies.get("combo5_btd"):
-        print(f"\n  [COMBO5_BTD] Tickers: {tickers_v3}")
+    # ── Combo 3 — Nino Squeeze ⭐ (directional) ──────────
+    if strategies.get("combo3_nino_squeeze_long"):
+        print(f"\n  [COMBO3_NINO_SQUEEZE_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo5_btd(market_data, ticker)
-            _exec(result, "COMBO5_BTD")
+            result = v3_strategy.analyze_combo3_nino_squeeze_long(market_data, ticker)
+            _exec(result, "COMBO3_NINO_SQUEEZE_LONG")
 
-    # ── Combo 6 — FractalCCIx Premium ───────────────────
-    if strategies.get("combo6_fractalccix"):
-        print(f"\n  [COMBO6_FRACTALCCIX] Tickers: {tickers_v3}")
+    if strategies.get("combo3_nino_squeeze_short"):
+        print(f"\n  [COMBO3_NINO_SQUEEZE_SHORT] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo6_fractalccix(market_data, ticker)
-            _exec(result, "COMBO6_FRACTALCCIX")
+            result = v3_strategy.analyze_combo3_nino_squeeze_short(market_data, ticker)
+            _exec(result, "COMBO3_NINO_SQUEEZE_SHORT")
 
-    # ── Combo 7 — Campbell Swing ─────────────────────────
-    if strategies.get("combo7_campbell"):
-        print(f"\n  [COMBO7_CAMPBELL] Tickers: {tickers_v3}")
+    # ── Combo 4 — SlimRibbon + MACD (directional) ───────
+    if strategies.get("combo4_slimribbon_long"):
+        print(f"\n  [COMBO4_SLIMRIBBON_LONG] Tickers: {tickers_v3}")
         for ticker in tickers_v3:
-            result = v3_strategy.analyze_combo7_campbell(market_data, ticker)
-            _exec(result, "COMBO7_CAMPBELL")
+            result = v3_strategy.analyze_combo4_slimribbon_long(market_data, ticker)
+            _exec(result, "COMBO4_SLIMRIBBON_LONG")
+
+    if strategies.get("combo4_slimribbon_short"):
+        print(f"\n  [COMBO4_SLIMRIBBON_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo4_slimribbon_short(market_data, ticker)
+            _exec(result, "COMBO4_SLIMRIBBON_SHORT")
+
+    # ── Combo 5 — BTD + Stacked + PullBack34 (directional) ───
+    if strategies.get("combo5_btd_long"):
+        print(f"\n  [COMBO5_BTD_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo5_btd_long(market_data, ticker)
+            _exec(result, "COMBO5_BTD_LONG")
+
+    if strategies.get("combo5_btd_short"):
+        print(f"\n  [COMBO5_BTD_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo5_btd_short(market_data, ticker)
+            _exec(result, "COMBO5_BTD_SHORT")
+
+    # ── Combo 6 — FractalCCIx Premium (directional) ─────
+    if strategies.get("combo6_fractalccix_long"):
+        print(f"\n  [COMBO6_FRACTALCCIX_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo6_fractalccix_long(market_data, ticker)
+            _exec(result, "COMBO6_FRACTALCCIX_LONG")
+
+    if strategies.get("combo6_fractalccix_short"):
+        print(f"\n  [COMBO6_FRACTALCCIX_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo6_fractalccix_short(market_data, ticker)
+            _exec(result, "COMBO6_FRACTALCCIX_SHORT")
+
+    # ── Combo 7 — Campbell Swing (directional) ──────────
+    if strategies.get("combo7_campbell_long"):
+        print(f"\n  [COMBO7_CAMPBELL_LONG] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo7_campbell_long(market_data, ticker)
+            _exec(result, "COMBO7_CAMPBELL_LONG")
+
+    if strategies.get("combo7_campbell_short"):
+        print(f"\n  [COMBO7_CAMPBELL_SHORT] Tickers: {tickers_v3}")
+        for ticker in tickers_v3:
+            result = v3_strategy.analyze_combo7_campbell_short(market_data, ticker)
+            _exec(result, "COMBO7_CAMPBELL_SHORT")
 
     # ═══════════════════════════════════════════════════════════
     #  FASE 5 Winner: XOM 30m Bollinger (PF 1.38, real backtest)
