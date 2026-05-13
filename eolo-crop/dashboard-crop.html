@@ -1435,6 +1435,19 @@
     font-weight: 700;
     flex-shrink: 0;
   }
+
+  /* Sprint S2.3 Bloque 7: checkbox styling para DTE Schedule */
+  .editable-checkbox {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+    accent-color: #58a6ff;
+    margin: 0;
+    vertical-align: middle;
+  }
+  .editable-checkbox:hover {
+    transform: scale(1.1);
+  }
   .exit-card .editable-wrap .editable-input {
     width: 72px;
     font-size: 0.72rem;
@@ -3919,13 +3932,25 @@ function renderDteSchedule(strategyParams) {
 
   const order = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
+  // Sprint S2.3 Bloque 7: editable checkboxes en edit mode
+  const FIELD_BASE = 'strategy_params.target_dtes.by_weekday';
+  const editing = typeof isEditMode !== 'undefined' && isEditMode;
+
   tbody.innerHTML = order.map(day => {
-    const dtes = sched[day] || [];
+    const stateDtes = sched[day] || [];
+    const fieldId = `${FIELD_BASE}.${day}`;
+    // Display from pendingEdits draft if exists, else state
+    const draftDtes = pendingEdits[fieldId] !== undefined ? pendingEdits[fieldId] : stateDtes;
     const isToday = day === todayKey;
     const isWeekend = day === 'Sat' || day === 'Sun';
 
     const cells = [0, 1, 2, 3, 4].map(dte => {
-      const enabled = dtes.includes(dte);
+      const enabled = draftDtes.includes(dte);
+      if (editing) {
+        return `<td><input type="checkbox" class="editable-checkbox"
+          ${enabled ? 'checked' : ''}
+          onchange="window._handleDteToggle('${day}', ${dte}, this)"></td>`;
+      }
       return `<td class="${enabled ? 'dte-enabled' : 'dte-disabled'}">${enabled ? '✓' : '—'}</td>`;
     }).join('');
 
@@ -4525,6 +4550,38 @@ window._handleEditChangeAllowEmpty = function(fieldId, input, min, max, original
   } else {
     pendingEdits[fieldId] = newVal;
     input.classList.add('edited');
+  }
+};
+
+// Sprint S2.3 Bloque 7: handler para toggle de DTE Schedule checkboxes.
+// Mantiene sorted array de DTEs por día en pendingEdits[fieldId].
+// Usa state global (L2511) como source of truth.
+window._handleDteToggle = function(day, dte, checkbox) {
+  const fieldId = 'strategy_params.target_dtes.by_weekday.' + day;
+  const sp = (state && state.strategy_params) || {};
+  const byWeekday = (sp.target_dtes && sp.target_dtes.by_weekday) || {};
+  const stateList = byWeekday[day] || [];
+
+  // Use draft if exists, else state
+  const draftList = pendingEdits[fieldId] !== undefined
+    ? [...pendingEdits[fieldId]]
+    : [...stateList];
+
+  if (checkbox.checked) {
+    if (!draftList.includes(dte)) {
+      draftList.push(dte);
+      draftList.sort(function(a, b) { return a - b; });
+    }
+  } else {
+    const idx = draftList.indexOf(dte);
+    if (idx >= 0) draftList.splice(idx, 1);
+  }
+
+  // If equals state, no change pending
+  if (JSON.stringify(draftList) === JSON.stringify(stateList)) {
+    delete pendingEdits[fieldId];
+  } else {
+    pendingEdits[fieldId] = draftList;
   }
 };
 
