@@ -1,0 +1,48 @@
+# eolo-options/cloudbuild-buildonly.yaml
+#
+# Build-only cloudbuild para V2. NO deploya — solo construye imagen y pushea a GCR.
+# Permite deploy seguro separado con `gcloud run deploy --no-traffic --tag`.
+#
+# Diferencia con cloudbuild.yaml (legacy):
+#   - cloudbuild.yaml         → build + push + deploy 100% tráfico (peligroso)
+#   - cloudbuild-buildonly.yaml → build + push solamente (seguro)
+#
+# Usage:
+#   gcloud builds submit \
+#     --config=eolo-options/cloudbuild-buildonly.yaml . \
+#     --project=eolo-schwab-agent
+#
+#   Después, deploy manual con --no-traffic:
+#   gcloud run deploy eolo-bot-v2 \
+#     --image=gcr.io/eolo-schwab-agent/eolo-bot-v2:fix-exit-price \
+#     --region=us-east1 --project=eolo-schwab-agent \
+#     --no-traffic --tag=fix-exit-price
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-options/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:fix-exit-price'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:203f975'
+      - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:fix-exit-price'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:203f975'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:fix-exit-price'
+  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:203f975'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
