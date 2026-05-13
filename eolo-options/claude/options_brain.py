@@ -274,6 +274,12 @@ REGLAS DE TRADING (CRÍTICAS — no las violes):
 7. Si hay una anomalía de mispricing HIGH con edge > $0.30, priorizarla
 8. Stop loss: 50% del premium pagado; Take profit: 100% del premium
 
+POLÍTICA OPERATIVA - IMPORTANTE:
+NO retornar confidence "MEDIUM". MEDIUM está deshabilitado por decisión del 13-may-2026
+debido a pérdidas sistemáticas históricas (0.9% win rate intra-strategy). Si no tenés
+alta convicción en la oportunidad, retorná action="HOLD" con confidence="LOW" en lugar
+de "MEDIUM". El sistema bloqueará automáticamente cualquier MEDIUM que retornes.
+
 RESPONDE ÚNICAMENTE con un JSON válido con este formato exacto:
 {{
   "action": "BUY" | "SELL_TO_CLOSE" | "HOLD",
@@ -285,7 +291,7 @@ RESPONDE ÚNICAMENTE con un JSON válido con este formato exacto:
   "limit_price": number | null,
   "stop_loss_pct": number,
   "take_profit_pct": number,
-  "confidence": "HIGH" | "MEDIUM" | "LOW",
+  "confidence": "HIGH" | "LOW",
   "mispricing": true | false,
   "mispricing_type": "PUT_CALL_PARITY" | "IV_SKEW_JUMP" | "BSM_MISPRICING" | "BUTTERFLY_ARBITRAGE" | "CALENDAR_IV_GAP" | null,
   "reason": "explicación en 1-2 oraciones de por qué esta decisión"
@@ -389,6 +395,18 @@ No incluyas ningún texto fuera del JSON."""
             decision.setdefault("confidence", "LOW")
             decision.setdefault("mispricing", False)
             decision.setdefault("mispricing_type", None)
+
+            # Defensa en profundidad: claude_medium está deshabilitado por decisión
+            # operativa del 13-may-2026. Si Claude retorna MEDIUM accidentalmente
+            # (a pesar del prompt), forzar action=HOLD para que no se ejecute.
+            if decision.get("confidence") == "MEDIUM":
+                logger.warning(
+                    f"[BRAIN] Claude retornó confidence=MEDIUM (deshabilitado por política). "
+                    f"Forzando action=HOLD. Ticker: {ticker if 'ticker' in dir() else 'N/A'}"
+                )
+                decision["action"] = "HOLD"
+                decision["reason"] = "Forced HOLD: claude_medium disabled by policy (13-may-2026)"
+                decision["confidence"] = "LOW"  # downgrade a LOW para coherencia con el resto del sistema
 
             return decision
 
