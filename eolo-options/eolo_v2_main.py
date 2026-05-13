@@ -2302,7 +2302,10 @@ class EoloV2:
                 if self._auto_close_done_date != today:
                     logger.info("[EOLO v2] 🕒 AUTO-CLOSE 15:27 ET — cerrando todas las posiciones")
                     try:
-                        closed = await self.trader.close_all_positions()
+                        closed = await self.trader.close_all_positions(
+                            closer_override="auto_close",
+                            closer_reason_override="eod_15_27",
+                        )
                         logger.info(
                             f"[EOLO v2] Auto-close completado: {len(closed)} órdenes de cierre"
                         )
@@ -2821,7 +2824,10 @@ class EoloV2:
     async def _execute_close_all(self, reason: str = "dashboard"):
         """Cierra todas las posiciones abiertas (invocado por close_all)."""
         try:
-            closed = await self.trader.close_all_positions()
+            closed = await self.trader.close_all_positions(
+                closer_override="close_all",
+                closer_reason_override="close_all_command",
+            )
             logger.warning(
                 f"[COMMANDS] ✅ Close all completado: {len(closed)} órdenes "
                 f"(razón: {reason})"

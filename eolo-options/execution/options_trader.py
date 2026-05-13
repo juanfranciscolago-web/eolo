@@ -1298,11 +1298,20 @@ class OptionsTrader:
 
     # ── Cerrar todas las posiciones ────────────────────────
 
-    async def close_all_positions(self) -> list[str]:
+    async def close_all_positions(
+        self,
+        closer_override: str | None = None,
+        closer_reason_override: str | None = None,
+    ) -> list[str]:
         """
         Cierra todas las posiciones de opciones abiertas.
         En paper mode: cierra posiciones en memoria y loguea P&L.
         Retorna lista de order_ids de cierre.
+
+        closer_override / closer_reason_override: si vienen seteados,
+        identifican que este cierre fue disparado por un safety net externo
+        (auto_close 15:27 ET, close_all command, etc.) y se loguea en el
+        trade payload de cada posición cerrada. Ver _resolve_close_isolation_v2.
         """
         positions = await self.get_positions()
         close_orders = []
@@ -1319,12 +1328,16 @@ class OptionsTrader:
                     pos["ticker"], pos["expiration"],
                     pos["strike"], pos["contracts"],
                     strategy=strategy, reason=reason,
+                    closer_override=closer_override,
+                    closer_reason_override=closer_reason_override,
                 )
             else:
                 order_id = await self.close_long_put(
                     pos["ticker"], pos["expiration"],
                     pos["strike"], pos["contracts"],
                     strategy=strategy, reason=reason,
+                    closer_override=closer_override,
+                    closer_reason_override=closer_reason_override,
                 )
 
             if order_id:
