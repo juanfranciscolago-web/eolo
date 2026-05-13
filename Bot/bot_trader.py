@@ -55,6 +55,21 @@ entry_strategies = {t: None for t in ALL_TICKERS}  # strategy que abrió la posi
 # preservando la atribución al opener. Cualquier otra strategy != opener es rechazada.
 SAFETY_NETS = {"RISK_WATCHDOG", "CLOSE_ALL"}
 
+
+def _categorize_v1_reason(safety_net: str, reason: str) -> str:
+    """Categoriza el motivo del cierre safety net a vocabulario controlado."""
+    if safety_net == "RISK_WATCHDOG":
+        r = (reason or "").lower()
+        if "stop_loss" in r or "stop loss" in r or "risk_sl" in r:
+            return "stop_loss"
+        if "take_profit" in r or "take profit" in r or "risk_tp" in r:
+            return "take_profit"
+        return "risk_watchdog_other"
+    if safety_net == "CLOSE_ALL":
+        return "close_all_command"
+    return "unknown_safety_net"
+
+
 # ── Short selling flag ─────────────────────────────────────
 # Controlado desde Firestore (eolo-config/settings.allow_short_selling).
 # OFF por defecto — el bot opera long-only hasta que se habilite explícitamente.
@@ -238,6 +253,8 @@ def _log_trade(
     fill_price:     float | None = None,
     entry_price_override: float | None = None,  # entry capturado en BUY (SELL only)
     opened_at_ts:   float | None = None,  # epoch sec del BUY (SELL only)
+    closer_strategy: str | None = None,   # safety net que ejecutó el cierre (si aplica)
+    closer_reason:   str | None = None,   # categoría: stop_loss | take_profit | close_all_command | ...
 ):
     """Guarda el trade en CSV local y en Firestore.
 
@@ -324,6 +341,10 @@ def _log_trade(
         if reason:
             # Capamos para no inflar el doc de Firestore
             trade_payload["reason"] = str(reason)[:500]
+        if closer_strategy is not None:
+            trade_payload["closer_strategy"] = closer_strategy
+        if closer_reason is not None:
+            trade_payload["closer_reason"] = closer_reason
         # Enrichment: se mergea solo con keys presentes (build_enrichment
         # ya filtra Nones, así que esto no llena Firestore con vacíos).
         if enrich:
@@ -339,7 +360,7 @@ def _log_trade(
 
 
 def _resolve_close_isolation(ticker: str, signal_strategy: str, reason: str
-                              ) -> tuple[bool, str, str]:
+                              ) -> tuple[bool, str, str, dict]:
     """
     Pure Isolation gate para cierres (SELL closing LONG, BUY_TO_COVER closing SHORT).
 
@@ -351,22 +372,32 @@ def _resolve_close_isolation(ticker: str, signal_strategy: str, reason: str
           - reason se prefija con [{signal_strategy}]
       • Cualquier otro caso → REJECT
 
-    Returns (allowed, log_strategy, log_reason).
+    Returns (allowed, log_strategy, log_reason, isolation_info).
+    isolation_info: {"closer_strategy": str | None, "closer_reason": str | None}.
     """
     opener_strategy = entry_strategies.get(ticker)
 
     # Caso 1: misma strategy abre y cierra
     if opener_strategy and signal_strategy == opener_strategy:
-        return True, signal_strategy, reason
+        return True, signal_strategy, reason, {
+            "closer_strategy": None,
+            "closer_reason":   None,
+        }
 
     # Caso 2: safety net (incluido el path legacy con opener=None)
     if signal_strategy in SAFETY_NETS:
         log_strategy = opener_strategy if opener_strategy else "LEGACY"
         log_reason   = f"[{signal_strategy}] {reason}" if reason else f"[{signal_strategy}]"
-        return True, log_strategy, log_reason
+        return True, log_strategy, log_reason, {
+            "closer_strategy": signal_strategy,
+            "closer_reason":   _categorize_v1_reason(signal_strategy, reason),
+        }
 
     # Caso 3: cross-strategy no autorizado → reject
-    return False, signal_strategy, reason
+    return False, signal_strategy, reason, {
+        "closer_strategy": None,
+        "closer_reason":   None,
+    }
 
 
 def _place_live_order(action: str, ticker: str, shares: int):
@@ -470,7 +501,7 @@ def execute(result: dict):
     if signal == "BUY":
         if current == "SHORT":
             # Pure Isolation gate
-            allowed, log_strategy, log_reason = _resolve_close_isolation(ticker, strategy, reason)
+            allowed, log_strategy, log_reason, isolation_info = _resolve_close_isolation(ticker, strategy, reason)
             if not allowed:
                 opener = entry_strategies.get(ticker)
                 logger.warning(
@@ -488,7 +519,9 @@ def execute(result: dict):
             _log_trade("BUY_TO_COVER", ticker, shares, price, log_strategy, pnl_usd=pnl,
                        timeframe=tf_min, reason=log_reason,
                        macro_feeds=macro, expected_price=price, fill_price=price,
-                       entry_price_override=entry, opened_at_ts=opened_at)
+                       entry_price_override=entry, opened_at_ts=opened_at,
+                       closer_strategy=isolation_info["closer_strategy"],
+                       closer_reason=isolation_info["closer_reason"])
             if not PAPER_TRADING:
                 _place_live_order("BUY_TO_COVER", ticker, shares)
             positions[ticker]     = None
@@ -531,7 +564,7 @@ def execute(result: dict):
     elif signal == "SELL":
         if current == "LONG":
             # Pure Isolation gate
-            allowed, log_strategy, log_reason = _resolve_close_isolation(ticker, strategy, reason)
+            allowed, log_strategy, log_reason, isolation_info = _resolve_close_isolation(ticker, strategy, reason)
             if not allowed:
                 opener = entry_strategies.get(ticker)
                 logger.warning(
@@ -549,7 +582,9 @@ def execute(result: dict):
             _log_trade("SELL", ticker, shares, price, log_strategy, pnl_usd=pnl,
                        timeframe=tf_min, reason=log_reason,
                        macro_feeds=macro, expected_price=price, fill_price=price,
-                       entry_price_override=entry, opened_at_ts=opened_at)
+                       entry_price_override=entry, opened_at_ts=opened_at,
+                       closer_strategy=isolation_info["closer_strategy"],
+                       closer_reason=isolation_info["closer_reason"])
             if not PAPER_TRADING:
                 _place_live_order("SELL", ticker, shares)
             positions[ticker]     = None
