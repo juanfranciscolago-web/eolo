@@ -33,6 +33,7 @@ EDITABLE_ALLOWLIST_PREFIXES = [
     "strategy_params.ticker_config.",          # 20 fieldIds
     "strategy_params.vix_credit_table[",       # 30 fieldIds (excluye vix_ceil)
     "strategy_params.target_dtes.by_weekday.", # 7 per-day arrays
+    "strategy_params.position_sizing.",         # Sprint S3.5: 100 paths (5d × 4t × 5dte)
 ]
 EDITABLE_BLOCKLIST_EXACT = {
     # Overlap con /api/config — readonly UI, rechazo backend
@@ -175,6 +176,17 @@ def _validate_value_range(path: str, value):
             return False, "duplicate DTE values not allowed"
         return True, None
 
+    # Sprint S3.5: position_sizing paths (int 0-50)
+    # e.g. strategy_params.position_sizing.Mon.SPY.dte0
+    if path.startswith("strategy_params.position_sizing."):
+        if isinstance(value, bool):
+            return False, "expected int, got bool"
+        if not isinstance(value, int):
+            return False, f"expected int, got {type(value).__name__}"
+        if not (0 <= value <= 50):
+            return False, f"value {value} out of range [0, 50]"
+        return True, None
+
     # Path no matchea ningún pattern — allowlist es authoritative
     return True, None
 
@@ -258,6 +270,41 @@ def _validate_cross_field(payload: dict, current_state: dict) -> dict:
                     if path_prev in payload:
                         errors[path_prev] = f"{col} at row {i-1} ({prev}) > row {i} ({curr}) after edit — credits/payoff must ascend by VIX"
                         break
+
+    # Sprint S3.5: total exposure warning check (NO bloquea, solo log)
+    # Si el payload contiene position_sizing edits, calcular max contratos por día
+    # y loguear warning si la exposure estimada parece elevada (>$5000 nominal).
+    has_sizing_edits = any(
+        path.startswith("strategy_params.position_sizing.")
+        for path in payload.keys()
+    )
+    if has_sizing_edits:
+        try:
+            ps = merged.get("position_sizing", {})
+            max_day_total = 0
+            for day in ('Mon', 'Tue', 'Wed', 'Thu', 'Fri'):
+                day_data = ps.get(day, {})
+                if not isinstance(day_data, dict):
+                    continue
+                day_sum = 0
+                for ticker_data in day_data.values():
+                    if isinstance(ticker_data, dict):
+                        for v in ticker_data.values():
+                            if isinstance(v, int) and not isinstance(v, bool):
+                                day_sum += v
+                if day_sum > max_day_total:
+                    max_day_total = day_sum
+            # Estimación: max_day_total contracts × 3 tranches × ~$50 credit_estimate
+            estimated_exposure = max_day_total * 3 * 50
+            if estimated_exposure > 5000:
+                logger.warning(
+                    f"[S3.5 cross-field] high exposure detected: "
+                    f"~${estimated_exposure} max-day estimated "
+                    f"(max_contracts_per_slot_sum={max_day_total} × 3 tranches × $50). "
+                    f"Verify daily_loss_cap allows this."
+                )
+        except Exception as _exp_e:
+            logger.warning(f"[S3.5 cross-field] exposure check failed: {_exp_e}")
 
     return errors
 
@@ -596,6 +643,16 @@ def _strategy_params() -> dict:
                 "auto_close ET unificado en config.auto_close_et (ver /api/state.config). "
                 "vix_velocity son magic numbers inline en crop_main.py:3522,3536 (no constantes)."
             ),
+        },
+        # Sprint S3.5: position sizing matrix default — 5 días × 4 tickers × 5 DTEs.
+        # Todos en 1 = comportamiento original. Override via POST /api/state/edit.
+        # Key format: strategy_params.position_sizing.<DAY>.<TICKER>.dte<N>
+        "position_sizing": {
+            day: {
+                ticker: {f"dte{dte}": 1 for dte in range(5)}
+                for ticker in ('SPY', 'QQQ', 'IWM', 'TQQQ')
+            }
+            for day in ('Mon', 'Tue', 'Wed', 'Thu', 'Fri')
         },
     }
 
