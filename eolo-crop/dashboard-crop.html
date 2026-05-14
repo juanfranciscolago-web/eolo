@@ -956,6 +956,135 @@
     margin-bottom: 10px;
   }
 
+  /* Sprint S3.5.D: Position Sizing sub-panel */
+  .ps-tabs-bar {
+    display: flex;
+    gap: 4px;
+    margin: 12px 0 8px 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+  }
+  .ps-tab {
+    padding: 6px 14px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px 4px 0 0;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: background 0.15s, color 0.15s;
+    font-family: inherit;
+  }
+  .ps-tab:hover {
+    background: rgba(88, 166, 255, 0.1);
+    color: var(--text);
+  }
+  .ps-tab.ps-tab-active {
+    background: rgba(88, 166, 255, 0.15);
+    color: #58a6ff;
+    border-color: #58a6ff;
+    font-weight: 700;
+  }
+  .ps-tab.ps-tab-today::after {
+    content: " \25CF";
+    color: #58a6ff;
+    font-size: 0.7rem;
+  }
+  .ps-controls-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 8px 0 12px 0;
+    padding: 8px;
+    background: rgba(88, 166, 255, 0.05);
+    border-radius: 4px;
+    font-size: 0.8rem;
+  }
+  .ps-preset-btn, .ps-action-btn {
+    padding: 4px 10px;
+    background: #1c2333;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    transition: background 0.15s;
+    font-family: inherit;
+  }
+  .ps-preset-btn:hover, .ps-action-btn:hover {
+    background: #2c3a5a;
+  }
+  .ps-action-btn {
+    margin-left: auto;
+  }
+  .ps-action-btn + .ps-action-btn {
+    margin-left: 0;
+  }
+  .ps-controls-separator {
+    width: 1px;
+    height: 16px;
+    background: var(--border);
+    margin: 0 4px;
+  }
+  .ps-tqqq-warn {
+    display: inline-block;
+    margin-left: 4px;
+    color: #ffa657;
+    cursor: help;
+    font-size: 0.75rem;
+  }
+  .ps-trc-hint {
+    display: block;
+    font-size: 0.65rem;
+    color: var(--muted);
+    margin-top: 1px;
+    font-style: italic;
+  }
+  .ps-summary-card {
+    display: flex;
+    gap: 16px;
+    margin-top: 12px;
+    padding: 10px 14px;
+    background: rgba(88, 166, 255, 0.07);
+    border: 1px solid rgba(88, 166, 255, 0.2);
+    border-radius: 4px;
+    font-size: 0.85rem;
+  }
+  .ps-summary-metric {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .ps-summary-label {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .ps-summary-value {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .ps-summary-disclaimer {
+    margin-left: auto;
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-style: italic;
+    align-self: center;
+  }
+  /* Sprint S3.5.E: info hint icon (usado en modal config para budget_per_trade) */
+  .info-hint {
+    display: inline-block;
+    margin-left: 4px;
+    color: #58a6ff;
+    cursor: help;
+    font-size: 0.85em;
+    font-weight: normal;
+  }
+
   .matrix-table {
     width: 100%;
     border-collapse: collapse;
@@ -2151,7 +2280,7 @@
       </label>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <label style="font-size:.78rem;color:var(--muted)">Budget por trade (USD)
+        <label style="font-size:.78rem;color:var(--muted)">Budget por trade (USD)<span class="info-hint" title="Sprint S3.5: Position Sizing matrix (sub-panel 💰) permite control granular por día/ticker/DTE. Este budget_per_trade sigue funcionando como fallback global y para el cálculo de daily_loss_cap nominal_equity, pero Position Sizing tiene precedencia cuando hay overrides activos.">ⓘ</span>
           <input id="cfg-budget" type="number" min="50" max="50000" step="50"
             style="width:100%;margin-top:4px;background:#0d1117;border:1px solid var(--border);color:var(--text);padding:6px 8px;border-radius:6px;font-family:inherit;font-size:.85rem">
         </label>
@@ -2445,6 +2574,64 @@
           <tbody id="dte-schedule-tbody"></tbody>
         </table>
         <p class="matrix-note">Module default (fallback): <span id="dte-default-display">—</span></p>
+      </div>
+
+      <!-- Sprint S3.5: Position Sizing -->
+      <div class="matrix-block">
+        <h3>💰 Position Sizing — contracts per tranche × day × ticker × DTE</h3>
+        <p class="matrix-note">
+          Día activo destacado · qty=0 saltea ese slot · cada qty se multiplica ×3 tranches (T0/T1/T2)
+        </p>
+
+        <div class="ps-tabs-bar" id="ps-tabs-bar">
+          <button class="ps-tab" data-day="Mon" type="button">Lun</button>
+          <button class="ps-tab" data-day="Tue" type="button">Mar</button>
+          <button class="ps-tab" data-day="Wed" type="button">Mié</button>
+          <button class="ps-tab" data-day="Thu" type="button">Jue</button>
+          <button class="ps-tab" data-day="Fri" type="button">Vie</button>
+        </div>
+
+        <div class="ps-controls-bar" id="ps-controls-bar" style="display:none">
+          <span style="color:var(--muted);font-size:0.75rem">Presets:</span>
+          <button class="ps-preset-btn" data-preset="conservador" type="button" title="1-1-1-1-1 todos los DTEs">Conservador</button>
+          <button class="ps-preset-btn" data-preset="moderado" type="button" title="2-2-2-2-2 todos los DTEs">Moderado</button>
+          <button class="ps-preset-btn" data-preset="agresivo" type="button" title="5-5-5-5-5 todos los DTEs">Agresivo</button>
+          <button class="ps-preset-btn" data-preset="solo0dte" type="button" title="1 en DTE0, 0 en el resto">Solo 0DTE</button>
+          <button class="ps-preset-btn" data-preset="off" type="button" title="Todos en 0 (skip)">OFF</button>
+          <span class="ps-controls-separator"></span>
+          <button class="ps-action-btn" id="ps-action-copy" type="button" title="Copia los valores del día actual a todos los demás días">📋 Copiar día a todos</button>
+          <button class="ps-action-btn" id="ps-action-reset" type="button" title="Resetea los valores del día actual a default (1)">↺ Reset día</button>
+        </div>
+
+        <table id="position-sizing-table" class="matrix-table">
+          <thead>
+            <tr>
+              <th style="text-align:left">Ticker</th>
+              <th>DTE 0</th>
+              <th>DTE 1</th>
+              <th>DTE 2</th>
+              <th>DTE 3</th>
+              <th>DTE 4</th>
+            </tr>
+          </thead>
+          <tbody id="position-sizing-tbody"></tbody>
+        </table>
+
+        <div class="ps-summary-card" id="ps-summary-card">
+          <div class="ps-summary-metric">
+            <span class="ps-summary-label">Total spreads</span>
+            <span class="ps-summary-value" id="ps-summary-spreads">—</span>
+          </div>
+          <div class="ps-summary-metric">
+            <span class="ps-summary-label">Total contracts</span>
+            <span class="ps-summary-value" id="ps-summary-contracts">—</span>
+          </div>
+          <div class="ps-summary-metric">
+            <span class="ps-summary-label">Premium estimado</span>
+            <span class="ps-summary-value" id="ps-summary-premium">—</span>
+          </div>
+          <span class="ps-summary-disclaimer">(día activo · ×3 tranches · ~$50 credit avg)</span>
+        </div>
       </div>
 
       <!-- Exits Advanced -->
@@ -4124,6 +4311,184 @@ function updateStrategyMatrices() {
   renderTickerConfig(sp);
   renderDteSchedule(sp);
   renderExitsAdvanced(sp);
+  renderPositionSizing(sp);
+}
+
+// ══════════════════════════════════════════
+// Sprint S3.5.D: Position Sizing — state + render
+// ══════════════════════════════════════════
+let _psActiveDay = null;  // 'Mon'..'Fri' — lazy init en primer render
+
+const _PS_TICKERS = ['SPY', 'QQQ', 'IWM', 'TQQQ'];
+const _PS_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri'];
+const _PS_DAY_LABELS = { Mon: 'Lun', Tue: 'Mar', Wed: 'Mié', Thu: 'Jue', Fri: 'Vie' };
+const _PS_PRESETS = {
+  conservador: [1, 1, 1, 1, 1],
+  moderado:    [2, 2, 2, 2, 2],
+  agresivo:    [5, 5, 5, 5, 5],
+  solo0dte:    [1, 0, 0, 0, 0],
+  off:         [0, 0, 0, 0, 0],
+};
+
+function _psGetCurrentDayUTC() {
+  // Match _compute_size backend (UTC weekday). Sat (6) / Sun (0) → Mon.
+  const wd = new Date().getUTCDay();
+  const map = { 1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri' };
+  return map[wd] || 'Mon';
+}
+
+function _psGetCellValue(sp, day, ticker, dte) {
+  // Priority: pendingEdits > inputDraftValues > state default
+  const fieldId = `strategy_params.position_sizing.${day}.${ticker}.dte${dte}`;
+  if (fieldId in pendingEdits) return pendingEdits[fieldId];
+  if (fieldId in inputDraftValues) return inputDraftValues[fieldId];
+  const ps = (sp && sp.position_sizing) || {};
+  const tickerData = (ps[day] || {})[ticker] || {};
+  const v = tickerData[`dte${dte}`];
+  return (v === undefined || v === null) ? 1 : v;
+}
+
+function _psSwitchTab(day) {
+  if (!_PS_DAYS.includes(day)) return;
+  _psActiveDay = day;
+  const currentSp = window._lastStrategyParams || (state && state.strategy_params) || {};
+  renderPositionSizing(currentSp);
+}
+
+function _psApplyPreset(presetName) {
+  const values = _PS_PRESETS[presetName];
+  if (!values || !_psActiveDay) return;
+  for (let i = 0; i < _PS_TICKERS.length; i++) {
+    const ticker = _PS_TICKERS[i];
+    for (let dte = 0; dte < 5; dte++) {
+      const fieldId = `strategy_params.position_sizing.${_psActiveDay}.${ticker}.dte${dte}`;
+      pendingEdits[fieldId] = values[dte];
+      inputDraftValues[fieldId] = values[dte];
+    }
+  }
+  const currentSp = window._lastStrategyParams || (state && state.strategy_params) || {};
+  renderPositionSizing(currentSp);
+}
+
+function _psCopyDayToAll() {
+  if (!_psActiveDay) return;
+  if (!confirm(`¿Copiar valores de ${_PS_DAY_LABELS[_psActiveDay]} a los otros 4 días? Esto sobreescribe cambios pendientes en otros días.`)) {
+    return;
+  }
+  const sp = window._lastStrategyParams || (state && state.strategy_params) || {};
+  const sourceValues = {};
+  for (const ticker of _PS_TICKERS) {
+    for (let dte = 0; dte < 5; dte++) {
+      sourceValues[`${ticker}.dte${dte}`] = _psGetCellValue(sp, _psActiveDay, ticker, dte);
+    }
+  }
+  for (const day of _PS_DAYS) {
+    if (day === _psActiveDay) continue;
+    for (const ticker of _PS_TICKERS) {
+      for (let dte = 0; dte < 5; dte++) {
+        const fieldId = `strategy_params.position_sizing.${day}.${ticker}.dte${dte}`;
+        const value = sourceValues[`${ticker}.dte${dte}`];
+        pendingEdits[fieldId] = value;
+        inputDraftValues[fieldId] = value;
+      }
+    }
+  }
+  renderPositionSizing(sp);
+  if (typeof toast === 'function') {
+    toast(`Día ${_PS_DAY_LABELS[_psActiveDay]} copiado a los otros 4 días`, 'info', 2500);
+  }
+}
+
+function _psResetDay() {
+  if (!_psActiveDay) return;
+  for (const ticker of _PS_TICKERS) {
+    for (let dte = 0; dte < 5; dte++) {
+      const fieldId = `strategy_params.position_sizing.${_psActiveDay}.${ticker}.dte${dte}`;
+      delete pendingEdits[fieldId];
+      delete inputDraftValues[fieldId];
+    }
+  }
+  const currentSp = window._lastStrategyParams || (state && state.strategy_params) || {};
+  renderPositionSizing(currentSp);
+}
+
+function _psComputeSummary(sp, day) {
+  let spreads = 0;
+  for (const ticker of _PS_TICKERS) {
+    for (let dte = 0; dte < 5; dte++) {
+      const v = _psGetCellValue(sp, day, ticker, dte);
+      if (typeof v === 'number' && v > 0) {
+        spreads += v;
+      }
+    }
+  }
+  const contracts = spreads * 3;
+  const premium = spreads * 3 * 50;  // ~$50 credit avg estimate
+  return { spreads, contracts, premium };
+}
+
+function renderPositionSizing(strategyParams) {
+  if (_psActiveDay === null) {
+    _psActiveDay = _psGetCurrentDayUTC();
+  }
+
+  const sp = strategyParams || {};
+  window._lastStrategyParams = sp;
+  const today = _psGetCurrentDayUTC();
+  const editing = (typeof isEditMode !== 'undefined' && isEditMode);
+
+  // Tabs: marcar activa + hoy
+  const tabsBar = document.getElementById('ps-tabs-bar');
+  if (tabsBar) {
+    tabsBar.querySelectorAll('.ps-tab').forEach(btn => {
+      const day = btn.dataset.day;
+      btn.classList.toggle('ps-tab-active', day === _psActiveDay);
+      btn.classList.toggle('ps-tab-today', day === today);
+    });
+  }
+
+  // Controls bar: solo en edit mode
+  const controlsBar = document.getElementById('ps-controls-bar');
+  if (controlsBar) {
+    controlsBar.style.display = editing ? 'flex' : 'none';
+  }
+
+  // Tbody render
+  const tbody = document.getElementById('position-sizing-tbody');
+  if (!tbody) return;
+
+  let html = '';
+  for (const ticker of _PS_TICKERS) {
+    const tqqqWarn = ticker === 'TQQQ'
+      ? '<span class="ps-tqqq-warn" title="⚠ TQQQ es 3× leveraged — riesgo real es 3× lo configurado">⚠</span>'
+      : '';
+    html += `<tr><td style="text-align:left;font-weight:600">${ticker}${tqqqWarn}</td>`;
+    for (let dte = 0; dte < 5; dte++) {
+      const v = _psGetCellValue(sp, _psActiveDay, ticker, dte);
+      const fieldId = `strategy_params.position_sizing.${_psActiveDay}.${ticker}.dte${dte}`;
+      if (editing) {
+        const inputHtml = _renderEditableNumber(v, fieldId, 0, 50, 1);
+        const numV = parseFloat(v);
+        const trcHint = (!isNaN(numV) && numV > 0)
+          ? `<span class="ps-trc-hint">×3 trc = ${numV * 3}</span>`
+          : '';
+        html += `<td style="text-align:center">${inputHtml}${trcHint}</td>`;
+      } else {
+        html += `<td style="text-align:center">${v}</td>`;
+      }
+    }
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  // Summary card
+  const summary = _psComputeSummary(sp, _psActiveDay);
+  const elSpreads = document.getElementById('ps-summary-spreads');
+  const elContracts = document.getElementById('ps-summary-contracts');
+  const elPremium = document.getElementById('ps-summary-premium');
+  if (elSpreads) elSpreads.textContent = summary.spreads;
+  if (elContracts) elContracts.textContent = summary.contracts;
+  if (elPremium) elPremium.textContent = `~$${summary.premium}`;
 }
 
 // ══════════════════════════════════════════
@@ -4397,6 +4762,9 @@ function setEditMode(enabled) {
   }
 
   if (typeof updateRiskManagement === 'function') updateRiskManagement();
+  // Sprint S3.5.E (Opción B): re-render inmediato de TODOS los sub-paneles
+  // (cierra UX gap pre-existente S2.3: lag hasta 60s en toggle/discard).
+  if (typeof updateStrategyMatrices === 'function') updateStrategyMatrices();
 }
 
 function discardEdits() {
@@ -4404,6 +4772,9 @@ function discardEdits() {
   inputDraftValues = {};  // Sprint S2.3 fix: clear drafts on discard
   _clearServerErrors();   // Sprint S3.E: limpia marcas de error servidor
   setEditMode(false);
+  // Sprint S3.5.E (Opción B): re-render explícito (setEditMode ya lo llama,
+  // pero defensivo si discardEdits cambia internamente en el futuro).
+  if (typeof updateStrategyMatrices === 'function') updateStrategyMatrices();
 }
 
 // Sprint S3.E: limpia indicadores de error del servidor en todos los inputs
@@ -4698,6 +5069,36 @@ function _initEditModeHandlers() {
   if (discard) discard.addEventListener('click', discardEdits);
   if (exportBtn) exportBtn.addEventListener('click', exportEditsJson);
   if (saveBtn) saveBtn.addEventListener('click', saveEdits);
+
+  // Sprint S3.5.D: Position Sizing event handlers (delegation)
+  const psTabsBar = document.getElementById('ps-tabs-bar');
+  if (psTabsBar) {
+    psTabsBar.addEventListener('click', (e) => {
+      const btn = e.target.closest('.ps-tab');
+      if (btn && btn.dataset.day) {
+        _psSwitchTab(btn.dataset.day);
+      }
+    });
+  }
+  const psControlsBar = document.getElementById('ps-controls-bar');
+  if (psControlsBar) {
+    psControlsBar.addEventListener('click', (e) => {
+      const presetBtn = e.target.closest('.ps-preset-btn');
+      if (presetBtn && presetBtn.dataset.preset) {
+        _psApplyPreset(presetBtn.dataset.preset);
+        return;
+      }
+      const actionBtn = e.target.closest('.ps-action-btn');
+      if (actionBtn && actionBtn.id === 'ps-action-copy') {
+        _psCopyDayToAll();
+        return;
+      }
+      if (actionBtn && actionBtn.id === 'ps-action-reset') {
+        _psResetDay();
+        return;
+      }
+    });
+  }
 }
 
 if (document.readyState === 'loading') {

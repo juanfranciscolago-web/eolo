@@ -1140,10 +1140,19 @@ class CropBotTheta:
             if not signals:
                 continue
 
-            # Abrir un contrato por cada tranche (T0=35%, T1=65%, T2=EXPIRY)
+            # Sprint S3.5: contracts per tranche segun granular sizing (override
+            # por weekday × ticker × dte). Default 1 = comportamiento original.
+            # qty=0 saltea el signal (skip ticker/dte/weekday combo).
             opened_any = False
             for signal in signals:
-                decision = signal.to_decision(contracts=1)
+                _qty = self._compute_size(signal.ticker, signal.dte)
+                if _qty <= 0:
+                    logger.info(
+                        f"[ThetaHarvest] {signal.ticker} DTE={signal.dte} "
+                        f"T{signal.tranche_id} — skip (granular sizing qty=0)"
+                    )
+                    continue
+                decision = signal.to_decision(contracts=_qty)
                 try:
                     order_id = await self.trader.execute_decision(decision)
                     if order_id:
@@ -3080,6 +3089,51 @@ class CropBotTheta:
         """
         dtes = self._compute_theta_dtes()
         return len(dtes) * 4 * 3
+
+    def _compute_size(self, ticker: str, dte: int) -> int:
+        """Sprint S3.5: contracts per tranche con granular sizing.
+
+        Lee bot_instance._strategy_overrides para granular position sizing
+        por (weekday, ticker, dte). Fallback a 1 (comportamiento original).
+
+        Override key format:
+            "strategy_params.position_sizing.<DAY>.<TICKER>.dte<N>"
+        Donde DAY in {Mon..Fri}, TICKER in {SPY,QQQ,IWM,TQQQ}, N in 0..4.
+
+        Args:
+            ticker: Symbol (SPY/QQQ/IWM/TQQQ).
+            dte:    Days to expiration (0-4).
+
+        Returns:
+            int: contracts per tranche (NOT total spread).
+                 0 = skip this ticker/dte/weekday combo.
+                 Default fallback: 1.
+        """
+        from datetime import datetime, timezone
+
+        # Weekday UTC (consistente con _compute_theta_dtes)
+        weekday_idx = datetime.now(timezone.utc).weekday()
+        weekday_names = {0: 'Mon', 1: 'Tue', 2: 'Wed', 3: 'Thu', 4: 'Fri'}
+        day_name = weekday_names.get(weekday_idx)
+        if day_name is None:
+            return 1  # Weekend: bot no opera de todas formas
+
+        if ticker not in ('SPY', 'QQQ', 'IWM', 'TQQQ'):
+            return 1  # Unknown ticker, default
+
+        if isinstance(dte, bool) or not isinstance(dte, int) or not (0 <= dte <= 4):
+            return 1  # Invalid dte, default
+
+        override_key = f"strategy_params.position_sizing.{day_name}.{ticker}.dte{dte}"
+        overrides = getattr(self, '_strategy_overrides', {}) or {}
+        override_value = overrides.get(override_key)
+
+        # bool antes que int (bool is subclass of int — Python gotcha)
+        if isinstance(override_value, int) and not isinstance(override_value, bool):
+            if 0 <= override_value <= 50:
+                return override_value
+
+        return 1
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 
