@@ -310,7 +310,10 @@ class CropBotTheta:
         self.stream        = SchwabStream(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
         # CROP: sin MispricingScanner (solo Theta Harvest)
-        self.trader        = OptionsTrader(paper=PAPER_TRADING)
+        self.trader        = OptionsTrader(
+            paper=PAPER_TRADING,
+            chain_fetcher=self.chain_fetcher,
+        )
 
         mode = "📄 PAPER TRADING" if PAPER_TRADING else "💰 LIVE TRADING"
         logger.info(f"[CROP] Modo: {mode}")
