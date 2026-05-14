@@ -1,0 +1,48 @@
+# eolo-crop/cloudbuild-buildonly.yaml
+#
+# Build-only cloudbuild para CROP. NO deploya — solo construye imagen y pushea a GCR.
+# Permite deploy seguro separado con `gcloud run deploy --no-traffic --tag`.
+#
+# Diferencia con cloudbuild-crop.yaml (legacy):
+#   - cloudbuild-crop.yaml      → build + push + deploy 100% tráfico (peligroso)
+#   - cloudbuild-buildonly.yaml → build + push solamente (seguro)
+#
+# Usage:
+#   gcloud builds submit \
+#     --config=eolo-crop/cloudbuild-buildonly.yaml . \
+#     --project=eolo-schwab-agent
+#
+#   Después, deploy manual con --no-traffic:
+#   gcloud run deploy eolo-bot-crop \
+#     --image=gcr.io/eolo-schwab-agent/eolo-bot-crop:fix-exit-price \
+#     --region=us-east1 --project=eolo-schwab-agent \
+#     --no-traffic --tag=fix-exit-price
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'eolo-crop/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:fix-exit-price'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:$BUILD_ID'
+      - '.'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:fix-exit-price'
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-crop:$BUILD_ID'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot-crop:fix-exit-price'
+  - 'gcr.io/$PROJECT_ID/eolo-bot-crop:$BUILD_ID'
+
+timeout: '900s'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
