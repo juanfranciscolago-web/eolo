@@ -822,6 +822,28 @@ class OptionsTrader:
         snapshot["quote_source"] = "schwab_chain"
         return float(bid), snapshot
 
+    def resolve_position_price(
+        self,
+        ticker:     str,
+        expiration: str,
+        strike:     float,
+        opt_type:   Literal["call", "put"],
+    ) -> float | None:
+        """
+        Wrapper público sobre _resolve_close_limit para callers que sólo
+        quieren el precio actual (sin el snapshot completo del quote).
+
+        Sem 2 fix paper exit (15-may-2026): usado por _check_exit_conditions
+        y _is_daily_loss_cap_hit en EoloV2 para refrescar current_price
+        cuando get_positions (paper mode) no lo devuelve poblado. Sin esto,
+        SL/TP nunca dispara en paper.
+
+        Política: BID puro (heredada de _resolve_close_limit, Sprint 1).
+        Retorna None si el chain no tiene bid válido.
+        """
+        price, _snapshot = self._resolve_close_limit(ticker, expiration, strike, opt_type)
+        return price
+
     # ── Orden genérica ─────────────────────────────────────
 
     async def _place_single(

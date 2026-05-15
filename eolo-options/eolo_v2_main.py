@@ -2207,6 +2207,19 @@ class EoloV2:
                 entry   = float(pos.get("entry_price", 0) or 0)
                 current = float(pos.get("current_price", 0) or 0)
                 qty     = int(pos.get("contracts", pos.get("qty", 1)) or 1)
+
+                # Sem 2 fix paper: refresh current desde chain bid si
+                # paper mode no la pobló (mismo motivo que _check_exit_conditions).
+                if not current:
+                    resolved = self.trader.resolve_position_price(
+                        pos.get("ticker", ""),
+                        pos.get("expiration", ""),
+                        pos.get("strike", 0),
+                        pos.get("option_type", "call"),
+                    )
+                    if resolved:
+                        current = float(resolved)
+
                 if entry > 0 and current > 0:
                     unrealized += (current - entry) * qty * 100
 
@@ -2245,6 +2258,19 @@ class EoloV2:
         for pos in self._open_positions:
             entry   = pos.get("entry_price", 0)
             current = pos.get("current_price", 0)
+
+            # Sem 2 fix paper exit: si current_price no está poblado (caso
+            # paper, donde get_positions retorna _paper_positions sin precios
+            # vivos), resolver bid actual desde el último chain refresh.
+            # Sin esto, SL/TP nunca dispara en paper. Política BID puro
+            # (Sprint 1) — simula worst-case live.
+            if not current:
+                current = self.trader.resolve_position_price(
+                    pos.get("ticker", ""),
+                    pos.get("expiration", ""),
+                    pos.get("strike", 0),
+                    pos.get("option_type", "call"),
+                )
 
             if not entry or not current:
                 continue
