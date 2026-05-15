@@ -810,6 +810,90 @@ class EoloV2:
 
     # ── Ciclo de análisis ──────────────────────────────────
 
+    def _validate_chain_sanity(self, ticker: str, chain: dict) -> tuple[bool, str]:
+        """
+        Sanity check del chain ANTES de invocar al mispricing scanner.
+
+        Sem 2 fix feed corruption guard (Fase 2 item 4.A, 15-may-2026).
+        Ataja el bug raíz del incidente 14-may: feed corrupto upstream
+        entregaba chains con deltas absurdos (+246348%), OHLC desalineados
+        (AAPL close=$51988 vs open=$299.25), volúmenes idénticos en
+        todos los tickers. El _claude_bot_tick detectaba la corrupción
+        vía prompt; el _on_chain_update seguía operando, generando 251
+        BTOs sobre data basura.
+
+        Checks:
+        1. Underlying price razonable (0 < price < 1M).
+        2. OHLC consistency: close en rango [min(O,L)*0.5, max(O,H)*2].
+        3. Sample ATM bid/ask: <50% de strikes con bid>ask o ask>5*bid.
+
+        Política: false positive aceptado (skip un ciclo de un ticker
+        sano) > false negative (operar sobre feed roto).
+
+        Returns: (is_sane, reason_if_not_sane).
+        """
+        underlying = chain.get("underlying", {}) or {}
+        S = underlying.get("price") or underlying.get("mark")
+
+        # Check 1: underlying price razonable
+        if not S or S <= 0:
+            return False, f"underlying price absurd: {S}"
+        if S > 1_000_000:
+            return False, f"underlying price absurdly high: {S}"
+
+        # Check 2: OHLC consistency (solo si las 4 keys vienen pobladas)
+        O = underlying.get("open")
+        H = underlying.get("high")
+        L = underlying.get("low")
+        C = underlying.get("close") or S
+        if all(v is not None and v > 0 for v in (O, H, L, C)):
+            min_allowed = min(O, L) * 0.5
+            max_allowed = max(O, H) * 2.0
+            if not (min_allowed <= C <= max_allowed):
+                return False, f"OHLC inconsistent: O={O} H={H} L={L} C={C}"
+
+        # Check 3: sample ATM strikes — bid/ask coherentes
+        expirations = chain.get("expirations") or []
+        if not expirations:
+            return True, ""   # chain sin contenido, nada más que validar
+
+        exp = expirations[0]
+        calls = chain.get("calls", {}).get(exp, {}) or {}
+        if not calls:
+            return True, ""
+
+        # Tomar los 10 strikes más cercanos a ATM
+        try:
+            strikes_sorted = sorted(
+                [float(k) for k in calls.keys()],
+                key=lambda k: abs(k - S),
+            )
+        except (TypeError, ValueError):
+            return True, ""   # keys raras, no validamos para no falsear
+
+        sample = strikes_sorted[:10]
+        bad = 0
+        total = 0
+        for k in sample:
+            c = calls.get(str(k)) or calls.get(k) or {}
+            bid = c.get("bid")
+            ask = c.get("ask")
+            if bid is None or ask is None:
+                continue
+            try:
+                bid_f = float(bid)
+                ask_f = float(ask)
+            except (TypeError, ValueError):
+                continue
+            total += 1
+            if bid_f > ask_f or (bid_f > 0 and ask_f > 5 * bid_f):
+                bad += 1
+
+        if total >= 5 and bad / total > 0.5:
+            return False, f"chain bid/ask incoherent: {bad}/{total} strikes sample ATM"
+
+        return True, ""
+
     async def _run_analysis_cycle(self, ticker: str, chain: dict):
         """
         Ciclo completo de análisis para un ticker:
@@ -820,6 +904,17 @@ class EoloV2:
         5. Ejecutar decisión
         """
         logger.info(f"[EOLO v2] ── Ciclo de análisis: {ticker} ──")
+
+        # 0. Feed corruption guard (Sem 2, Fase 2 item 4.A): validar
+        # sanidad del chain antes de invocar al scanner. Sin esto, feeds
+        # corruptos como el del 14-may generan BTOs sobre data basura.
+        sane, reason = self._validate_chain_sanity(ticker, chain)
+        if not sane:
+            logger.error(
+                f"[FEED_GUARD] {ticker} chain insano: {reason}. "
+                f"Skip ciclo de análisis."
+            )
+            return
 
         # 1. Señales técnicas Eolo v1
         signals = self._get_eolo_signals(ticker)
