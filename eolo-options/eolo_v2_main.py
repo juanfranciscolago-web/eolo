@@ -908,9 +908,11 @@ class EoloV2:
         # 0. Feed corruption guard (Sem 2, Fase 2 item 4.A): validar
         # sanidad del chain antes de invocar al scanner. Sin esto, feeds
         # corruptos como el del 14-may generan BTOs sobre data basura.
+        # WARNING (no ERROR): guard funcionando es defensa correcta, no
+        # bug del bot. Alerta visible sin disparar paging por severity.
         sane, reason = self._validate_chain_sanity(ticker, chain)
         if not sane:
-            logger.error(
+            logger.warning(
                 f"[FEED_GUARD] {ticker} chain insano: {reason}. "
                 f"Skip ciclo de análisis."
             )
