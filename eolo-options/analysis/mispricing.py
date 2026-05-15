@@ -108,8 +108,12 @@ class MispricingScanner:
             alerts += self._check_theo_mispricing(ticker, exp, T, S, puts,  "put")
 
             # ── Check 4: Butterfly Arbitrage ──────────────
-            alerts += self._check_butterfly(ticker, exp, calls, "call")
-            alerts += self._check_butterfly(ticker, exp, puts,  "put")
+            # KILLED 2026-05-15 (Plan Fase 2): Master Recap del 12-may reportó
+            # -$98,880 en cross-strategy (313 cierres, avg -$315/trade) y 0 intra-pairs
+            # bajo Pure Isolation. Es la strategy más destructiva de V2 históricamente.
+            # Para revertir: descomentar las 2 líneas siguientes.
+            # alerts += self._check_butterfly(ticker, exp, calls, "call")
+            # alerts += self._check_butterfly(ticker, exp, puts,  "put")
 
         # ── Check 5: Calendar IV Gap ──────────────────────
         if len(expirations) >= 2:
