@@ -97,6 +97,45 @@ async def test_paper_exit_SL():
 
 
 # ──────────────────────────────────────────────────────────
+# Test bootstrap fix (Sem 3.1)
+# ──────────────────────────────────────────────────────────
+
+def test_bootstrap_respects_state_active_false():
+    """Test 6 (Sem 3.1): _load_persisted_active_flag pausa al boot si state.active=False."""
+    print("\n[6/6] Bootstrap fix: respeta state/current.active=False")
+    from eolo_v2_main import EoloV2
+
+    bot = MagicMock(spec=EoloV2)
+    bot._active = True
+
+    mock_doc = MagicMock()
+    mock_doc.exists = True
+    mock_doc.to_dict = MagicMock(return_value={"active": False, "mode": "PAPER"})
+
+    mock_client = MagicMock()
+    mock_client.collection.return_value.document.return_value.get.return_value = mock_doc
+
+    # Inyectar Client mock en el path real que retorna `from google.cloud import firestore`.
+    # Python resuelve eso vía sys.modules["google.cloud"].firestore (auto-generado child mock
+    # del MagicMock de google.cloud), NO sys.modules["google.cloud.firestore"].
+    fs_mock = sys.modules["google.cloud"].firestore
+    saved_client = getattr(fs_mock, "Client", None)
+    fs_mock.Client = MagicMock(return_value=mock_client)
+
+    try:
+        EoloV2._load_persisted_active_flag(bot)
+    finally:
+        if saved_client is not None:
+            fs_mock.Client = saved_client
+
+    if bot._active is False:
+        ok(f"state.active=False propagado a self._active=False")
+        return True
+    fail(f"esperaba self._active=False post-load, obtuve {bot._active}")
+    return False
+
+
+# ──────────────────────────────────────────────────────────
 # Tests feed corruption guard
 # ──────────────────────────────────────────────────────────
 
@@ -186,6 +225,7 @@ async def main():
     results.append(test_feed_guard_rejects_14may_pattern())
     results.append(test_feed_guard_accepts_healthy())
     results.append(test_feed_guard_accepts_minimal())
+    results.append(test_bootstrap_respects_state_active_false())
 
     passed = sum(results)
     total = len(results)

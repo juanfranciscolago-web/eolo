@@ -553,6 +553,12 @@ class EoloV2:
         # ── Restaurar posiciones theta desde Firestore (sobrevive reinicios) ─
         self._load_theta_positions_from_firestore()
 
+        # ── Sem 3 fix bootstrap: respetar state.active al arranque ─
+        # Sin esto, cualquier container nuevo arranca con self._active=True
+        # (default __init__ línea 438) e ignora la pausa persistida en Firestore.
+        # Bug descubierto en deploy Sem 2 (15-may). Ver _load_persisted_active_flag.
+        self._load_persisted_active_flag()
+
         # Registrar handlers de eventos
         self.stream.add_handler(self._on_market_event)
         self.chain_fetcher.add_handler(self._on_chain_update)
@@ -3212,6 +3218,49 @@ class EoloV2:
 
     _THETA_POS_COLL = "eolo-options-state"
     _THETA_POS_DOC  = "theta-positions"
+
+    def _load_persisted_active_flag(self):
+        """
+        Sem 3 fix bootstrap (15-may-2026): respeta state/current.active al arranque.
+
+        El bot V2 inicializa self._active=True por default (__init__ línea 438).
+        Sin esta carga, cualquier container nuevo ignora la pausa persistida en
+        Firestore y opera al arrancar — bug descubierto durante deploy Sem 2 el
+        15-may (canary 00033-fih ignoró pausa del 14-may y operó 41 trades;
+        canary 00030-24n ignoró freeze fresh y operó 14 trades).
+
+        Lectura síncrona de state/current.active y aplicación a self._active
+        ANTES de arrancar los loops principales en start(). Si el state no
+        existe o no tiene la key, mantiene el default (True) — no falsear
+        por incompletitud, política consistente con feed guard de Sem 2.B.
+        """
+        try:
+            from google.cloud import firestore as _fs
+            db = _fs.Client()
+            doc = db.collection("eolo-options-state").document("current").get()
+            if not doc.exists:
+                logger.info(
+                    "[BOOTSTRAP] No hay state/current — uso default self._active=True"
+                )
+                return
+            data = doc.to_dict() or {}
+            persisted = data.get("active")
+            if persisted is False:
+                self._active = False
+                logger.warning(
+                    "[BOOTSTRAP] state/current.active=False detectado. "
+                    "Bot inicializado PAUSADO. Re-emitir comando set_active=true "
+                    "desde dashboard para reanudar."
+                )
+            else:
+                logger.info(
+                    f"[BOOTSTRAP] state/current.active={persisted} — bot arranca activo"
+                )
+        except Exception as e:
+            logger.warning(
+                f"[BOOTSTRAP] no pude leer state/current.active: {e} — "
+                f"uso default self._active={self._active}"
+            )
 
     def _load_theta_positions_from_firestore(self):
         """
