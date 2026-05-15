@@ -899,6 +899,22 @@ class OptionsTrader:
             order["price"] = round(limit, 2)
 
         label = f"{instruction} {contracts}x {symbol}"
+
+        # LIVE isolation gate ANTES de _submit_order: post-submit la orden ya está en broker.
+        opened: Optional[dict] = None
+        if instruction == "SELL_TO_CLOSE":
+            opened = self._open_positions.get(symbol)
+            if opened:
+                opener_strategy = opened.get("strategy", "")
+                allowed, log_strategy = _resolve_close_isolation_v2(opener_strategy, strategy)
+                if not allowed:
+                    logger.warning(
+                        f"[ISOLATION] SELL_TO_CLOSE LIVE {symbol} bloqueado: "
+                        f"opener={opener_strategy!r} ≠ closer={strategy!r}."
+                    )
+                    return None
+                strategy = log_strategy
+
         order_id = await self._submit_order(account_id, order, label)
 
         # Persistencia LIVE → Firestore (idempotente via key {ts}_{ticker}_{action})
@@ -911,21 +927,8 @@ class OptionsTrader:
             entry_price_override: Optional[float] = None
             opened_at_ts:         Optional[float] = None
             if instruction == "SELL_TO_CLOSE":
-                opened = self._open_positions.get(symbol)
                 if opened:
-                    # Pure Isolation gate
-                    opener_strategy = opened.get("strategy", "")
-                    allowed, log_strategy = _resolve_close_isolation_v2(opener_strategy, strategy)
-                    if not allowed:
-                        logger.warning(
-                            f"[ISOLATION] SELL_TO_CLOSE LIVE {symbol} bloqueado: "
-                            f"opener={opener_strategy!r} ≠ closer={strategy!r}."
-                        )
-                        return None
-                    strategy = log_strategy
-                    # Solo POP si pasamos el gate (no mutar estado si reject)
                     self._open_positions.pop(symbol, None)
-
                     entry   = opened.get("entry_price", 0) or 0
                     if limit is not None:
                         current = limit
