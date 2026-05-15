@@ -467,6 +467,7 @@ def scan_theta_harvest(
     entry_hour_et:        float = ENTRY_HOUR_ET,
     entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
     vix_max_entry:        float = VIX_MAX_ENTRY,
+    stop_loss_mult:       float = STOP_LOSS_MULT,  # Sprint S3.1-A: editable via UI
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -636,7 +637,7 @@ def scan_theta_harvest(
         profit_target = -1.0   # sentinela: nunca triggerear por profit en T2
     else:
         profit_target = round(net_credit * (1.0 - tranche_target), 2)
-    stop_loss = round(net_credit * STOP_LOSS_MULT, 2)
+    stop_loss = round(net_credit * stop_loss_mult, 2)  # Sprint S3.1-A: kwarg (default = STOP_LOSS_MULT)
     max_risk  = round((width - net_credit) * 100, 2)
 
     # ── 10. Payoff scoring (con payoff mínimos ajustados por VIX) ─────
@@ -854,6 +855,8 @@ def scan_theta_harvest_tranches(
     entry_hour_et:        float = ENTRY_HOUR_ET,
     entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
     vix_max_entry:        float = VIX_MAX_ENTRY,
+    stop_loss_mult:       float = STOP_LOSS_MULT,    # Sprint S3.1-A: editable via UI
+    tranche_profit_targets: Optional[list] = None,    # Sprint S3.1-A: None → módulo TRANCHE_PROFIT_TARGETS
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -874,7 +877,19 @@ def scan_theta_harvest_tranches(
         Lista de 1–3 ThetaHarvestSignal, o lista vacía si no hay setup válido.
         (En paper trading podés ajustar TRANCHE_PROFIT_TARGETS para usar solo 1 ó 2.)
     """
-    # Validar con T1 (target estándar 65%) — si no pasa los gates, ningún tranche pasa
+    # Sprint S3.1-A: fallback al módulo si caller no pasó override
+    if tranche_profit_targets is None:
+        tranche_profit_targets = TRANCHE_PROFIT_TARGETS
+
+    # T1 es siempre el base — pero usamos el target de la posición [1] del array
+    # (que puede haber sido overrideado). Default = 0.65 si TRANCHE_PROFIT_TARGETS[1] vale 0.65.
+    base_tranche_target = (
+        tranche_profit_targets[1]
+        if len(tranche_profit_targets) > 1 and tranche_profit_targets[1] is not None
+        else 0.65
+    )
+
+    # Validar con T1 (target estándar) — si no pasa los gates, ningún tranche pasa
     base_signal = scan_theta_harvest(
         ticker                = ticker,
         chain                 = chain,
@@ -885,16 +900,17 @@ def scan_theta_harvest_tranches(
         force_entry           = force_entry,
         pivot_result          = pivot_result,
         tranche_id            = 1,
-        tranche_target        = 0.65,
+        tranche_target        = base_tranche_target,
         entry_hour_et         = entry_hour_et,
         entry_window_minutes  = entry_window_minutes,
         vix_max_entry         = vix_max_entry,
+        stop_loss_mult        = stop_loss_mult,
     )
     if base_signal is None:
         return []
 
     signals: list[ThetaHarvestSignal] = []
-    for t_id, t_target in enumerate(TRANCHE_PROFIT_TARGETS):
+    for t_id, t_target in enumerate(tranche_profit_targets):
         if t_id == 1:
             # T1 ya está calculado como base_signal — reusar
             sig = base_signal
@@ -912,6 +928,7 @@ def scan_theta_harvest_tranches(
                 tranche_id     = t_id,
                 tranche_target = t_target,
                 vix_max_entry  = vix_max_entry,
+                stop_loss_mult = stop_loss_mult,
             )
         if sig is not None:
             signals.append(sig)

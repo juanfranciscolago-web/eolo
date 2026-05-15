@@ -59,6 +59,9 @@ from theta_harvest.theta_harvest_strategy import (
     _determine_spread_type,
     ENTRY_HOUR_ET,
     ENTRY_WINDOW_MINUTES,
+    # Sprint S3.1-A: importar para instance var defaults
+    STOP_LOSS_MULT,
+    TRANCHE_PROFIT_TARGETS,
 )
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
@@ -305,7 +308,16 @@ class CropBotTheta:
         # Editados via POST /api/state/edit. Sin Firestore (in-memory only).
         # Estructura: dict[path_str, value] donde path es fieldId convention.
         self._strategy_overrides: dict = {}
-        
+
+        # Sprint S3.1-A: instance vars para exits_advanced overrides funcionales.
+        # Defaults = constantes module-level. Se actualizan via
+        # _apply_strategy_overrides_to_instance_vars() después de cada cambio
+        # de _strategy_overrides (POST endpoint o _poll_settings).
+        # Strategy functions reciben estos valores como kwargs explícitos.
+        self._stop_loss_mult: float = STOP_LOSS_MULT
+        self._tranche_profit_targets: list = list(TRANCHE_PROFIT_TARGETS)
+
+
         # Módulos
         self.stream        = SchwabStream(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
@@ -1135,6 +1147,9 @@ class CropBotTheta:
                     entry_hour_et         = self._entry_hour_et,
                     entry_window_minutes  = self._entry_window_minutes,
                     vix_max_entry         = self._vix_entry_threshold,
+                    # Sprint S3.1-A: pasar instance vars (overrides via _apply_strategy_overrides_to_instance_vars)
+                    stop_loss_mult        = self._stop_loss_mult,
+                    tranche_profit_targets = self._tranche_profit_targets,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -2343,6 +2358,14 @@ class CropBotTheta:
             if changed:
                 logger.info(f"[COMMANDS] ⚙️  Config actualizada: {', '.join(changed)}")
 
+            # Sprint S3.1-A: future-proof Firestore — si en S3.X se persisten
+            # overrides en Firestore y _poll_settings los carga a _strategy_overrides,
+            # re-aplicar a instance vars para que strategy fn los reciba.
+            try:
+                self._apply_strategy_overrides_to_instance_vars()
+            except Exception as _e:
+                logger.debug(f"[COMMANDS] _apply_strategy_overrides_to_instance_vars: {_e}")
+
         except Exception as e:
             logger.debug(f"[COMMANDS] poll_settings error: {e}")
 
@@ -3137,6 +3160,53 @@ class CropBotTheta:
                 return override_value
 
         return 1
+
+    def _apply_strategy_overrides_to_instance_vars(self) -> None:
+        """Sprint S3.1-A: Aplica overrides activos a instance vars que las
+        strategy functions reciben via kwargs explícitos.
+
+        Llamado:
+          1. Después de POST /api/state/edit (sincronía con cambio)
+          2. En cada _poll_settings cycle (future-proof Firestore)
+
+        Override key formats (bracket notation para arrays):
+          - "strategy_params.exits_advanced.stop_loss_mult"
+          - "strategy_params.exits_advanced.tranche_profit_targets[0]"
+          - "strategy_params.exits_advanced.tranche_profit_targets[1]"
+          - "strategy_params.exits_advanced.tranche_profit_targets[2]"
+
+        Validation en /api/state/edit ya filtró tipos inválidos; este helper
+        es defensivo igual (TypeError/ValueError → fallback al default actual).
+        """
+        overrides = getattr(self, '_strategy_overrides', {}) or {}
+        if not overrides:
+            return
+
+        # STOP_LOSS_MULT — escalar float
+        key = "strategy_params.exits_advanced.stop_loss_mult"
+        if key in overrides:
+            try:
+                new_val = float(overrides[key])
+                self._stop_loss_mult = new_val
+            except (TypeError, ValueError):
+                pass
+
+        # TRANCHE_PROFIT_TARGETS — lista de 3 (float | None). Sentinel None = EXP.
+        # bracket notation: tranche_profit_targets[0], [1], [2]
+        for i in range(3):
+            key = f"strategy_params.exits_advanced.tranche_profit_targets[{i}]"
+            if key in overrides:
+                val = overrides[key]
+                if val is None:
+                    # None permitido (EXP sentinel)
+                    if 0 <= i < len(self._tranche_profit_targets):
+                        self._tranche_profit_targets[i] = None
+                else:
+                    try:
+                        if 0 <= i < len(self._tranche_profit_targets):
+                            self._tranche_profit_targets[i] = float(val)
+                    except (TypeError, ValueError):
+                        pass
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 
