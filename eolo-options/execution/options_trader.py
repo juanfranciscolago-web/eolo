@@ -1398,6 +1398,19 @@ class OptionsTrader:
         _raw_strat  = mp_type if mp_type else f"claude_{confidence.lower()}" if confidence else "claude_bot"
         strategy    = _raw_strat.lower()
 
+        # Hard gate (Fase 2 item 4.B): BUY requiere mispricing_type del scanner.
+        # Razones: (a) atribución limpia (cada BTO con su tipo del scanner cuantitativo),
+        # (b) cinturón-y-tiradores con el parser defensivo de OptionsBrain que ya bloquea
+        # confidence=MEDIUM, (c) evita que Claude invente trades sin tesis respaldada
+        # por el scanner. Decisión Fase 2 (14-may-2026).
+        if action == "BUY" and not mp_type:
+            logger.info(
+                f"[GATE] reject BUY: no mispricing_type "
+                f"(strategy fallback would be {strategy}) "
+                f"ticker={ticker} confidence={confidence}"
+            )
+            return None
+
         if action == "BUY" and exp and strike:
             if opt_type == "call":
                 return await self.open_long_call(ticker, exp, strike, contracts, limit,
