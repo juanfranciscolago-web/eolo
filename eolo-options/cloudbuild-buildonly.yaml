@@ -18,6 +18,9 @@
 #     --region=us-east1 --project=eolo-schwab-agent \
 #     --no-traffic --tag=fix-exit-price
 
+substitutions:
+  _TAG: 'unspecified'   # OBLIGATORIO pasar via --substitutions=_TAG=...
+
 steps:
   - name: 'gcr.io/cloud-builders/docker'
     args:
@@ -25,22 +28,15 @@ steps:
       - '-f'
       - 'eolo-options/Dockerfile'
       - '-t'
-      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:fix-exit-price'
-      - '-t'
-      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:203f975'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:$_TAG'
       - '.'
   - name: 'gcr.io/cloud-builders/docker'
     args:
       - 'push'
-      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:fix-exit-price'
-  - name: 'gcr.io/cloud-builders/docker'
-    args:
-      - 'push'
-      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:203f975'
+      - 'gcr.io/$PROJECT_ID/eolo-bot-v2:$_TAG'
 
 images:
-  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:fix-exit-price'
-  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:203f975'
+  - 'gcr.io/$PROJECT_ID/eolo-bot-v2:$_TAG'
 
 timeout: '900s'
 
