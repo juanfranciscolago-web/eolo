@@ -56,7 +56,7 @@ async def test_paper_exit_TP():
     bot._default_stop_loss_pct = 25.0
     bot._default_take_profit_pct = 50.0
     bot.trader = MagicMock()
-    bot.trader.resolve_position_price = MagicMock(return_value=3.50)  # +75% > 50% TP
+    bot.trader.resolve_position_price_for_exit_check = MagicMock(return_value=3.50)  # +75% > 50% TP
     bot._close_position = AsyncMock()
 
     await EoloV2._check_exit_conditions(bot)
@@ -84,7 +84,7 @@ async def test_paper_exit_SL():
     bot._default_stop_loss_pct = 25.0
     bot._default_take_profit_pct = 50.0
     bot.trader = MagicMock()
-    bot.trader.resolve_position_price = MagicMock(return_value=1.40)  # -30% < -25% SL
+    bot.trader.resolve_position_price_for_exit_check = MagicMock(return_value=1.40)  # -30% < -25% SL
     bot._close_position = AsyncMock()
 
     await EoloV2._check_exit_conditions(bot)

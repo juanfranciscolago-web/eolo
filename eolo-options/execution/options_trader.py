@@ -844,6 +844,57 @@ class OptionsTrader:
         price, _snapshot = self._resolve_close_limit(ticker, expiration, strike, opt_type)
         return price
 
+    def resolve_position_price_for_exit_check(
+        self,
+        ticker:     str,
+        expiration: str,
+        strike:     float,
+        opt_type:   Literal["call", "put"],
+    ) -> float | None:
+        """
+        Sem 3.2 fix paper exit logic (16-may-2026): precio razonable para
+        EVALUAR SL/TP intraday. NO es para ejecutar cierre — eso sigue siendo
+        bid puro (política Sprint 1) via resolve_position_price.
+
+        Bug residual descubierto el 15-may: con TP=10% en producción y 64
+        posiciones abiertas, 0 SL/TP triggered en 3h. Causa raíz: muchas
+        opciones tienen bid=None o bid=0 en el chain cache (volumen bajo,
+        opciones cerca de expiry, horarios de baja liquidez). La política
+        Sprint 1 fail-loud sobre bid hace que _check_exit_conditions nunca
+        evalúe el P&L de esas posiciones.
+
+        Cascada de precios (más razonable para SL/TP eval):
+          1. bid (si > 0, simula worst-case live exit)
+          2. mark (mid calculado por Schwab, fallback estándar)
+          3. None (si ni bid ni mark están disponibles)
+
+        Diferencia con resolve_position_price (bid puro):
+          - SL/TP evaluación: usa este método (cascada)
+          - Ejecución de cierre real: sigue usando _resolve_close_limit (bid puro)
+            Si bid es null al ejecutar, el trade se loguea con
+            data_quality="quote_unavailable" (path existente).
+
+        Returns: float precio razonable, o None si no hay info utilizable.
+        """
+        if self._chain_fetcher is None:
+            return None
+
+        contract = self._chain_fetcher.get_contract(
+            ticker, expiration, strike, opt_type + "s"
+        )
+        if not contract:
+            return None
+
+        bid = contract.get("bid")
+        if bid is not None and bid > 0:
+            return float(bid)
+
+        mark = contract.get("mark")
+        if mark is not None and mark > 0:
+            return float(mark)
+
+        return None
+
     # ── Orden genérica ─────────────────────────────────────
 
     async def _place_single(
