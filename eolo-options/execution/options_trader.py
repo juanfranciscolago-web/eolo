@@ -1484,6 +1484,28 @@ class OptionsTrader:
             )
             return None
 
+        # PROP-1 gate balance direccional (Fase 2.3, 16-may-2026):
+        # Protege contra exposure direccional sistemática. El 15-may
+        # vimos 109/109 BTOs = calls (bias 100%). En LIVE eso = riesgo
+        # de drawdown grande en sell-off macro. Cap el libro a 70% en
+        # un solo option_type — si nuevo BUY excedería el cap, rechazar
+        # hasta que el libro balancee (cierres o BUYs del tipo opuesto).
+        #
+        # Activo solo cuando total >= 5 posiciones (evita rechazar las
+        # primeras BTOs del día cuando el libro está vacío/chico).
+        if action == "BUY":
+            open_pos = (self._paper_positions if self.paper
+                        else list(self._open_positions.values()))
+            same_type = sum(1 for p in open_pos if p.get("option_type") == opt_type)
+            total = len(open_pos)
+            if total >= 5 and same_type / total > 0.70:
+                logger.info(
+                    f"[BALANCE_GATE] reject BUY {opt_type}: "
+                    f"{same_type}/{total} ({same_type/total*100:.0f}%) ya en {opt_type}, "
+                    f">70% límite. Esperando oportunidad de balance."
+                )
+                return None
+
         if action == "BUY" and exp and strike:
             if opt_type == "call":
                 return await self.open_long_call(ticker, exp, strike, contracts, limit,

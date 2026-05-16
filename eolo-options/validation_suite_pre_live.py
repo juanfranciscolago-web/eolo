@@ -13,6 +13,7 @@
 #    [6] _should_auto_close retorna True cuando time >= auto_close_et
 #    [7] _validate_chain_sanity rechaza patrón de feed corrupto (14-may pattern)
 #    [8] execute_decision rechaza BUY sin mispricing_type (hard gate Sem 1)
+#    [9] execute_decision rechaza BUY que excede 70% en option_type único (PROP-1 balance gate Sem 7)
 #
 #  Uso:
 #    python3 validation_suite_pre_live.py
@@ -303,6 +304,8 @@ async def test_8_hard_gate_mispricing_required():
     from execution.options_trader import OptionsTrader
 
     trader = MagicMock(spec=OptionsTrader)
+    trader.paper = True
+    trader._paper_positions = []   # libro vacío, gate balance no se activa (total<5)
     trader.open_long_call = AsyncMock(return_value="MOCK_ORDER")
     trader.open_long_put = AsyncMock(return_value="MOCK_ORDER")
 
@@ -339,6 +342,82 @@ async def test_8_hard_gate_mispricing_required():
 
 
 # ──────────────────────────────────────────────────────────
+# [9] PROP-1 gate balance direccional (Sem 7)
+# ──────────────────────────────────────────────────────────
+
+async def test_9_balance_gate_directional():
+    """[9] execute_decision rechaza BUY del mismo option_type cuando >70% del libro ya está ahí."""
+    print("\n[9/9] PROP-1: balance direccional 70% cap")
+    from execution.options_trader import OptionsTrader
+
+    trader = MagicMock(spec=OptionsTrader)
+    trader.paper = True
+    # Libro con 7 calls + 3 puts (70% calls — en el límite)
+    trader._paper_positions = (
+        [{"option_type": "call", "ticker": "SPY", "strike": 450, "contracts": 1,
+          "expiration": "2026-05-22"} for _ in range(7)] +
+        [{"option_type": "put",  "ticker": "QQQ", "strike": 500, "contracts": 1,
+          "expiration": "2026-05-22"} for _ in range(3)]
+    )
+    trader.open_long_call = AsyncMock(return_value="MOCK_ORDER")
+    trader.open_long_put  = AsyncMock(return_value="MOCK_ORDER")
+
+    # Caso 1: BUY call con 7/10 calls ya abiertas (70%, no >70%) → DEBE permitir
+    # (la condición es `> 0.70`, no `>= 0.70`)
+    decision_call_at_limit = {
+        "action": "BUY", "ticker": "AAPL", "expiration": "2026-05-22", "strike": 300.0,
+        "option_type": "call", "contracts": 1, "limit_price": 3.50,
+        "confidence": "HIGH", "mispricing_type": "BSM_MISPRICING",
+    }
+    result1 = await OptionsTrader.execute_decision(trader, decision_call_at_limit)
+    if result1 != "MOCK_ORDER":
+        fail(f"esperaba MOCK_ORDER en 70% (no >70%), obtuve {result1}")
+        return False
+
+    # Caso 2: agregar 1 call más → ahora 8/11 calls (72.7%, >70%) → DEBE rechazar
+    trader._paper_positions = trader._paper_positions + [
+        {"option_type": "call", "ticker": "AAPL", "strike": 300, "contracts": 1,
+         "expiration": "2026-05-22"}
+    ]
+    trader.open_long_call.reset_mock()
+    decision_call_over_limit = dict(decision_call_at_limit)
+    decision_call_over_limit["ticker"] = "TSLA"
+    decision_call_over_limit["strike"] = 460.0
+    result2 = await OptionsTrader.execute_decision(trader, decision_call_over_limit)
+    if result2 is not None:
+        fail(f"esperaba None (rechazo) con 72.7% calls, obtuve {result2}")
+        return False
+    if trader.open_long_call.called:
+        fail("open_long_call NO debería haberse llamado")
+        return False
+
+    # Caso 3: pero un BUY put debería pasar (5 puts / 12 total = 25%, no >70%)
+    decision_put = dict(decision_call_over_limit)
+    decision_put["option_type"] = "put"
+    decision_put["ticker"] = "IWM"
+    decision_put["strike"] = 200.0
+    result3 = await OptionsTrader.execute_decision(trader, decision_put)
+    if result3 != "MOCK_ORDER":
+        fail(f"esperaba MOCK_ORDER para put (balance), obtuve {result3}")
+        return False
+
+    # Caso 4: libro chico (total < 5) → gate NO se activa
+    trader._paper_positions = [
+        {"option_type": "call", "ticker": "SPY", "strike": 450, "contracts": 1,
+         "expiration": "2026-05-22"} for _ in range(3)
+    ]
+    trader.open_long_call.reset_mock()
+    decision_small_book = dict(decision_call_at_limit)
+    result4 = await OptionsTrader.execute_decision(trader, decision_small_book)
+    if result4 != "MOCK_ORDER":
+        fail(f"esperaba MOCK_ORDER con libro chico (3 pos, sin activar gate), obtuve {result4}")
+        return False
+
+    ok("4 escenarios: 70%=permite, >70%=rechaza, opuesto=permite, libro<5=ignora")
+    return True
+
+
+# ──────────────────────────────────────────────────────────
 # Runner + gate decision
 # ──────────────────────────────────────────────────────────
 
@@ -356,6 +435,7 @@ async def main():
     results.append(("[6] auto_close schedule",           test_6_auto_close_schedule()))
     results.append(("[7] Feed guard reject 14-may",      test_7_feed_guard_rejects_14may()))
     results.append(("[8] Hard gate mispricing_type",     await test_8_hard_gate_mispricing_required()))
+    results.append(("[9] PROP-1 balance direccional",    await test_9_balance_gate_directional()))
 
     passed = sum(1 for _, r in results if r)
     total = len(results)
