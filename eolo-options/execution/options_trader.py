@@ -822,6 +822,29 @@ class OptionsTrader:
         snapshot["quote_source"] = "schwab_chain"
         return float(bid), snapshot
 
+    def _quote_snapshot_only(
+        self,
+        ticker:     str,
+        expiration: str,
+        strike:     float,
+        opt_type:   Literal["call", "put"],
+    ) -> dict:
+        """
+        Backlog #10 (16-may-2026): captura snapshot del chain en el momento
+        del BTO sin validar limit (el caller ya provee `limit` desde upstream
+        para BUY_TO_OPEN).
+
+        Reutiliza `_resolve_close_limit`: ese helper ya devuelve un snapshot
+        completo (9 keys) tanto en fail como en success. Para BTO ignoramos
+        el `limit` returned y devolvemos solo el snapshot.
+
+        Returns:
+            dict con quote_bid/ask/mid/last/mark/spot/iv/fetched_at/source.
+            En fail: campos numéricos None + quote_source = razón del fallo.
+        """
+        _, snapshot = self._resolve_close_limit(ticker, expiration, strike, opt_type)
+        return snapshot
+
     def resolve_position_price(
         self,
         ticker:     str,
@@ -925,6 +948,15 @@ class OptionsTrader:
 
         # ── PAPER MODE ────────────────────────────────────
         if self.paper:
+            # Backlog #10 fix (16-may-2026): BTO paper persistía quote_* = null
+            # porque open_long_call/put no calculaban snapshot. Lazy fetch acá
+            # asegura que TODOS los BTOs paper tengan el snapshot del chain
+            # en Firestore para audit + post-mortem.
+            if instruction == "BUY_TO_OPEN" and quote_snapshot is None:
+                quote_snapshot = self._quote_snapshot_only(
+                    ticker, expiration, strike, opt_type
+                )
+
             # Si es cierre, calculamos P&L contra la posición abierta ANTES
             # de loguear, así queda persistido junto al trade en Firestore/CSV.
             # También rescatamos entry_price + opened_at_ts para enrichment.
@@ -968,15 +1000,29 @@ class OptionsTrader:
                         break
 
             # Sprint 1 fix: data_quality refleja si el quote fue resuelto.
+            # Backlog #10 extension: BTO también reporta data_quality según el
+            # quote_source del snapshot capturado en lazy fetch.
             data_quality = "quote_resolved"
-            if limit is None:
-                qs = quote_snapshot or {}
-                data_quality = "quote_unavailable"
-                logger.error(
-                    f"[CLOSE_PAPER] limit unavailable for {symbol} "
-                    f"(quote_source={qs.get('quote_source', 'unknown')}) "
-                    f"— persisting with pnl=None, data_quality=quote_unavailable"
-                )
+            qs = quote_snapshot or {}
+            qsrc = qs.get("quote_source")
+            if instruction == "SELL_TO_CLOSE":
+                if limit is None:
+                    data_quality = "quote_unavailable"
+                    logger.error(
+                        f"[CLOSE_PAPER] limit unavailable for {symbol} "
+                        f"(quote_source={qsrc}) "
+                        f"— persisting with pnl=None, data_quality=quote_unavailable"
+                    )
+            elif instruction == "BUY_TO_OPEN":
+                if qsrc in ("no_fetcher", "no_chain_data", "bid_null"):
+                    data_quality = "quote_unavailable"
+                    logger.warning(
+                        f"[OPEN_PAPER] quote snapshot incomplete for {symbol} "
+                        f"(quote_source={qsrc}) — persisting BTO with "
+                        f"data_quality=quote_unavailable"
+                    )
+                elif qsrc != "schwab_chain":
+                    data_quality = "n/a"
 
             order_id = _log_paper_trade(
                 action      = instruction,
