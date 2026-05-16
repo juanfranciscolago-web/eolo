@@ -58,11 +58,15 @@ CALENDAR_IV_GAP       = 0.20   # 20 puntos IV entre expiraciones
 WIDE_SPREAD_PCT       = 30.0   # spread > 30% del mid = liquidez pésima
 WIDE_SPREAD_MIN_PRICE = 0.10   # no alertar contratos de centavos
 
-# 7. Min DTE (Sem 5, 16-may-2026 — Plan PROP-2): skip 0-1 DTE gamma scalp puro.
-# Las opciones con dte<2 tienen theta decay extremo, bid/ask spreads anchos y
-# son inviables como entries del scanner cuantitativo. Filtra PCP, skew_jump,
-# theo_mispricing y calendar_gap a expiraciones >=2 DTE.
-MIN_DTE               = 2
+# 7. DTE bounds (Sem 5 + 12.5).
+# - MIN_DTE=4 (Sem 12.5, 19-may-2026): backtest 24 días mostró WR 54.6% en
+#   DTE 4-7 vs 44.8% en DTE 0 y 19.9% en DTE 1. Theta decay extremo y bid/ask
+#   spreads anchos en 0-3 DTE invalidan el scanner cuantitativo.
+# - MAX_DTE=10: balance entre captar oportunidades y limitar theta exposure.
+#   El sweet spot DTE 4-7 cae adentro; DTE 8-14 tiene WR 54% pero avg pnl
+#   baja a +$0.01 (no aporta vs DTE 4-7).
+MIN_DTE               = 4
+MAX_DTE               = 10
 
 
 class MispricingScanner:
@@ -102,33 +106,52 @@ class MispricingScanner:
             dte    = sample.get("dte", 30)
             T      = max(dte, 0.5) / 365
 
-            # Sem 5 (PROP-2, 16-may-2026): skip 0-1 DTE gamma scalp puro.
-            # Aplica a PCP, IV Skew Jump, BSM Mispricing (3 checks que usan T).
-            if dte < MIN_DTE:
+            # DTE bounds (Sem 5 + 12.5): skip 0-3 DTE y >10 DTE.
+            # Backtest histórico (87k STCs) mostró:
+            #   DTE 0: 44.8% WR / -$0.146 avg
+            #   DTE 1: 19.9% WR / -$0.847 avg
+            #   DTE 2-3: 43.8% WR / -$0.067 avg
+            #   DTE 4-7: 54.6% WR / +$0.260 avg  ← sweet spot
+            #   DTE 8-14: 54.1% WR / +$0.014 avg
+            #   DTE 15+: 47.5% WR / -$0.019 avg
+            if dte < MIN_DTE or dte > MAX_DTE:
                 continue
 
             # ── Check 1: Put-Call Parity ──────────────────
-            alerts += self._check_pcp(ticker, exp, T, S, calls, puts)
+            # KILLED Sem 12.5 (19-may-2026): backtest n=4.973 mostró
+            # WR 44.1%, avg -$0.20, total -$1.004. PEOR performer entre las
+            # 4 V2 actives. Para revertir: descomentar línea siguiente.
+            # alerts += self._check_pcp(ticker, exp, T, S, calls, puts)
 
             # ── Check 2: IV Skew Jumps ────────────────────
-            alerts += self._check_skew_jumps(ticker, exp, T, S, calls, "call")
-            alerts += self._check_skew_jumps(ticker, exp, T, S, puts,  "put")
+            # KILLED Sem 12.5 (19-may-2026): backtest n=3.869 mostró
+            # WR 47.8%, avg -$0.06, total -$237. Solo midday era positivo
+            # pero n bajo (1.878) y avg +$0.28 LIVE-negativo.
+            # Para revertir: descomentar 2 líneas siguientes.
+            # alerts += self._check_skew_jumps(ticker, exp, T, S, calls, "call")
+            # alerts += self._check_skew_jumps(ticker, exp, T, S, puts,  "put")
 
-            # ── Check 3: BSM Mispricing ────────────────────
+            # ── Check 3: BSM Mispricing — solo CALLS ───────
+            # Sem 12.5: backtest mostró bsm + calls = +$0.06 avg (n=36.333),
+            # bsm + puts = -$0.31 avg (n=3.644, 40.2% WR). En régimen equity
+            # skew los puts caros raramente son subvalorados por BSM teórico.
+            # Para revertir asymetric: descomentar línea de puts.
             alerts += self._check_theo_mispricing(ticker, exp, T, S, calls, "call")
-            alerts += self._check_theo_mispricing(ticker, exp, T, S, puts,  "put")
+            # alerts += self._check_theo_mispricing(ticker, exp, T, S, puts,  "put")
 
             # ── Check 4: Butterfly Arbitrage ──────────────
-            # KILLED 2026-05-15 (Plan Fase 2): Master Recap del 12-may reportó
-            # -$98,880 en cross-strategy (313 cierres, avg -$315/trade) y 0 intra-pairs
-            # bajo Pure Isolation. Es la strategy más destructiva de V2 históricamente.
-            # Para revertir: descomentar las 2 líneas siguientes.
+            # KILLED Sem 4 (15-may-2026): Master Recap del 12-may reportó
+            # -$98,880 en cross-strategy. Para revertir: descomentar.
             # alerts += self._check_butterfly(ticker, exp, calls, "call")
             # alerts += self._check_butterfly(ticker, exp, puts,  "put")
 
         # ── Check 5: Calendar IV Gap ──────────────────────
-        if len(expirations) >= 2:
-            alerts += self._check_calendar_gaps(ticker, chain, S)
+        # KILLED Sem 12.5 (19-may-2026): backtest mostró 142 BTOs / 0 STCs
+        # con strategy=calendar_iv_gap. Las posiciones no maturan a STC con
+        # atribución limpia. Sin data para defender ni recalibrar.
+        # Para revertir: descomentar 2 líneas siguientes.
+        # if len(expirations) >= 2:
+        #     alerts += self._check_calendar_gaps(ticker, chain, S)
 
         # ── Check 6: Ultra Wide Spreads ───────────────────
         for exp in expirations:
@@ -292,6 +315,12 @@ class MispricingScanner:
 
     # ── Check 3: BSM Mispricing ────────────────────────────
 
+    # Sem 12.5: MIN_PREMIUM filter para evitar opciones donde los costos
+    # LIVE ($1.50/contrato round-trip) representan >75% de la ganancia
+    # potencial. Backtest mostró WR de solo 42% en bucket entry_price
+    # [$0.5,$1) vs 76% en >=$2.
+    MIN_PREMIUM_USD = 2.00
+
     def _check_theo_mispricing(self, ticker, exp, T, S,
                                 contracts, opt_type) -> list[dict]:
         """
@@ -299,6 +328,10 @@ class MispricingScanner:
         Edge = |mid - BSM_price|
         Solo alertar cuando el mid está por DEBAJO del teórico
         (opción subvaluada → oportunidad de compra).
+
+        Sem 12.5: filtro MIN_PREMIUM aplicado para mejorar relación
+        edge/costo. Edge mínimo absoluto requerido = MIN_PREMIUM_USD * 0.30
+        para asegurar margen sobre comisiones LIVE.
         """
         alerts = []
 
@@ -310,6 +343,10 @@ class MispricingScanner:
 
             mid = (bid + ask) / 2
             K   = float(strike_str)
+
+            # Sem 12.5: MIN_PREMIUM filter
+            if mid < self.MIN_PREMIUM_USD:
+                continue
             iv_raw = c.get("iv")
             sigma = (iv_raw / 100) if (iv_raw and iv_raw > 0) else 0.30
 

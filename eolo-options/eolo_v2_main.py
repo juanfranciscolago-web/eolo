@@ -142,7 +142,13 @@ except ImportError as e:
 TICKERS = ["SPY", "QQQ", "IWM", "MSFT", "AAPL", "NVDA", "TSLA", "TQQQ"]
 
 # Tickers habilitados para Theta Harvest (credit spreads 0-5 DTE)
-THETA_HARVEST_TICKERS = ["SPY", "QQQ", "IWM", "TQQQ"]
+# Sem 12.5 (19-may-2026): IWM y TQQQ removidos.
+# Theta harvest está killed (Sem 4). La lista solo se usa en el backdoor de
+# eolo_v2_main.py:793 que dejaba pasar al scanner V2 tickers off en
+# ticker_selection. IWM perdió -$2.132 paper (58% del loss). TQQQ -$540.
+# Mantenemos SPY/QQQ por defensa (referencias residuales del código), pero
+# ya no pasan el backdoor para IWM/TQQQ.
+THETA_HARVEST_TICKERS = ["SPY", "QQQ"]
 
 # ⚠️  PAPER TRADING — cambiar a False para ir live
 # En paper mode: órdenes simuladas, CSV log, sin llamadas reales a Schwab
