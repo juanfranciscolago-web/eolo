@@ -58,6 +58,12 @@ CALENDAR_IV_GAP       = 0.20   # 20 puntos IV entre expiraciones
 WIDE_SPREAD_PCT       = 30.0   # spread > 30% del mid = liquidez pésima
 WIDE_SPREAD_MIN_PRICE = 0.10   # no alertar contratos de centavos
 
+# 7. Min DTE (Sem 5, 16-may-2026 — Plan PROP-2): skip 0-1 DTE gamma scalp puro.
+# Las opciones con dte<2 tienen theta decay extremo, bid/ask spreads anchos y
+# son inviables como entries del scanner cuantitativo. Filtra PCP, skew_jump,
+# theo_mispricing y calendar_gap a expiraciones >=2 DTE.
+MIN_DTE               = 2
+
 
 class MispricingScanner:
     """
@@ -95,6 +101,11 @@ class MispricingScanner:
             sample = next(iter(calls.values()), {})
             dte    = sample.get("dte", 30)
             T      = max(dte, 0.5) / 365
+
+            # Sem 5 (PROP-2, 16-may-2026): skip 0-1 DTE gamma scalp puro.
+            # Aplica a PCP, IV Skew Jump, BSM Mispricing (3 checks que usan T).
+            if dte < MIN_DTE:
+                continue
 
             # ── Check 1: Put-Call Parity ──────────────────
             alerts += self._check_pcp(ticker, exp, T, S, calls, puts)
@@ -431,6 +442,12 @@ class MispricingScanner:
                     K    = float(strike_str)
                     dte1 = c1.get("dte", 30)
                     dte2 = c2.get("dte", 60)
+
+                    # Sem 5 (PROP-2, 16-may-2026): skip si exp1 es 0-1 DTE.
+                    # Calendar spread con near-leg gamma scalp es inviable.
+                    if dte1 < MIN_DTE:
+                        continue
+
                     T1   = max(dte1, 0.5) / 365
                     T2   = max(dte2, 0.5) / 365
 
