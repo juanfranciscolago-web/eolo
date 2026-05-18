@@ -617,6 +617,7 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         result["_macro_feeds"] = settings.get("_macro_feeds")
         # Habilita apertura de shorts si el setting lo permite
         result["_allow_short"] = bool(settings.get("allow_short_selling", False))
+        result["_short_strategies_whitelist"] = list(settings.get("short_strategies_whitelist") or [])
         trader.print_status(result)
 
         # ── Modo "collect" para confluencia multi-TF ──

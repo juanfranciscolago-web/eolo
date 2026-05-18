@@ -462,6 +462,8 @@ def execute(result: dict):
     reason      = result.get("reason", "")
     macro       = result.get("_macro_feeds")
     allow_short = result.get("_allow_short", False)
+    short_strategies_whitelist = result.get("_short_strategies_whitelist") or []
+    strategy_can_short = (not short_strategies_whitelist) or (strategy in short_strategies_whitelist)
     shares      = calculate_shares(price, budget)
     mode        = "📄 PAPER" if PAPER_TRADING else "💰 LIVE"
     total       = shares * price
@@ -567,8 +569,8 @@ def execute(result: dict):
                 f"🔖 Modo     : {mode}"
             )
 
-        elif current != "SHORT" and allow_short:
-            # Abrir SHORT (desde FLAT, solo si allow_short=True)
+        elif current != "SHORT" and allow_short and strategy_can_short:
+            # Abrir SHORT (desde FLAT, solo si allow_short=True y strategy en whitelist)
             _log_trade("SELL_SHORT", ticker, shares, price, strategy,
                        timeframe=tf_min, reason=reason,
                        macro_feeds=macro, expected_price=price, fill_price=price)
@@ -587,6 +589,9 @@ def execute(result: dict):
                 f"🕐 Hora     : {datetime.now().strftime('%H:%M:%S ET')}\n"
                 f"🔖 Modo     : {mode}"
             )
+
+        elif current != "SHORT" and allow_short and not strategy_can_short:
+            logger.info(f"[SHORT-WHITELIST] {ticker} {strategy} SELL no abre SHORT — no en whitelist (whitelist={short_strategies_whitelist})")
 
 
 def print_status(result: dict):

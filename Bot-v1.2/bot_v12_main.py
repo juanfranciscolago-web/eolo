@@ -672,12 +672,10 @@ class EoloV12Bot:
                 today = datetime.now(EASTERN).date()
                 if is_auto_close_time() and self._auto_close_done != today:
                     logger.warning("[AUTO_CLOSE] 15:27 ET — cerrando posiciones del día")
-                    try:
-                        await asyncio.to_thread(self._execute_close_all)
-                    finally:
-                        self._auto_close_done = today
+                    await asyncio.to_thread(self._execute_close_all)
+                    self._auto_close_done = today        # solo si no levantó
             except Exception as e:
-                logger.error(f"[AUTO_CLOSE] Error: {e}")
+                logger.error(f"[AUTO_CLOSE] Error en intento de cierre — se reintentará en 30s: {e}")
             await asyncio.sleep(30)
 
     # ── Claude Bot (estrategia #14) ──────────────────────
