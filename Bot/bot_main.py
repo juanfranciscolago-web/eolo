@@ -1532,14 +1532,16 @@ def main():
         # ── Cierre automático (independiente del rango) ────────
         # Se chequea siempre para que funcione incluso cuando end
         # y auto_close coinciden (en ese caso is_market_open=False).
+        # Fix 17-may: si close_all_open_positions levanta, NO marcar
+        # done — reintentar en el próximo ciclo. Evita overnight gap.
         if is_auto_close_time(settings) and auto_close_done_date != today:
             budget = float(settings.get("budget", 100))
             logger.warning("⏰ AUTO-CLOSE — cerrando todas las posiciones")
             try:
                 close_all_open_positions(market_data, budget, settings=settings)
+                auto_close_done_date = today   # solo si no levantó
             except Exception as e:
-                logger.error(f"Auto-close error: {e}")
-            auto_close_done_date = today   # no volver a ejecutar hoy
+                logger.error(f"Auto-close error — se reintentará en el próximo ciclo: {e}")
 
         # ── Close All flag manual (dashboard) ─────────────────
         if settings.get("close_all"):
