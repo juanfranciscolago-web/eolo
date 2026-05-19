@@ -359,6 +359,31 @@
   ::-webkit-scrollbar-track { background: var(--bg); }
   ::-webkit-scrollbar-thumb { background: var(--panel-2); border-radius: 10px; }
   ::-webkit-scrollbar-thumb:hover { background: var(--border); }
+
+  /* B8: Daily loss cap bar */
+  .cap-bar {
+    margin-top: 8px;
+    height: 6px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .cap-bar-fill {
+    height: 100%;
+    width: 0%;
+    transition: width 0.3s ease, background 0.3s ease;
+    border-radius: 3px;
+  }
+  .cap-bar-fill.green  { background: #0ECB81; }
+  .cap-bar-fill.yellow { background: #F0B90B; }
+  .cap-bar-fill.red    { background: #F6465D; }
+  .cap-status-ok       { color: #0ECB81; }
+  .cap-status-warn     { color: #F0B90B; }
+  .cap-status-blocked  { color: #F6465D; font-weight: bold; }
+  /* Position card: SL/TP rows */
+  .pos-card .row.sl span:last-child { color: #F6465D; }
+  .pos-card .row.tp span:last-child { color: #0ECB81; }
+  .pos-card .row .dim { color: var(--text-dim); font-size: 0.85em; margin-left: 4px; }
 </style>
 </head>
 <body>
@@ -425,10 +450,13 @@
         <div class="value" id="tExposure">$0.00</div>
         <div class="sub"><span id="tOpen">0</span> posiciones abiertas</div>
       </div>
-      <div class="tile">
-        <div class="label">Claude calls</div>
-        <div class="value yl" id="tClaudeCalls">0</div>
-        <div class="sub">Costo: <span id="tClaudeCost">$0.00</span></div>
+      <div class="tile" id="tileDailyCap">
+        <div class="label">Daily Loss Cap</div>
+        <div class="value" id="tCapPnl">—</div>
+        <div class="sub">
+          Cap <span id="tCapThreshold">−5.0%</span> · <span id="tCapStatus" class="cap-status-ok">—</span>
+        </div>
+        <div class="cap-bar"><div class="cap-bar-fill green" id="tCapBarFill"></div></div>
       </div>
       <div class="tile">
         <div class="label">Universo activo</div>
@@ -449,56 +477,8 @@
     </div>
   </div>
 
-  <!-- ========== 4) CLAUDE BOT #14 ========== -->
-  <div class="section">
-    <div class="section-title">
-      <h2>Claude Bot #14 — Decisión autónoma</h2>
-    </div>
-    <div class="claude-grid">
-      <div class="card">
-        <div class="claude-head">
-          <div class="left">
-            <div class="icon">C</div>
-            <div>
-              <div class="title">Claude Bot #14 Crypto</div>
-              <div class="subtitle" id="claudeModel">claude-sonnet-4-6 · cada 5 min</div>
-            </div>
-          </div>
-          <label class="switch" title="Enable/disable Claude Bot">
-            <input type="checkbox" id="claudeToggle" />
-            <span class="slider"></span>
-          </label>
-        </div>
-        <div class="claude-kv">
-          <div class="k"><div class="label">Llamadas hoy</div><div class="val yl" id="claudeCalls">0</div></div>
-          <div class="k"><div class="label">Costo hoy</div><div class="val" id="claudeCost">$0.00</div></div>
-          <div class="k"><div class="label">Budget diario</div><div class="val" id="claudeBudget">$3.00</div></div>
-        </div>
-        <div class="claude-last" id="claudeLastCard" style="display:none">
-          <div class="top">
-            <span id="claudeLastAction" class="tag">HOLD</span>
-            <span id="claudeLastTs" style="font-family:var(--mono)">—</span>
-          </div>
-          <div class="reason" id="claudeLastReason">—</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="section-title" style="margin:0 0 8px">
-          <h2>Historial (últimas 20)</h2>
-        </div>
-        <table class="decisions-table">
-          <thead>
-            <tr>
-              <th>Hora</th><th>Símbolo</th><th>Acción</th><th>Conf.</th><th>SL/TP</th>
-            </tr>
-          </thead>
-          <tbody id="decisionsBody">
-            <tr><td colspan="5" class="empty">Sin decisiones aún</td></tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
-  </div>
+  <!-- B8: Sección Claude Bot eliminada — claude_bot apagado en Fase 2 (B1).
+       Si se reactiva el bot, restaurar desde git (commit a5ad258 o anterior). -->
 
   <!-- ========== 5) UNIVERSO + SCREENER ========== -->
   <div class="section">
@@ -597,12 +577,7 @@
         </div>
         <div class="chart-wrap"><canvas id="chartPnl"></canvas></div>
       </div>
-      <div class="card">
-        <div class="section-title" style="margin:0 0 8px">
-          <h2>Win / Loss</h2>
-        </div>
-        <div class="chart-wrap sm"><canvas id="chartWinLoss"></canvas></div>
-      </div>
+      <!-- B8: Win/Loss chart eliminado (redundante con tiles del día). -->
       <div class="card">
         <div class="section-title" style="margin:0 0 8px">
           <h2>PnL por estrategia</h2>
@@ -856,14 +831,7 @@ const pnlChart = new Chart($("#chartPnl"), {
   },
 });
 
-const winLossChart = new Chart($("#chartWinLoss"), {
-  type: "doughnut",
-  data: { labels: ["Wins", "Losses"], datasets: [{
-    data: [0,0], backgroundColor: ["#0ECB81", "#F6465D"], borderColor: "#161A1E", borderWidth: 2,
-  }]},
-  options: { responsive: true, maintainAspectRatio: false, cutout: "65%",
-    plugins: { legend: { position: "bottom", labels: { color: "#EAECEF" } } } },
-});
+// B8: winLossChart eliminado (canvas y card removidos del HTML).
 
 const byStrategyChart = new Chart($("#chartByStrategy"), {
   type: "bar",
@@ -943,15 +911,59 @@ function renderTiles(state, stats) {
   $("#tExposure").textContent = fmtUSD(exposure);
   $("#tOpen").textContent     = symbols.length;
 
-  $("#tClaudeCalls").textContent = (state.last_decisions || []).length;
-  $("#tClaudeCost").textContent  = fmtUSD(state.daily_cost_usd ?? 0, 4);
+  // B8: tile Claude calls reemplazado por tile Daily Cap (renderDailyCap).
 
   const universe = state.universe || [];
   $("#tUniverseCount").textContent = universe.length;
 }
 
-function renderPositions(state) {
-  const positions = state.open_positions || {};
+function renderDailyCap(cap) {
+  if (!cap) return;
+  const pnlPct  = cap.pnl_pct ?? 0;
+  const capPct  = cap.cap_pct ?? -5.0;
+  const reached = cap.cap_reached === true;
+
+  // Tile value: P&L del día como pct con signo
+  const valEl = $("#tCapPnl");
+  if (valEl) {
+    valEl.textContent = (pnlPct >= 0 ? "+" : "") + pnlPct.toFixed(2) + "%";
+    valEl.className = "value " + pnlClass(pnlPct);
+  }
+
+  const thrEl = $("#tCapThreshold");
+  if (thrEl) thrEl.textContent = capPct.toFixed(1) + "%";
+
+  // Status badge
+  const stEl = $("#tCapStatus");
+  if (stEl) {
+    if (reached) {
+      stEl.textContent = "🛑 BLOQUEADO";
+      stEl.className   = "cap-status-blocked";
+    } else if (pnlPct < 0 && Math.abs(pnlPct) >= Math.abs(capPct) * 0.6) {
+      stEl.textContent = "⚠ Cerca del cap";
+      stEl.className   = "cap-status-warn";
+    } else {
+      stEl.textContent = "✓ OK";
+      stEl.className   = "cap-status-ok";
+    }
+  }
+
+  // Barra: % consumido del cap. Solo se llena con pnl negativo.
+  const fill = $("#tCapBarFill");
+  if (fill) {
+    let ratio = 0;
+    if (pnlPct < 0 && capPct < 0) {
+      ratio = Math.min(Math.abs(pnlPct / capPct), 1.0);
+    }
+    fill.style.width = (ratio * 100).toFixed(0) + "%";
+    if (reached || ratio >= 1.0) fill.className = "cap-bar-fill red";
+    else if (ratio >= 0.6)       fill.className = "cap-bar-fill yellow";
+    else                          fill.className = "cap-bar-fill green";
+  }
+}
+
+function renderPositions(positions) {
+  positions = positions || {};
   const wrap = $("#positionsWrap");
   const symbols = Object.keys(positions).sort();
 
@@ -967,9 +979,17 @@ function renderPositions(state) {
     const p = positions[sym];
     const qty = p.qty || 0;
     const entry = p.entry_price || 0;
+    const last  = p.last_price;
     const notional = qty * entry;
-    // Sin precio actual en state → mostramos notional y dejamos PnL vacío
-    // (cuando el bot incluya mark price en el state se puede calcular)
+    const pnlPct  = p.pnl_pct;
+    const slPrice = p.sl_price;
+    const tpPrice = p.tp_price;
+    const distSl  = p.distance_to_sl;
+    const distTp  = p.distance_to_tp;
+    const pnlCls  = (pnlPct != null) ? pnlClass(pnlPct) : "";
+    const pnlTxt  = (pnlPct != null)
+      ? ` <span class="${pnlCls}">(${pnlPct >= 0 ? "+" : ""}${pnlPct.toFixed(2)}%)</span>`
+      : "";
     return `
     <div class="pos-card">
       <div class="head">
@@ -978,6 +998,9 @@ function renderPositions(state) {
       </div>
       <div class="row"><span>Qty</span><span>${fmt(qty, 6)}</span></div>
       <div class="row"><span>Entry</span><span>${fmtUSD(entry, 4)}</span></div>
+      ${last ? `<div class="row"><span>Last</span><span>${fmtUSD(last, 4)}${pnlTxt}</span></div>` : ""}
+      ${slPrice != null ? `<div class="row sl"><span>SL (${(p.sl_pct_used||0).toFixed(1)}%)</span><span>${fmtUSD(slPrice, 4)}${distSl != null ? `<span class="dim">${distSl >= 0 ? "+" : ""}${distSl.toFixed(2)}%</span>` : ""}</span></div>` : ""}
+      ${tpPrice != null ? `<div class="row tp"><span>TP (${(p.tp_pct_used||0).toFixed(1)}%)</span><span>${fmtUSD(tpPrice, 4)}${distTp != null ? `<span class="dim">${distTp >= 0 ? "+" : ""}${distTp.toFixed(2)}%</span>` : ""}</span></div>` : ""}
       <div class="row"><span>Notional</span><span>${fmtUSD(notional, 2)}</span></div>
       <div class="row"><span>Abierta</span><span>${tsToHM(p.ts)}</span></div>
       <div class="reason">${p.reason || ""}</div>
@@ -986,50 +1009,8 @@ function renderPositions(state) {
 }
 
 function renderClaude(state, decisions) {
-  const calls = decisions.length;
-  $("#claudeCalls").textContent = calls;
-
-  const cost = state.daily_cost_usd ?? decisions.reduce((a,d)=> a + (d.approx_cost_usd||0), 0);
-  $("#claudeCost").textContent = fmtUSD(cost, 4);
-
-  const cfg = state.config || {};
-  const budget = cfg.claude_max_cost_per_day ?? 3.0;
-  $("#claudeBudget").textContent = fmtUSD(budget);
-  $("#claudeToggle").checked = cfg.claude_bot_enabled !== false;
-
-  // Última decisión
-  const last = decisions[0];
-  if (last) {
-    $("#claudeLastCard").style.display = "";
-    const act = (last.action || "HOLD").toUpperCase();
-    const tag = $("#claudeLastAction");
-    tag.textContent = act; tag.className = "tag " + act;
-    $("#claudeLastTs").textContent = last.ts_iso ? new Date(last.ts_iso).toLocaleString() : "—";
-    const sym   = last.symbol ? (last.symbol + " · ") : "";
-    const conf  = last.confidence != null ? ("conf " + (last.confidence*100).toFixed(0) + "% · ") : "";
-    $("#claudeLastReason").textContent = sym + conf + (last.reason || "—");
-  } else {
-    $("#claudeLastCard").style.display = "none";
-  }
-
-  // Tabla historial
-  const tbody = $("#decisionsBody");
-  if (!decisions.length) {
-    tbody.innerHTML = '<tr><td colspan="5" class="empty">Sin decisiones aún</td></tr>';
-    return;
-  }
-  tbody.innerHTML = decisions.slice(0, 20).map(d => {
-    const act = (d.action || "HOLD").toUpperCase();
-    const sl = d.stop_loss_pct != null ? d.stop_loss_pct + "%" : "—";
-    const tp = d.take_profit_pct != null ? d.take_profit_pct + "%" : "—";
-    return `<tr>
-      <td>${tsToHMS(d.ts_iso)}</td>
-      <td>${d.symbol || "—"}</td>
-      <td><span class="tag ${act}">${act}</span></td>
-      <td>${d.confidence != null ? (d.confidence*100).toFixed(0)+"%" : "—"}</td>
-      <td>${sl} / ${tp}</td>
-    </tr>`;
-  }).join("");
+  // B8: sección Claude Bot eliminada del HTML.
+  // Función mantenida como stub para no romper llamadores hasta que se quite del refresh().
 }
 
 function renderUniverse(state) {
@@ -1251,9 +1232,7 @@ function renderStrategies(state) {
 }
 
 function renderCharts(stats) {
-  // Win/loss donut
-  winLossChart.data.datasets[0].data = [stats.wins_today || 0, stats.losses_today || 0];
-  winLossChart.update("none");
+  // B8: winLossChart eliminado.
 
   // PnL acumulado (desde trades UTC hoy)
   const startTs = new Date(); startTs.setUTCHours(0,0,0,0);
@@ -1322,10 +1301,12 @@ function renderTrades() {
 /* ========== Poll loop ========== */
 async function refresh() {
   try {
-    const [state, tradesRes, decisionsRes] = await Promise.all([
+    const [state, tradesRes, decisionsRes, positionsRes, capRes] = await Promise.all([
       api("/api/state"),
       api("/api/trades?limit=300"),
       api("/api/decisions?limit=50"),
+      api("/api/positions"),
+      api("/api/daily-cap-status"),
     ]);
 
     LAST_STATE     = state;
@@ -1334,8 +1315,9 @@ async function refresh() {
 
     renderHeader(state);
     renderTiles(state, tradesRes.stats || {});
-    renderPositions(state);
-    renderClaude(state, LAST_DECISIONS);
+    renderDailyCap(capRes);                                  // B8: nuevo
+    renderPositions(positionsRes.positions || {});           // B8: usa /api/positions enriquecido
+    // renderClaude removido — sección eliminada del HTML.
     renderUniverse(state);
     renderStrategies(state);
     renderCharts(tradesRes.stats || {});
