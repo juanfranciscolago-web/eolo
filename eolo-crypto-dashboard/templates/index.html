@@ -277,6 +277,39 @@
   .strat-spark { width:100%; height:44px; margin-top:6px; }
   .strat-empty { color:var(--text-dim); font-size:.66rem; text-align:center; padding:8px 0; font-style:italic; }
 
+  /* B9: Strategies disabled colapsables */
+  .strat-disabled-group {
+    margin-bottom: 14px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .strat-disabled-group summary {
+    padding: 12px 14px;
+    cursor: pointer;
+    user-select: none;
+    list-style: none;
+    background: rgba(255,255,255,0.02);
+    transition: background 0.2s;
+  }
+  .strat-disabled-group summary:hover { background: rgba(255,255,255,0.04); }
+  .strat-disabled-group summary::-webkit-details-marker { display: none; }
+  .strat-disabled-group summary::before {
+    content: "▶";
+    display: inline-block;
+    margin-right: 8px;
+    transition: transform 0.2s;
+    color: var(--text-dim);
+  }
+  .strat-disabled-group[open] summary::before {
+    transform: rotate(90deg);
+  }
+  .strat-disabled-group .strat-grid {
+    padding: 10px 14px 14px;
+    border-top: 1px solid var(--border);
+  }
+
   /* iOS-style switch */
   .switch { position: relative; display: inline-block; width: 38px; height: 22px; }
   .switch input { opacity: 0; width: 0; height: 0; }
@@ -505,63 +538,62 @@
     </div>
   </div>
 
-  <!-- ========== 6) ESTRATEGIAS TOGGLES (unificado · 27 señales) ========== -->
+  <!-- ========== 6) STRATEGIES (B9: rediseño post-Fase 2) ========== -->
   <div class="section">
     <div class="section-title">
-      <h2>Estrategias activas</h2>
-      <span class="hint">Click en el card para expandir stats · toggle para activar/desactivar. Nivel 2 (VIX/TICK) no aplica a crypto.</span>
+      <h2>Strategies</h2>
+      <span class="hint">4 efectivas · 34 apagadas por evidencia estadística (auditoría 19-may-2026)</span>
     </div>
 
-    <!-- Claude Bot #14: fila dedicada encima del grid -->
+    <!-- Claude Bot row dedicada (sigue arriba — el toggle es para reactivar) -->
     <div class="strats" id="stratsWrap" style="margin-bottom:14px;"></div>
 
     <div id="strat-groups">
+      <!-- Active: cards prominentes -->
       <div class="strat-group">
         <div class="strat-head">
-          <span class="strat-title">🎯 EMA 3/8 y MACD (10) <span class="hint">ORB v3 es equity-only</span></span>
-          <button class="strat-btn-all on"  onclick="setAllStrats('emacd', true)">Todas ON</button>
-          <button class="strat-btn-all off" onclick="setAllStrats('emacd', false)">Todas OFF</button>
+          <span class="strat-title">✓ Efectivas (4) <span class="hint">operando hoy</span></span>
+          <button class="strat-btn-all on"  onclick="setAllStrats('active', true)">Todas ON</button>
+          <button class="strat-btn-all off" onclick="setAllStrats('active', false)">Todas OFF</button>
         </div>
-        <div class="strat-grid" id="strat-grid-emacd"></div>
+        <div class="strat-grid" id="strat-grid-active"></div>
       </div>
-      <div class="strat-group">
-        <div class="strat-head">
-          <span class="strat-title">📊 Clásicas (13)</span>
-          <button class="strat-btn-all on"  onclick="setAllStrats('classic', true)">Todas ON</button>
-          <button class="strat-btn-all off" onclick="setAllStrats('classic', false)">Todas OFF</button>
-        </div>
-        <div class="strat-grid" id="strat-grid-classic"></div>
-      </div>
-      <div class="strat-group">
-        <div class="strat-head">
-          <span class="strat-title">⚡ Nivel 1 — Volume · Breakout · Reversal (9) <span class="hint">7 aplican a crypto, 2 greyed</span></span>
-          <button class="strat-btn-all on"  onclick="setAllStrats('nivel1', true)">Todas ON</button>
-          <button class="strat-btn-all off" onclick="setAllStrats('nivel1', false)">Todas OFF</button>
-        </div>
-        <div class="strat-grid" id="strat-grid-nivel1"></div>
-      </div>
-      <div class="strat-group">
-        <div class="strat-head">
-          <span class="strat-title">🌡️ Nivel 2 — VIX · TICK/TRIN · VRP (5) <span class="hint">no aplica a crypto 24/7</span></span>
-        </div>
-        <div class="strat-grid" id="strat-grid-nivel2"></div>
-      </div>
-      <div class="strat-group">
-        <div class="strat-head">
-          <span class="strat-title">🏆 Combos Ganadores (6) <span class="hint">⭐C3 Nino Squeeze · ⚡alta · 🎯media · 💎baja · C2 excluido (equity-only)</span></span>
-          <button class="strat-btn-all on"  onclick="setAllStrats('combos', true)">Todas ON</button>
-          <button class="strat-btn-all off" onclick="setAllStrats('combos', false)">Todas OFF</button>
-        </div>
-        <div class="strat-grid" id="strat-grid-combos"></div>
-      </div>
-      <div class="strat-group">
-        <div class="strat-head">
-          <span class="strat-title">🚀 Crypto Nativas (4) <span class="hint">Liquidation · Funding · Weekend · BTC Lead</span></span>
-          <button class="strat-btn-all on"  onclick="setAllStrats('cryptonative', true)">Todas ON</button>
-          <button class="strat-btn-all off" onclick="setAllStrats('cryptonative', false)">Todas OFF</button>
-        </div>
-        <div class="strat-grid" id="strat-grid-cryptonative"></div>
-      </div>
+
+      <!-- Disabled groups: colapsables, default collapsed -->
+      <details class="strat-disabled-group">
+        <summary>
+          <span class="strat-title">📉 Apagadas por pérdida sistemática (12) <span class="hint">CI95 negativo, hasta -$4,257 histórico</span></span>
+        </summary>
+        <div class="strat-grid" id="strat-grid-disabled_loss"></div>
+      </details>
+
+      <details class="strat-disabled-group">
+        <summary>
+          <span class="strat-title">🪤 Apagadas por openers-sin-cierre bajo Pure Isolation (5) <span class="hint">abren BUYs sin SELLs propias</span></span>
+        </summary>
+        <div class="strat-grid" id="strat-grid-disabled_openers"></div>
+      </details>
+
+      <details class="strat-disabled-group">
+        <summary>
+          <span class="strat-title">⏱ Apagadas por TF=4h no activo (4) <span class="hint">requieren ACTIVE_TIMEFRAMES con 240m</span></span>
+        </summary>
+        <div class="strat-grid" id="strat-grid-disabled_tf4h"></div>
+      </details>
+
+      <details class="strat-disabled-group">
+        <summary>
+          <span class="strat-title">📈 Apagadas por equity-portadas sin trades crypto (8) <span class="hint">FASE 4/5/7a / RTH-only</span></span>
+        </summary>
+        <div class="strat-grid" id="strat-grid-disabled_equity"></div>
+      </details>
+
+      <details class="strat-disabled-group">
+        <summary>
+          <span class="strat-title">🗂 Sólo en settings.py, sin override Firestore (5) <span class="hint">defaults False, base es utility</span></span>
+        </summary>
+        <div class="strat-grid" id="strat-grid-disabled_code_only"></div>
+      </details>
     </div>
   </div>
 
@@ -690,65 +722,63 @@ window.STRAT_GROUPS_DISABLED = { nivel2: true };
 // cubren todas las estrategias aplicables a crypto. 'ema_crossover' y 'gap_fade'
 // son mapeados a 'gap' legacy en el backend; las incluimos en classic para
 // visual consistency.
+// B9: taxonomía actualizada post-Fase 2 (19-may-2026).
+// 4 efectivas (operando) + 5 buckets de apagadas por razón cuantitativa.
 const STRATEGY_DEFS = {
-  emacd: [
-    { key: "ema_3_8",         label: "EMA 3/8 Crossover" },
-    { key: "ema_8_21",        label: "EMA 8/21 Crossover" },
-    { key: "macd_accel",      label: "MACD Aceleración" },
-    { key: "volume_breakout", label: "Volume Breakout" },
-    { key: "buy_pressure",    label: "Buy Pressure" },
-    { key: "sell_pressure",   label: "Sell Pressure" },
-    { key: "vwap_momentum",   label: "VWAP Momentum" },
-    { key: "donchian_turtle", label: "Donchian Turtle" },
-    { key: "bulls_bsp",       label: "Bulls BSP (breadth)" },
-    { key: "net_bsv",         label: "Net BSV (breadth)" },
+  active: [
+    { key: "rsi_sma200", label: "RSI + SMA200 · whitelist 6 pares" },
+    { key: "bollinger",  label: "Bollinger" },
+    { key: "supertrend", label: "Supertrend" },
+    { key: "vwap_rsi",   label: "VWAP + RSI" },
   ],
-  classic: [
-    { key: "ema_crossover", label: "EMA Crossover" },
-    { key: "gap_fade",      label: "Gap Fade" },
-    { key: "rsi_sma200",    label: "RSI + SMA200" },
-    { key: "hh_ll",         label: "HH / LL" },
-    { key: "ema_tsi",       label: "EMA + TSI" },
-    { key: "vwap_rsi",      label: "VWAP + RSI" },
-    { key: "bollinger",     label: "Bollinger" },
-    { key: "orb",           label: "ORB (24/7)" },
-    { key: "supertrend",    label: "Supertrend" },
-    { key: "ha_cloud",      label: "Heikin-Ashi Cloud" },
-    { key: "squeeze",       label: "BB/KC Squeeze" },
-    { key: "macd_bb",       label: "MACD + BB" },
-    { key: "vela_pivot",    label: "Vela + Pivot" },
+  // Pérdida sistemática (CI95 enteramente negativo o estabilidad pobre)
+  disabled_loss: [
+    { key: "squeeze",             label: "BB/KC Squeeze · -$4,257 hist." },
+    { key: "ema_tsi",             label: "EMA + TSI · -$3,076" },
+    { key: "hh_ll",               label: "HH/LL · -$2,754" },
+    { key: "macd_bb",             label: "MACD + BB · -$2,335" },
+    { key: "buy_pressure",        label: "Buy Pressure · CI95 [-0.98,-0.56]" },
+    { key: "sell_pressure",       label: "Sell Pressure · CI95 [-1.12,-0.42]" },
+    { key: "net_bsv",             label: "Net BSV · CI95 [-0.68,-0.14]" },
+    { key: "vwap_momentum",       label: "VWAP Momentum · CI95 [-2.30,-0.30]" },
+    { key: "ema_3_8",             label: "EMA 3/8 · borderline negativo" },
+    { key: "macd_accel",          label: "MACD Aceleración · borderline" },
+    { key: "donchian_turtle",     label: "Donchian Turtle · estabilidad flip" },
+    { key: "volume_reversal_bar", label: "Volume Reversal Bar · borderline" },
   ],
-  nivel1: [
-    { key: "rvol_breakout",       label: "RVOL Breakout" },
-    { key: "stop_run",            label: "Stop Run Reversal" },
-    { key: "vwap_zscore",         label: "VWAP Z-Score" },
-    { key: "volume_reversal_bar", label: "Volume Reversal Bar" },
-    { key: "anchor_vwap",         label: "Anchor VWAP" },
-    { key: "obv_mtf",             label: "OBV Multi-TF" },
-    { key: "tsv",                 label: "TSV" },
-    { key: "vw_macd",             label: "Volume-Weighted MACD" },
-    { key: "opening_drive",       label: "Opening Drive" },
+  // Openers que abren pero no cierran bajo Pure Isolation
+  disabled_openers: [
+    { key: "rvol_breakout", label: "RVOL Breakout · 1141 BUYs sin SELLs propias" },
+    { key: "tsv",           label: "TSV · 934 BUYs sin SELLs propias" },
+    { key: "vw_macd",       label: "VW MACD · 834 BUYs sin SELLs propias" },
+    { key: "vwap_zscore",   label: "VWAP Z-Score · openers-sin-cierre" },
+    { key: "stop_run",      label: "Stop Run · openers-sin-cierre" },
   ],
-  nivel2: [
-    { key: "vix_mean_rev",    label: "VIX Mean Reversion" },
-    { key: "vix_correlation", label: "VIX Correlation" },
-    { key: "vix_squeeze",     label: "VIX Squeeze" },
-    { key: "tick_trin_fade",  label: "TICK/TRIN Fade" },
-    { key: "vrp_intraday",    label: "VRP Intraday" },
+  // Diseñadas para TF=240m que no está en ACTIVE_TIMEFRAMES=[1,15,60]
+  disabled_tf4h: [
+    { key: "liquidation_cascade", label: "💥 Liquidation Cascade · TF=4h inactivo" },
+    { key: "funding_rate_carry",  label: "💰 Funding Rate Carry · TF=4h inactivo" },
+    { key: "weekend_breakout",    label: "📅 Weekend Breakout · TF=4h inactivo" },
+    { key: "btc_lead_lag",        label: "🔗 BTC Lead-Lag · TF=4h inactivo" },
   ],
-  combos: [
-    { key: "combo1_ema_scalper",  label: "⚡ C1 — EMA Scalper 3/8 (ALTA)" },
-    { key: "combo3_nino_squeeze", label: "⭐ C3 — Nino Squeeze (MEDIA)" },
-    { key: "combo4_slimribbon",   label: "🎯 C4 — SlimRibbon + MACD (MEDIA)" },
-    { key: "combo5_btd",          label: "🎯 C5 — BTD + Stacked + PB34 (MEDIA)" },
-    { key: "combo6_fractalccix",  label: "💎 C6 — FractalCCIx Premium (BAJA)" },
-    { key: "combo7_campbell",     label: "💎 C7 — Campbell Swing (BAJA)" },
+  // Equity-portadas sin trades en crypto (24 días de data)
+  disabled_equity: [
+    { key: "ha_cloud",                 label: "Heikin-Ashi Cloud · 0 trades crypto" },
+    { key: "obv_mtf",                  label: "OBV Multi-TF · 0 trades crypto" },
+    { key: "orb",                      label: "ORB · RTH-only, no aplica 24/7" },
+    { key: "vela_pivot",               label: "Vela + Pivot · 0 trades crypto" },
+    { key: "bollinger_rsi_sensitive",  label: "Bollinger RSI Sensitive · FASE 4 equity" },
+    { key: "xom_30m",                  label: "XOM 30m · FASE 5 equity-specific" },
+    { key: "macd_confluence_fase7a",   label: "MACD Confluence · FASE 7a equity" },
+    { key: "momentum_score_fase7a",    label: "Momentum Score · FASE 7a equity" },
   ],
-  cryptonative: [
-    { key: "liquidation_cascade",  label: "💥 Liquidation Cascade" },
-    { key: "funding_rate_carry",   label: "💰 Funding Rate Carry" },
-    { key: "weekend_breakout",     label: "📅 Weekend Breakout" },
-    { key: "btc_lead_lag",         label: "🔗 BTC Lead-Lag" },
+  // Sólo en settings.py (sin override en Firestore) — defaults False
+  disabled_code_only: [
+    { key: "base",            label: "base · utility module, sin detect_signal" },
+    { key: "bulls_bsp",       label: "Bulls BSP · sólo en code, default False" },
+    { key: "ema_8_21",        label: "EMA 8/21 · sólo en code, default False" },
+    { key: "gap",             label: "gap · sólo en code, default False" },
+    { key: "volume_breakout", label: "Volume Breakout · estabilidad flip, default False" },
   ],
 };
 
@@ -1140,7 +1170,9 @@ function renderStrategyGroup(groupKey) {
 }
 
 function renderStrategiesUnified() {
-  ['emacd', 'classic', 'nivel1', 'nivel2', 'combos', 'cryptonative'].forEach(renderStrategyGroup);
+  // B9: taxonomía nueva. active = grupo prominente; resto = colapsables.
+  ["active", "disabled_loss", "disabled_openers", "disabled_tf4h", "disabled_equity", "disabled_code_only"]
+    .forEach(renderStrategyGroup);
 }
 
 function toggleExpand(key, ev) {
@@ -1254,15 +1286,27 @@ function renderCharts(stats) {
   pnlChart.update("none");
 
   // PnL por estrategia (bar horizontal)
+  // B9: filtrar a top 6 por |P&L| del día para reducir ruido. Resto agrupado en "otros".
   const per = {};
   today.forEach(t => {
     const s = t.strategy || "—";
     per[s] = (per[s] || 0) + Number(t.pnl_usdt ?? t.pnl ?? 0);
   });
-  const entries = Object.entries(per).sort((a,b) => b[1] - a[1]);
-  byStrategyChart.data.labels = entries.map(e => e[0]);
-  byStrategyChart.data.datasets[0].data = entries.map(e => Number(e[1].toFixed(2)));
-  byStrategyChart.data.datasets[0].backgroundColor = entries.map(e => e[1] >= 0 ? "#0ECB81" : "#F6465D");
+  const allEntries = Object.entries(per).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
+  const TOP_N = 6;
+  let topEntries = allEntries.slice(0, TOP_N);
+  const restEntries = allEntries.slice(TOP_N);
+  if (restEntries.length > 0) {
+    const restSum = restEntries.reduce((acc, [_, v]) => acc + v, 0);
+    if (Math.abs(restSum) > 0.01) {
+      topEntries.push([`otras (${restEntries.length})`, restSum]);
+    }
+  }
+  // Re-ordenar el resultado final por P&L (no por |P&L|) para que verdes vayan arriba
+  topEntries.sort((a, b) => b[1] - a[1]);
+  byStrategyChart.data.labels = topEntries.map(e => e[0]);
+  byStrategyChart.data.datasets[0].data = topEntries.map(e => Number(e[1].toFixed(2)));
+  byStrategyChart.data.datasets[0].backgroundColor = topEntries.map(e => e[1] >= 0 ? "#0ECB81" : "#F6465D");
   byStrategyChart.update("none");
 }
 
