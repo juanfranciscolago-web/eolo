@@ -383,12 +383,19 @@ class EoloCryptoOrchestrator:
     # ── State refresher (loop) ────────────────────────────
 
     async def _state_refresher(self):
-        """Cada 30s refresca balance/posiciones desde el executor."""
+        """Cada 30s refresca balance/posiciones/daily P&L desde el executor."""
         while not self._stopping:
             try:
                 self.state.set_balance(self.executor.get_balance_usdt())
                 self.state.set_positions(self.executor.get_open_positions())
                 self.state.set_daily_cost(self.claude._today_cost_usd)
+                # B4: daily P&L y estado del cap para dashboard
+                self.state.set_daily_pnl(self.executor._daily_pnl_usdt)
+                self.state.set_daily_cap_reached(
+                    self.executor._daily_cap_reached,
+                    pnl_pct=self.executor._daily_pnl_pct(),
+                    cap_pct=runtime_config.daily_loss_cap_pct,
+                )
             except Exception as e:
                 logger.warning(f"[ORCH] state_refresher: {e}")
                 self.state.inc_errors()

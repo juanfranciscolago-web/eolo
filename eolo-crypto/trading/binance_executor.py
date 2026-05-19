@@ -156,11 +156,25 @@ class BinanceExecutor:
         # regalos — comportamiento catastrófico en LIVE.
         self._eolo_positions: dict[str, dict] = {}
         self._paper_balance_usdt = 10_000.0          # balance simulado inicial
+        # ── B4: Daily loss cap state ──────────────────────────
+        # Acumulador in-memory de P&L del día UTC actual. Se hidrata al
+        # boot desde Firestore eolo-crypto-trades (SELLs del día). Cada
+        # SELL post-deploy actualiza este valor. open_long lo compara
+        # contra daily_loss_cap_pct para frenar el sangrado.
+        self._daily_pnl_usdt: float = 0.0
+        self._daily_date: str = self._utc_today_str()
+        self._daily_starting_balance: float = self._paper_balance_usdt
+        self._daily_cap_reached: bool = False
+        # Tracking del último rollover (para logs)
+        self._last_rollover_log: float = 0.0
         self._init_paper_log()
         self._hydrate_positions_from_firestore()
+        self._hydrate_daily_pnl_from_firestore()
         logger.info(
             f"[EXEC] Executor arrancado en modo {self.mode} | "
-            f"posiciones Eolo activas: {len(self._eolo_positions)}"
+            f"posiciones Eolo activas: {len(self._eolo_positions)} | "
+            f"daily P&L hidratado: ${self._daily_pnl_usdt:+.2f} "
+            f"(starting balance ${self._daily_starting_balance:.2f})"
         )
 
     def _init_paper_log(self):
@@ -217,6 +231,115 @@ class BinanceExecutor:
             )
         except Exception as e:
             logger.warning(f"[EXEC] No pude persistir posiciones a Firestore: {e}")
+
+    # ── B4: Daily loss cap helpers ────────────────────────
+
+    @staticmethod
+    def _utc_today_str() -> str:
+        """Fecha UTC actual en formato YYYY-MM-DD para comparar rollover."""
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+    def _hydrate_daily_pnl_from_firestore(self):
+        """
+        Al boot, sumar pnl_usdt de SELLs del día UTC actual desde
+        eolo-crypto-trades. Sin esto, un restart pierde el daily P&L
+        acumulado y el cap puede bypass-earse reiniciando el bot.
+
+        Best-effort: si la query falla, dejamos _daily_pnl_usdt=0
+        (consistente con día nuevo).
+        """
+        from datetime import datetime, timezone
+
+        try:
+            # 00:00 UTC del día actual en epoch
+            now = datetime.now(timezone.utc)
+            today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            ts_threshold = today_start.timestamp()
+
+            # Query: SELL trades del día UTC actual
+            from google.cloud import firestore as _fs
+            db = _fs.Client(project=settings.GCP_PROJECT_ID)
+            coll = db.collection(settings.FIRESTORE_TRADES_COLLECTION)
+            # Filtramos por ts >= today_start. La estructura es flat
+            # (1 doc por trade) así que no necesitamos iterar containers.
+            docs = coll.where("ts", ">=", ts_threshold).where("side", "==", "SELL").stream()
+            total = 0.0
+            count = 0
+            for d in docs:
+                data = d.to_dict() or {}
+                pnl = float(data.get("pnl_usdt") or 0)
+                if pnl != 0:
+                    total += pnl
+                    count += 1
+            self._daily_pnl_usdt = round(total, 2)
+            logger.info(
+                f"[DLC] Daily P&L hidratado: ${total:+.2f} USDT "
+                f"({count} SELLs hoy UTC)"
+            )
+        except Exception as e:
+            logger.warning(
+                f"[DLC] No pude hidratar daily P&L: {type(e).__name__}: {e} "
+                f"— arranco con $0.00"
+            )
+            self._daily_pnl_usdt = 0.0
+
+    def _check_daily_rollover(self):
+        """
+        Si el día UTC cambió desde la última vez, resetear el acumulador
+        y snapshot-ear el balance actual como nuevo starting_balance.
+        Idempotente: si no cambió el día, no hace nada.
+        """
+        today = self._utc_today_str()
+        if today != self._daily_date:
+            prev_date = self._daily_date
+            prev_pnl  = self._daily_pnl_usdt
+            self._daily_date = today
+            self._daily_pnl_usdt = 0.0
+            self._daily_starting_balance = self.get_balance_usdt()
+            self._daily_cap_reached = False
+            logger.info(
+                f"[DLC] Rollover diario {prev_date} → {today} | "
+                f"P&L cerrado: ${prev_pnl:+.2f} | "
+                f"nuevo starting balance: ${self._daily_starting_balance:.2f}"
+            )
+
+    def _update_daily_pnl(self, pnl_usdt: float):
+        """
+        Suma pnl al acumulador del día. Llamado desde _paper_sell y
+        _market_sell tras cada SELL exitoso. Hace rollover check
+        primero para no acumular sobre un día viejo.
+        """
+        if pnl_usdt == 0:
+            return
+        self._check_daily_rollover()
+        self._daily_pnl_usdt = round(self._daily_pnl_usdt + float(pnl_usdt), 2)
+        # Re-evaluar si el cap se cruzó (puede ser que un SELL con TP
+        # positivo nos saque del cap, o que un SL nos meta dentro)
+        try:
+            pnl_pct = self._daily_pnl_pct()
+            cap = float(runtime_config.daily_loss_cap_pct)  # típicamente negativo, e.g. -5.0
+            was_reached = self._daily_cap_reached
+            self._daily_cap_reached = (pnl_pct <= cap)
+            if self._daily_cap_reached and not was_reached:
+                logger.error(
+                    f"[DLC] 🛑 DAILY LOSS CAP ALCANZADO: pnl={pnl_pct:+.2f}% <= cap={cap}% "
+                    f"(${self._daily_pnl_usdt:+.2f} / ${self._daily_starting_balance:.2f}) "
+                    f"— BUYs nuevos bloqueados hasta rollover 00:00 UTC"
+                )
+            elif not self._daily_cap_reached and was_reached:
+                logger.info(
+                    f"[DLC] ✓ Daily P&L recuperó: pnl={pnl_pct:+.2f}% > cap={cap}% "
+                    f"— BUYs habilitados de nuevo"
+                )
+        except Exception as e:
+            logger.warning(f"[DLC] check cap falló: {type(e).__name__}: {e}")
+
+    def _daily_pnl_pct(self) -> float:
+        """P&L del día como % del starting balance. Negativo si pérdida."""
+        if self._daily_starting_balance <= 0:
+            return 0.0
+        return (self._daily_pnl_usdt / self._daily_starting_balance) * 100.0
 
     # ── API pública ───────────────────────────────────────
 
@@ -399,6 +522,18 @@ class BinanceExecutor:
         """
         symbol = symbol.upper()
 
+        # ── B4: Daily loss cap gate ──────────────────────
+        self._check_daily_rollover()
+        if self._daily_cap_reached:
+            pnl_pct = self._daily_pnl_pct()
+            cap = float(runtime_config.daily_loss_cap_pct)
+            logger.warning(
+                f"[DLC] BUY {symbol} bloqueado — daily cap activo "
+                f"pnl={pnl_pct:+.2f}% <= cap={cap}% "
+                f"(${self._daily_pnl_usdt:+.2f} hoy UTC)"
+            )
+            return None
+
         # Chequear max posiciones
         positions = self.get_open_positions()
         if symbol in positions:
@@ -499,6 +634,7 @@ class BinanceExecutor:
         notional = qty * price
         pnl = notional - (position["qty"] * position["entry_price"])
         self._paper_balance_usdt += notional
+        self._update_daily_pnl(pnl)  # B4: track daily P&L
         self._persist_positions_to_firestore()
         self._log_paper(
             symbol, "SELL", qty, price, notional, strategy, pnl, reason,
@@ -653,6 +789,9 @@ class BinanceExecutor:
             pnl = 0.0
             if position_pre and position_pre.get("entry_price"):
                 pnl = (filled_price - position_pre["entry_price"]) * qty
+
+            # B4: track daily P&L (antes de remover la posición)
+            self._update_daily_pnl(pnl)
 
             # Remover posición Eolo (close exitoso)
             self._eolo_positions.pop(symbol, None)

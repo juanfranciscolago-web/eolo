@@ -126,6 +126,12 @@ class StateWriter:
     def set_daily_pnl(self, pnl_usdt: float):
         self._state["daily_pnl_usdt"] = round(pnl_usdt, 2)
 
+    def set_daily_cap_reached(self, reached: bool, pnl_pct: float = 0.0, cap_pct: float = 0.0):
+        """B4: marca si el daily loss cap está activo (BUYs bloqueados)."""
+        self._state["daily_loss_cap_reached"] = bool(reached)
+        self._state["daily_loss_cap_pnl_pct"] = round(pnl_pct, 2)
+        self._state["daily_loss_cap_threshold"] = round(cap_pct, 2)
+
     def set_daily_cost(self, cost_usd: float):
         self._state["daily_cost_usd"] = round(cost_usd, 4)
 
