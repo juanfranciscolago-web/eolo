@@ -484,6 +484,102 @@ class EoloCryptoOrchestrator:
                 self.state.inc_errors()
             await asyncio.sleep(300)  # 5 min
 
+    # ── SL/TP monitor (loop) ──────────────────────────────
+
+    async def _sl_tp_monitor_loop(self):
+        """
+        Cada 30s revisa _eolo_positions y dispara close_long con safety net
+        sl_trigger / tp_trigger si el precio actual cruza SL/TP relativos al
+        entry_price snapshot.
+
+        B3 (19-may-2026): el bot crypto no tenía SL/TP automático. Las
+        posiciones dependían 100% de que la strategy generara SELL o de
+        intervención manual. Bajo Pure Isolation + strategies sin SELL signal
+        eficaz, eso generaba drawdown silencioso. Este loop arregla la
+        gestión de riesgo intra-posición sin tocar el path determinístico.
+
+        sl_pct y tp_pct se snapshot-ean al abrir (en binance_executor) usando
+        runtime_config.default_stop_loss_pct/_take_profit_pct vigente en ese
+        momento. Cambios posteriores de esos valores en Firestore NO afectan
+        posiciones ya abiertas (es snapshot, no reactivo).
+
+        Fail-soft: si no hay precio en buffer para un símbolo, skip ese
+        ciclo para esa posición y reintenta al siguiente tick.
+        """
+        # Pequeño delay inicial para que el bot termine de backfill / hidratar
+        await asyncio.sleep(45)
+
+        while not self._stopping:
+            try:
+                positions = self.executor.get_open_positions()
+                for symbol, pos in list(positions.items()):
+                    entry = float(pos.get("entry_price") or 0)
+                    qty   = float(pos.get("qty") or 0)
+                    sl_pct = pos.get("sl_pct")
+                    tp_pct = pos.get("tp_pct")
+
+                    # Backward-compat: si la posición se abrió antes de B3,
+                    # no tiene sl_pct/tp_pct. Usamos los defaults vigentes.
+                    if sl_pct is None or tp_pct is None:
+                        sl_pct = runtime_config.default_stop_loss_pct
+                        tp_pct = runtime_config.default_take_profit_pct
+
+                    if entry <= 0 or qty <= 0:
+                        continue
+
+                    last = self.buffer.latest_close(symbol)
+                    if last is None or last <= 0:
+                        # Sin precio: skip este ciclo (probable símbolo
+                        # recién agregado por screener sin backfill aún)
+                        continue
+
+                    pnl_pct = (last - entry) / entry * 100.0
+
+                    # ── Stop loss: pnl <= -sl_pct ──
+                    if pnl_pct <= -abs(float(sl_pct)):
+                        logger.warning(
+                            f"[SL_TRIGGER] {symbol} pnl={pnl_pct:+.2f}% "
+                            f"<= -{sl_pct}% (entry=${entry:.4f} last=${last:.4f}) "
+                            f"opener={pos.get('strategy')!r} — cerrando"
+                        )
+                        try:
+                            self.executor.close_long(
+                                symbol=symbol,
+                                price=last,
+                                strategy="sl_trigger",
+                                reason=f"sl_trigger pnl={pnl_pct:+.2f}% sl={sl_pct}%",
+                            )
+                        except Exception as e:
+                            logger.error(f"[SL_TRIGGER] {symbol} close falló: {e}")
+                        continue
+
+                    # ── Take profit: pnl >= +tp_pct ──
+                    if pnl_pct >= abs(float(tp_pct)):
+                        logger.info(
+                            f"[TP_TRIGGER] {symbol} pnl={pnl_pct:+.2f}% "
+                            f">= +{tp_pct}% (entry=${entry:.4f} last=${last:.4f}) "
+                            f"opener={pos.get('strategy')!r} — tomando ganancia"
+                        )
+                        try:
+                            self.executor.close_long(
+                                symbol=symbol,
+                                price=last,
+                                strategy="tp_trigger",
+                                reason=f"tp_trigger pnl={pnl_pct:+.2f}% tp={tp_pct}%",
+                            )
+                        except Exception as e:
+                            logger.error(f"[TP_TRIGGER] {symbol} close falló: {e}")
+
+                # Refrescar state después de posibles cierres
+                self.state.set_positions(self.executor.get_open_positions())
+                self.state.set_balance(self.executor.get_balance_usdt())
+
+            except Exception as e:
+                logger.warning(f"[SL_TP_MONITOR] loop: {type(e).__name__}: {e}")
+                self.state.inc_errors()
+
+            await asyncio.sleep(30)
+
     # ── BTC Dominance Regime Filter (loop) ───────────────
 
     async def _btc_dominance_loop(self):
@@ -678,6 +774,7 @@ class EoloCryptoOrchestrator:
             asyncio.create_task(self._auto_close_loop(),       name="auto-close"),
             asyncio.create_task(self._reconcile_loop(),        name="reconcile"),
             asyncio.create_task(self._btc_dominance_loop(),    name="btc-dominance"),
+            asyncio.create_task(self._sl_tp_monitor_loop(),    name="sl-tp-monitor"),
         ]
 
         logger.info(

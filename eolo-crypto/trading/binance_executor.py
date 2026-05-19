@@ -95,7 +95,12 @@ def _round_step(value: float, step: float) -> float:
 
 # Safety nets que pueden cerrar cualquier posición preservando atribución
 # al opener. Cualquier otra strategy != opener queda rechazada.
-SAFETY_NETS_CRYPTO = {"auto_close", "manual_command"}
+SAFETY_NETS_CRYPTO = {
+    "auto_close",     # cierre por fin de trading window (en 24/7 nunca dispara)
+    "manual_command", # cierre manual desde dashboard
+    "sl_trigger",     # cierre automático por stop loss (B3, monitor loop)
+    "tp_trigger",     # cierre automático por take profit (B3, monitor loop)
+}
 
 
 def _resolve_close_isolation_crypto(opener_strategy: str, closer_strategy: str,
@@ -464,12 +469,19 @@ class BinanceExecutor:
     # ── PAPER ─────────────────────────────────────────────
 
     def _paper_buy(self, symbol, qty, price, notional, strategy, reason):
+        # SL/TP snapshot del runtime config en el momento de abrir.
+        # B3 monitor loop usa estos valores para disparar sl_trigger/tp_trigger.
+        from runtime_config import config as _rc
+        sl_pct = float(_rc.default_stop_loss_pct)
+        tp_pct = float(_rc.default_take_profit_pct)
         self._eolo_positions[symbol] = {
             "qty":         qty,
             "entry_price": price,
             "ts":          time.time(),
             "strategy":    strategy,
             "reason":      reason,
+            "sl_pct":      sl_pct,
+            "tp_pct":      tp_pct,
         }
         self._paper_balance_usdt -= notional
         self._persist_positions_to_firestore()
@@ -581,6 +593,10 @@ class BinanceExecutor:
 
             # Registrar como posición Eolo — ESTO es lo que nos protege
             # de que luego una señal SELL se coma el wallet entero.
+            # SL/TP snapshot del runtime config en el momento de abrir (B3).
+            from runtime_config import config as _rc
+            sl_pct = float(_rc.default_stop_loss_pct)
+            tp_pct = float(_rc.default_take_profit_pct)
             self._eolo_positions[symbol] = {
                 "qty":         qty,
                 "entry_price": filled_price,
@@ -588,6 +604,8 @@ class BinanceExecutor:
                 "strategy":    strategy,
                 "reason":      reason,
                 "order_id":    order.get("orderId"),
+                "sl_pct":      sl_pct,
+                "tp_pct":      tp_pct,
             }
             self._persist_positions_to_firestore()
 
