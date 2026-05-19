@@ -50,9 +50,23 @@ from eolo_common.trading_hours import (  # noqa: E402
     format_schedule_for_api,
 )
 from eolo_common.risk import get_regime_multiplier  # noqa: E402 — Macro Regime Bridge
-from eolo_common.routing import AutoRouter as _AutoRouter  # noqa: E402
-
-_auto_router_crypto = _AutoRouter(bot_id="crypto", update_interval_min=30)
+# ── AutoRouter desactivado (B5, 19-may-2026) ──────────────────
+# Auditoría reveló que el AutoRouter era dead loop en crypto:
+#   - update() se llamaba con save_firestore=False (no persistía).
+#   - el return value se logueaba a debug y se descartaba.
+#   - ningún consumer aplicaba los toggles a STRATEGIES_ENABLED.
+# Por qué no eliminar:
+#   - el módulo eolo_common.routing.AutoRouter lo usa V1 y funciona.
+#   - reactivar requiere descomentar las 2 líneas de abajo + agregar
+#     un consumer que aplique _new_t a runtime_config / Firestore.
+# Por qué no usarlo hoy:
+#   - portado de equity, calibrado con SPY/VIX, no con BTC vol.
+#   - crypto ya tiene _btc_dominance_loop que cumple función similar
+#     con proxy más adecuado.
+# Si se reactiva en el futuro, considerar diseñar un router
+# crypto-native (funding rate, BTC.D, weekend regime, on-chain).
+# from eolo_common.routing import AutoRouter as _AutoRouter  # noqa: E402
+# _auto_router_crypto = _AutoRouter(bot_id="crypto", update_interval_min=30)
 
 
 # Cada cuánto re-leemos eolo-crypto-config/settings desde Firestore.
@@ -298,24 +312,29 @@ class EoloCryptoOrchestrator:
                 reason=reason[:200],
             )
 
-        # ── Auto-Router: actualizar toggles de estrategias por régimen ─
-        # Se ejecuta cada 30 min usando el candle buffer de BTCUSDT como
-        # proxy de mercado (no tenemos SPY en crypto). Fail-soft.
-        try:
-            if symbol == "BTCUSDT" and _auto_router_crypto.should_update():
-                _btc_df = self.buffer.get_candles_resampled("BTCUSDT", 1440)  # daily proxy
-                if _btc_df is not None and len(_btc_df) >= 20:
-                    # Usar VIX proxy: vol 14d de BTC como nivel de "miedo"
-                    import numpy as _np
-                    _cl = _btc_df["close"].values.astype(float)
-                    _lr = _np.diff(_np.log(_cl[-15:]))
-                    _btc_vix_proxy = float(_np.std(_lr, ddof=1)) * _np.sqrt(252) * 100
-                    _new_t = _auto_router_crypto.update(
-                        vix=_btc_vix_proxy, spy_df=_btc_df, save_firestore=False
-                    )
-                    logger.debug(f"[AUTO_ROUTER] crypto toggles: vix_proxy={_btc_vix_proxy:.1f} toggles={_new_t}")
-        except Exception as _ar_e:
-            logger.debug(f"[AUTO_ROUTER] crypto skip: {_ar_e}")
+        # ── Auto-Router desactivado (B5, 19-may-2026) ────────────────
+        # Era dead loop: calculaba toggles cada 30 min, los logueaba a
+        # debug y los descartaba (no se aplicaban a strategies_enabled).
+        # crypto ya tiene _btc_dominance_loop como gate de régimen con
+        # proxy más adecuado (BTC.D vs vol). Reactivar requiere:
+        #   1) descomentar la creación de _auto_router_crypto al inicio
+        #      del módulo (CAMBIO 1 de B5).
+        #   2) agregar un consumer que aplique _new_t a runtime_config
+        #      (e.g. via Firestore con save_firestore=True).
+        # try:
+        #     if symbol == "BTCUSDT" and _auto_router_crypto.should_update():
+        #         _btc_df = self.buffer.get_candles_resampled("BTCUSDT", 1440)
+        #         if _btc_df is not None and len(_btc_df) >= 20:
+        #             import numpy as _np
+        #             _cl = _btc_df["close"].values.astype(float)
+        #             _lr = _np.diff(_np.log(_cl[-15:]))
+        #             _btc_vix_proxy = float(_np.std(_lr, ddof=1)) * _np.sqrt(252) * 100
+        #             _new_t = _auto_router_crypto.update(
+        #                 vix=_btc_vix_proxy, spy_df=_btc_df, save_firestore=False
+        #             )
+        #             logger.debug(f"[AUTO_ROUTER] crypto toggles: vix_proxy={_btc_vix_proxy:.1f} toggles={_new_t}")
+        # except Exception as _ar_e:
+        #     logger.debug(f"[AUTO_ROUTER] crypto skip: {_ar_e}")
 
         # ── BTC Dominance gate ───────────────────────────────
         # Si BTC.D > MA20 (risk-off para altcoins), filtramos BUYs
