@@ -417,6 +417,39 @@
   .pos-card .row.sl span:last-child { color: #F6465D; }
   .pos-card .row.tp span:last-child { color: #0ECB81; }
   .pos-card .row .dim { color: var(--text-dim); font-size: 0.85em; margin-left: 4px; }
+
+  /* B10: SL/TP events timeline */
+  .triggers { padding: 12px 14px; }
+  .triggers .empty { color: var(--text-dim); font-style: italic; padding: 10px 0; }
+  .trig-row {
+    display: grid;
+    grid-template-columns: 80px 80px 100px 100px 1fr;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.85em;
+  }
+  .trig-row:last-child { border-bottom: none; }
+  .trig-row .trig-ts { color: var(--text-dim); font-family: var(--mono); font-size: 0.8em; }
+  .trig-row .trig-sym { font-weight: 600; }
+  .trig-row .trig-type { padding: 2px 8px; border-radius: 4px; font-size: 0.75em; text-align: center; font-weight: 600; }
+  .trig-row .trig-type.sl_trigger { background: rgba(246,70,93,.15); color: #F6465D; }
+  .trig-row .trig-type.tp_trigger { background: rgba(14,203,129,.15); color: #0ECB81; }
+  .trig-row .trig-pnl.pos { color: #0ECB81; font-weight: 600; }
+  .trig-row .trig-pnl.neg { color: #F6465D; font-weight: 600; }
+  .trig-row .trig-reason { color: var(--text-dim); font-size: 0.8em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* B10: health badge */
+  .strat-health-badge {
+    display: inline-block;
+    padding: 1px 6px;
+    border-radius: 3px;
+    font-size: 0.7em;
+    margin-left: 6px;
+    background: rgba(240,185,11,.18);
+    color: #F0B90B;
+    font-weight: 600;
+  }
 </style>
 </head>
 <body>
@@ -512,6 +545,17 @@
 
   <!-- B8: Sección Claude Bot eliminada — claude_bot apagado en Fase 2 (B1).
        Si se reactiva el bot, restaurar desde git (commit a5ad258 o anterior). -->
+
+  <!-- ========== 4) TRIGGERS AUTOMÁTICOS SL/TP (B10) ========== -->
+  <div class="section">
+    <div class="section-title">
+      <h2>Triggers automáticos</h2>
+      <span class="hint" id="trigSummary">SL/TP del monitor B3 · últimos 30 días</span>
+    </div>
+    <div id="triggersWrap" class="triggers card">
+      <div class="empty">Sin triggers automáticos en los últimos 30 días</div>
+    </div>
+  </div>
 
   <!-- ========== 5) UNIVERSO + SCREENER ========== -->
   <div class="section">
@@ -992,6 +1036,38 @@ function renderDailyCap(cap) {
   }
 }
 
+function renderSLTPEvents(eventsRes) {
+  // B10: timeline de safety net triggers del monitor B3.
+  const wrap = $("#triggersWrap");
+  const summary = $("#trigSummary");
+  const events = (eventsRes && eventsRes.events) || [];
+
+  if (summary) {
+    summary.textContent = events.length
+      ? `SL/TP del monitor B3 · ${events.length} evento${events.length === 1 ? "" : "s"} en últimos 30 días`
+      : "SL/TP del monitor B3 · sin triggers en últimos 30 días";
+  }
+
+  if (!events.length) {
+    wrap.innerHTML = '<div class="empty">Sin triggers automáticos en los últimos 30 días</div>';
+    return;
+  }
+
+  wrap.innerHTML = events.map(e => {
+    const pnl = e.pnl_usdt || 0;
+    const pnlCls = pnl > 0 ? "pos" : (pnl < 0 ? "neg" : "");
+    return `
+      <div class="trig-row">
+        <span class="trig-ts">${tsToHM(e.ts)}</span>
+        <span class="trig-sym">${e.symbol || "—"}</span>
+        <span class="trig-type ${e.trigger}">${e.trigger.toUpperCase()}</span>
+        <span class="trig-pnl ${pnlCls}">${fmtSignedUSD(pnl)}</span>
+        <span class="trig-reason" title="${e.reason || ""}">${e.reason || ""}</span>
+      </div>
+    `;
+  }).join("");
+}
+
 function renderPositions(positions) {
   positions = positions || {};
   const wrap = $("#positionsWrap");
@@ -1137,9 +1213,13 @@ function renderStrategyGroup(groupKey) {
       : nLong  > 0 ? `<span class="strat-pos-badge long">${nLong}</span>`
       : nShort > 0 ? `<span class="strat-pos-badge short">${nShort}</span>`
       : `<span class="strat-pos-badge zero">0</span>`;
+    // B10: health badge — strategy enabled sin trades en 7 días
+    const healthBadge = (on && groupKey === "active" && (st.week.trades || 0) === 0)
+      ? '<span class="strat-health-badge" title="Sin trades en últimos 7 días — posible problema bajo Pure Isolation o consensus filter">sin trades 7d</span>'
+      : '';
     return `<div class="${cardCls}" data-strat="${d.key}">
       <div class="strat-card-head" ${clickHandler}>
-        <span class="strat-card-name" title="${d.label}">${d.label}</span>
+        <span class="strat-card-name" title="${d.label}">${d.label}</span>${healthBadge}
         ${badgeHtml}
         ${_pieSvg(st.h24.wins, st.h24.losses)}
         <div class="strat-toggle" ${toggleHandler}></div>
@@ -1345,12 +1425,13 @@ function renderTrades() {
 /* ========== Poll loop ========== */
 async function refresh() {
   try {
-    const [state, tradesRes, decisionsRes, positionsRes, capRes] = await Promise.all([
+    const [state, tradesRes, decisionsRes, positionsRes, capRes, eventsRes] = await Promise.all([
       api("/api/state"),
       api("/api/trades?limit=300"),
       api("/api/decisions?limit=50"),
       api("/api/positions"),
       api("/api/daily-cap-status"),
+      api("/api/sl-tp-events?limit=20&days=30"),  // B10: nuevo
     ]);
 
     LAST_STATE     = state;
@@ -1361,6 +1442,7 @@ async function refresh() {
     renderTiles(state, tradesRes.stats || {});
     renderDailyCap(capRes);                                  // B8: nuevo
     renderPositions(positionsRes.positions || {});           // B8: usa /api/positions enriquecido
+    renderSLTPEvents(eventsRes);                             // B10: nuevo
     // renderClaude removido — sección eliminada del HTML.
     renderUniverse(state);
     renderStrategies(state);

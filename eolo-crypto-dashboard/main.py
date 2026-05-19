@@ -699,6 +699,67 @@ def api_daily_cap_status():
     })
 
 
+@app.route("/api/sl-tp-events")
+@require_auth
+def api_sl_tp_events():
+    """
+    B10: últimos N eventos sl_trigger / tp_trigger del monitor B3.
+
+    Lee de eolo-crypto-trades los SELLs con strategy in {sl_trigger, tp_trigger}.
+    Atribución: aunque el closer es safety net, el campo strategy persiste
+    el closer name; el opener original se preserva en el log del bot pero
+    no en el campo strategy del doc (el bot loguea el opener en el reason).
+
+    Shape:
+      {
+        "events": [
+          {
+            "ts": 1779200000.0,
+            "ts_iso": "2026-05-19T20:33:20Z",
+            "symbol": "LINKUSDT",
+            "trigger": "sl_trigger" | "tp_trigger",
+            "pnl_usdt": -42.50,
+            "qty": 289.77,
+            "price": 9.13,
+            "reason": "sl_trigger pnl=-5.12% sl=5.0%",
+          }, ...
+        ]
+      }
+    """
+    try:
+        limit = min(int(request.args.get("limit", 20)), 100)
+        days_back = min(int(request.args.get("days", 30)), 90)
+        cutoff = time.time() - (days_back * 86400)
+
+        db = get_db()
+        coll = db.collection("eolo-crypto-trades")
+        # Query: SELL con ts >= cutoff. Filter strategy en cliente porque
+        # el composite index (ts ASC, side ASC) no incluye strategy.
+        docs = coll.where("side", "==", "SELL").where("ts", ">=", cutoff).stream()
+        events = []
+        for d in docs:
+            data = d.to_dict() or {}
+            strat = str(data.get("strategy", "")).strip().lower()
+            if strat not in ("sl_trigger", "tp_trigger"):
+                continue
+            ts = float(data.get("ts", 0) or 0)
+            events.append({
+                "ts":       ts,
+                "ts_iso":   datetime.fromtimestamp(ts, tz=timezone.utc).isoformat() if ts else None,
+                "symbol":   data.get("symbol"),
+                "trigger":  strat,
+                "pnl_usdt": round(float(data.get("pnl_usdt") or 0), 2),
+                "qty":      float(data.get("qty") or 0),
+                "price":    float(data.get("price") or 0),
+                "reason":   data.get("reason", ""),
+            })
+        # Más recientes primero
+        events.sort(key=lambda e: e["ts"], reverse=True)
+        return jsonify({"events": events[:limit]})
+    except Exception as e:
+        return jsonify({"error": str(e), "events": []}), 200
+
+
 # ── Control endpoints ────────────────────────────────────
 
 @app.route("/api/toggle-active", methods=["POST"])
