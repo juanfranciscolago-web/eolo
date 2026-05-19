@@ -91,32 +91,42 @@ DAILY_LOSS_CAP_PCT        = float(os.environ.get("DAILY_LOSS_CAP_PCT", "-5.0"))
 
 
 # ── Estrategias ───────────────────────────────────────────
-# Backtests (FASE 4/5/7a + análisis cripto) mostraron que en 1m
-# prácticamente TODAS las estrategias pierden por ruido + fees 0.2%
-# Binance. A 4h solo dejamos las 5 más robustas para crypto 24/7:
-#   • supertrend  — trend-following, funciona bien en 4h crypto
-#   • rsi_sma200  — régimen (SMA200) + momentum (RSI), filtro fuerte
-#   • rvol_breakout — breakout por volumen relativo, ideal en crypto
-#   • vwap_rsi    — distancia VWAP + RSI, señales de reversión/continuación
-#   • bollinger   — bandas universales, crypto suele respetar desviaciones
+# Auditoría 19-may-2026 sobre 36k trades (backup 12-may, 24 días pre-PI)
+# mostró que en multi-TF [1, 15, 60] solo rsi_sma200 produjo trades
+# operativos con n suficiente. Las 4 nativas crypto (liquidation_cascade,
+# funding_rate_carry, weekend_breakout, btc_lead_lag) están diseñadas
+# para TF=240m (4h) y no se evalúan con ACTIVE_TIMEFRAMES actual.
 #
-# El resto se apaga por defecto; se puede reactivar individualmente
-# desde el dashboard (Firestore → eolo-crypto-config/settings).
+# Defaults actuales (4 enabled — todas también enabled en Firestore):
+#   • supertrend  — trend-following (sin trades históricos, monitorear)
+#   • rsi_sma200  — régimen + momentum (CON edge probado, whitelist 6 pares)
+#   • vwap_rsi    — distancia VWAP + RSI (sin trades históricos, monitorear)
+#   • bollinger   — bandas (sin trades históricos, monitorear)
 #
-# Para activar los FASE-4/5/7a winners de equity en crypto cuando
-# se tenga suficiente data real de backtesting, poner True.
+# Resto en False por evidencia estadística (CI95 negativo, openers-sin-cierre
+# bajo Pure Isolation, o equity-only). Reactivar individualmente vía
+# Firestore eolo-crypto-config/settings.strategies_enabled.<name> = true.
+#
+# Doble capa de control: si una key existe en settings.py + Firestore,
+# Firestore manda. Si una key solo en Firestore (sin settings.py), se
+# ignora. Cambios reversibles en segundos via dashboard.
 STRATEGIES_ENABLED = {
-    # ── Core 5 activos para 4h crypto ──────────────────────
-    "supertrend":          True,
-    "rsi_sma200":          True,
-    "rvol_breakout":       True,
-    "vwap_rsi":            True,
-    "bollinger":           True,
-    # ── Crypto-native (2026-04-27) ──────────────────────────
-    "liquidation_cascade": True,   # Post-liquidation bounce (4h, drop>3% + vol>2×MA20)
-    "funding_rate_carry":  True,   # Contrarian: funding negativo extremo → BUY
-    "weekend_breakout":    True,   # BTC/ETH: breakout sobre Friday high el domingo
-    "btc_lead_lag":        True,   # Altcoins: entrar cuando BTC movió pero altcoin no siguió
+    # ── Core operativas (4) ─────────────────────────────────
+    # Estado al 19-may-26 post-B1+B1.6. Firestore también en True.
+    "supertrend":          True,   # sin trades históricos — monitorear 7d
+    "rsi_sma200":          True,   # edge probado — whitelist 6 pares
+    "vwap_rsi":            True,   # sin trades históricos — monitorear 7d
+    "bollinger":           True,   # sin trades históricos — monitorear 7d
+    # ── Apagadas defensivamente (5) ─────────────────────────
+    # rvol_breakout: 1141 BUYs sin SELLs propias → bajo Pure Isolation
+    # atraparían posiciones sin SL/TP automático (a resolver en B3).
+    "rvol_breakout":       False,
+    # Nativas crypto diseñadas para TF=240m (4h), no incluido en
+    # ACTIVE_TIMEFRAMES=[1,15,60]. Reactivar al agregar TF=240.
+    "liquidation_cascade": False,
+    "funding_rate_carry":  False,
+    "weekend_breakout":    False,
+    "btc_lead_lag":        False,
     # ── Resto apagado — requieren más data de validación en crypto
     "macd_bb":             False,
     "orb":                 False,   # equity-only: RTH opening range
@@ -157,7 +167,19 @@ STRATEGIES_ENABLED = {
 # solo en BTCUSDT y ETHUSDT con n>=680 trades cada uno. Resto de símbolos
 # perdían sistemáticamente (CI95 negativo o cruzando cero).
 STRATEGY_SYMBOL_WHITELIST: dict[str, set[str]] = {
-    "rsi_sma200": {"BTCUSDT", "ETHUSDT"},
+    # rsi_sma200: análisis 19-may-2026 sobre 36k trades (backup 12-may)
+    # mostró edge real con CI95 enteramente positivo en 6 pares.
+    # Resto (ADA/TRX/LINK/AVAX) destruye capital sistemáticamente.
+    # Cell-level n y exp por par:
+    #   ETHUSDT  n=805  exp=+1.034  total=+832 USDT
+    #   SOLUSDT  n=946  exp=+0.658  total=+622 USDT
+    #   DOGEUSDT n=993  exp=+0.619  total=+614 USDT
+    #   BTCUSDT  n=820  exp=+0.586  total=+481 USDT
+    #   BNBUSDT  n=955  exp=+0.480  total=+458 USDT
+    #   XRPUSDT  n=874  exp=+0.456  total=+398 USDT
+    # Excluidos (exp negativa, n≥455):
+    #   ADAUSDT (-88), TRXUSDT (-215), LINKUSDT (-1482), AVAXUSDT (-1639).
+    "rsi_sma200": {"BTCUSDT", "ETHUSDT", "SOLUSDT", "DOGEUSDT", "BNBUSDT", "XRPUSDT"},
 }
 
 # Mínimo de estrategias que deben coincidir en la misma dirección

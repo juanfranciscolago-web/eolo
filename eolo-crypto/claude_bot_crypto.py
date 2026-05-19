@@ -366,12 +366,15 @@ class ClaudeBotCrypto:
             logger.warning(f"[CLAUDE-CRYPTO] Respuesta no JSON: {text[:200]}")
             decision = {"action": "HOLD", "confidence": 0.0, "reason": "parse_error"}
 
-        # Estimate cost: Sonnet 4.6 ~ $3/M input, $15/M output
+        # Estimate cost: Haiku 4.5 = $0.80/M input, $4/M output (modelo real,
+        # configurado en settings.CLAUDE_MODEL). Antes se usaban precios de
+        # Sonnet ($3/$15) lo que sobreestimaba el costo ~3.75× y disparaba
+        # el cap diario antes de tiempo. (Audit 19-may-2026.)
         usage = getattr(response, "usage", None)
         if usage:
-            cost = (usage.input_tokens * 3 / 1e6) + (usage.output_tokens * 15 / 1e6)
+            cost = (usage.input_tokens * 0.80 / 1e6) + (usage.output_tokens * 4 / 1e6)
         else:
-            cost = 0.01  # fallback conservador
+            cost = 0.003  # fallback conservador para Haiku
 
         return decision, cost
 
