@@ -26,6 +26,9 @@ import os
 import time
 import functools
 import urllib.parse
+import urllib.request
+import json as _json
+import threading
 from datetime import datetime, timedelta, timezone
 
 from flask import (
@@ -177,16 +180,33 @@ COMMANDS_DOC    = "commands"
 # donchian_turtle, bulls_bsp, net_bsv) y 6 combos (combo1-7).
 # Agregadas: bollinger_rsi_sensitive, macd_confluence_fase7a,
 # momentum_score_fase7a, xom_30m.
+# Sincronizado con eolo-crypto/settings.py:STRATEGIES_ENABLED (38 keys).
+# Post-Fase 2 (B1+B1.6): 4 efectivas, 34 disabled. Auditoría 19-may-2026.
 KNOWN_STRATEGIES = {
-    # Activas en Firestore (17 de 22):
-    "bollinger", "bollinger_rsi_sensitive", "ha_cloud",
+    # ── 4 efectivas (enabled en Firestore + code) ──
+    "bollinger", "rsi_sma200", "supertrend", "vwap_rsi",
+    # ── 5 apagadas en B1.3 (rvol_breakout + 4 nativas TF=4h) ──
+    "rvol_breakout", "liquidation_cascade", "funding_rate_carry",
+    "weekend_breakout", "btc_lead_lag",
+    # ── 24 apagadas en B1.6 por evidencia estadística ──
+    # destructoras firmes
+    "squeeze", "ema_tsi", "hh_ll", "macd_bb",
+    "buy_pressure", "sell_pressure", "net_bsv", "vwap_momentum",
+    # borderline / inestables
+    "ema_3_8", "macd_accel", "donchian_turtle", "volume_reversal_bar",
+    # openers sin SELL eficaz
+    "tsv", "vw_macd", "vwap_zscore", "stop_run",
+    # equity-portadas sin trades en crypto
+    "ha_cloud", "obv_mtf", "orb", "vela_pivot",
+    "bollinger_rsi_sensitive", "xom_30m",
     "macd_confluence_fase7a", "momentum_score_fase7a",
-    "obv_mtf", "orb", "rvol_breakout", "stop_run",
-    "supertrend", "tsv", "vela_pivot", "vw_macd", "vwap_rsi",
-    "vwap_zscore", "volume_reversal_bar", "xom_30m",
-    # Apagadas pero presentes en Firestore (5 de 22):
-    "ema_tsi", "hh_ll", "macd_bb", "rsi_sma200", "squeeze",
+    # ── 5 keys que existen sólo en code (no en Firestore, sin override) ──
+    "base", "bulls_bsp", "ema_8_21", "gap", "volume_breakout",
 }
+
+# Subset operativo (efectivas hoy). Usado por endpoints que solo
+# tienen sentido para strategies que realmente operan.
+ACTIVE_STRATEGIES = {"bollinger", "rsi_sma200", "supertrend", "vwap_rsi"}
 
 
 def get_db():
@@ -347,6 +367,59 @@ def compute_day_stats(trades: list[dict]) -> dict:
     }
 
 
+# ── B7: Cache de precios Binance (TTL 10s) ────────────────
+_price_cache: dict = {}                # symbol -> {"price": float, "ts": float}
+_price_cache_lock = threading.Lock()
+_PRICE_CACHE_TTL_SEC = 10.0
+
+def _binance_base_url(mode: str) -> str:
+    """REST público de Binance según modo del bot."""
+    return ("https://testnet.binance.vision"
+            if (mode or "").upper() == "TESTNET"
+            else "https://api.binance.com")
+
+def _fetch_binance_prices(symbols: list, mode: str = "TESTNET") -> dict:
+    """
+    Retorna dict {symbol: last_price} para los símbolos pedidos.
+    Usa cache local con TTL 10s. Fail-soft: si Binance no responde,
+    retorna {} y el caller usa None para distance_to_sl/tp.
+    """
+    if not symbols:
+        return {}
+    now = time.time()
+    result = {}
+    to_fetch = []
+    with _price_cache_lock:
+        for s in symbols:
+            cached = _price_cache.get(s)
+            if cached and (now - cached["ts"]) < _PRICE_CACHE_TTL_SEC:
+                result[s] = cached["price"]
+            else:
+                to_fetch.append(s)
+    if not to_fetch:
+        return result
+    base = _binance_base_url(mode)
+    try:
+        # /api/v3/ticker/price?symbols=["BTCUSDT","ETHUSDT"]
+        symbols_param = _json.dumps(to_fetch).replace(" ", "")
+        url = f"{base}/api/v3/ticker/price?symbols={symbols_param}"
+        req = urllib.request.Request(url, headers={"User-Agent": "eolo-crypto-dashboard/1.0"})
+        with urllib.request.urlopen(req, timeout=5) as r:
+            data = _json.loads(r.read().decode())
+        if isinstance(data, list):
+            with _price_cache_lock:
+                for entry in data:
+                    sym = entry.get("symbol")
+                    price = float(entry.get("price") or 0)
+                    if sym and price > 0:
+                        _price_cache[sym] = {"price": price, "ts": now}
+                        result[sym] = price
+    except Exception:
+        # Fail-soft: si falla, los símbolos sin cache se devuelven sin precio.
+        pass
+    return result
+
+
 # ── Routes: vistas ───────────────────────────────────────
 
 @app.route("/")
@@ -412,11 +485,56 @@ def api_schedule_status():
 @app.route("/api/positions")
 @require_auth
 def api_positions():
+    """
+    B7: posiciones enriquecidas con last_price (Binance), sl_price/tp_price,
+    distances, pnl_pct. Si la posición se abrió antes de B3 (sin sl_pct/tp_pct
+    persistidos), usa los defaults del config para el cálculo.
+    """
     pos_doc = get_positions_doc()
+    raw_open = pos_doc.get("open", {}) or {}
+    mode = pos_doc.get("mode") or "TESTNET"
+
+    # Defaults para posiciones legacy sin sl_pct/tp_pct persistidos
+    cfg = get_config() or {}
+    default_sl = float(cfg.get("default_stop_loss_pct") or 5.0)
+    default_tp = float(cfg.get("default_take_profit_pct") or 5.0)
+
+    enriched = {}
+    if raw_open:
+        last_prices = _fetch_binance_prices(list(raw_open.keys()), mode=mode)
+        for symbol, pos in raw_open.items():
+            entry = float(pos.get("entry_price") or 0)
+            sl_pct = float(pos.get("sl_pct") or default_sl)
+            tp_pct = float(pos.get("tp_pct") or default_tp)
+            last = last_prices.get(symbol)
+            # Triggers: SL relativo al entry (bot pricing), no al last
+            sl_price = round(entry * (1 - sl_pct / 100.0), 6) if entry > 0 else None
+            tp_price = round(entry * (1 + tp_pct / 100.0), 6) if entry > 0 else None
+            pnl_pct = None
+            distance_to_sl = None
+            distance_to_tp = None
+            if last and entry > 0:
+                pnl_pct = round((last - entry) / entry * 100.0, 2)
+                # distance_to_sl: cuánto baja last para gatillar SL (negativo)
+                # distance_to_tp: cuánto sube last para gatillar TP (positivo)
+                distance_to_sl = round((sl_price - last) / last * 100.0, 2) if sl_price else None
+                distance_to_tp = round((tp_price - last) / last * 100.0, 2) if tp_price else None
+            enriched[symbol] = {
+                **pos,
+                "last_price":     last,
+                "pnl_pct":        pnl_pct,
+                "sl_price":       sl_price,
+                "tp_price":       tp_price,
+                "distance_to_sl": distance_to_sl,
+                "distance_to_tp": distance_to_tp,
+                "sl_pct_used":    sl_pct,
+                "tp_pct_used":    tp_pct,
+            }
+
     return jsonify({
-        "positions":  pos_doc.get("open", {}),
+        "positions":  enriched,
         "updated_at": pos_doc.get("updated_at"),
-        "mode":       pos_doc.get("mode"),
+        "mode":       mode,
     })
 
 
@@ -540,6 +658,44 @@ def health():
         "ok":          bool(state) and not stale,
         "stale":       stale,
         "last_update": state.get("ts_updated"),
+    })
+
+
+@app.route("/api/daily-cap-status")
+@require_auth
+def api_daily_cap_status():
+    """
+    B4: estado del daily loss cap publicado por el bot al state writer.
+
+    Shape:
+      {
+        "pnl_usdt":         8.17,
+        "pnl_pct":          0.08,
+        "cap_pct":         -5.0,
+        "cap_reached":     false,
+        "distance_to_cap": -5.08,   # cuánto falta para que el cap se active
+        "balance_starting": 10000.0,
+        "balance_now":     10008.17,
+      }
+    """
+    state = get_state() or {}
+    pnl_usdt = float(state.get("daily_pnl_usdt") or 0)
+    pnl_pct  = float(state.get("daily_loss_cap_pnl_pct") or 0)
+    cap_pct  = float(state.get("daily_loss_cap_threshold") or -5.0)
+    reached  = bool(state.get("daily_loss_cap_reached") or False)
+    balance  = float(state.get("balance_usdt") or 0)
+    # distance_to_cap: negativo si todavía hay margen, positivo o cero si gatillado
+    distance = round(pnl_pct - cap_pct, 2)
+    # balance_starting: heurística (no persistido) — balance actual menos pnl del día
+    balance_starting = round(balance - pnl_usdt, 2) if balance else None
+    return jsonify({
+        "pnl_usdt":         round(pnl_usdt, 2),
+        "pnl_pct":          round(pnl_pct, 2),
+        "cap_pct":          round(cap_pct, 2),
+        "cap_reached":      reached,
+        "distance_to_cap":  distance,
+        "balance_starting": balance_starting,
+        "balance_now":      round(balance, 2),
     })
 
 
