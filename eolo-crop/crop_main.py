@@ -62,6 +62,12 @@ from theta_harvest.theta_harvest_strategy import (
     # Sprint S3.1-A: importar para instance var defaults
     STOP_LOSS_MULT,
     TRANCHE_PROFIT_TARGETS,
+    # Sprint S3.1-B: thresholds editables via UI
+    VIX_SPIKE_DELTA,
+    VVIX_PANIC_THRESHOLD,
+    DELTA_DRIFT_MAX,
+    SPY_DROP_PCT_30M,
+    MIN_MINUTES_TO_EXP,
 )
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
@@ -316,6 +322,12 @@ class CropBotTheta:
         # Strategy functions reciben estos valores como kwargs explícitos.
         self._stop_loss_mult: float = STOP_LOSS_MULT
         self._tranche_profit_targets: list = list(TRANCHE_PROFIT_TARGETS)
+        # Sprint S3.1-B: exits_advanced thresholds (defaults = constantes module-level)
+        self._vix_spike_delta:      float = VIX_SPIKE_DELTA
+        self._vvix_panic_threshold: float = VVIX_PANIC_THRESHOLD
+        self._delta_drift_max:      float = DELTA_DRIFT_MAX
+        self._spy_drop_pct_30m:     float = SPY_DROP_PCT_30M
+        self._min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP
 
 
         # Módulos
@@ -1150,6 +1162,9 @@ class CropBotTheta:
                     # Sprint S3.1-A: pasar instance vars (overrides via _apply_strategy_overrides_to_instance_vars)
                     stop_loss_mult        = self._stop_loss_mult,
                     tranche_profit_targets = self._tranche_profit_targets,
+                    # Sprint S3.1-B: thresholds editables propagados al scan
+                    vvix_panic_threshold  = self._vvix_panic_threshold,
+                    min_minutes_to_exp    = self._min_minutes_to_exp,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -1317,6 +1332,12 @@ class CropBotTheta:
                             self._schedule.auto_close.hour
                             + self._schedule.auto_close.minute / 60.0
                         ),
+                        # Sprint S3.1-B: thresholds editables via UI
+                        vix_spike_delta      = self._vix_spike_delta,
+                        vvix_panic_threshold = self._vvix_panic_threshold,
+                        delta_drift_max      = self._delta_drift_max,
+                        spy_drop_pct_30m     = self._spy_drop_pct_30m,
+                        min_minutes_to_exp   = self._min_minutes_to_exp,
                     )
                     if exit_reason:
                         to_close.append((pos, exit_reason))
@@ -3207,6 +3228,42 @@ class CropBotTheta:
                             self._tranche_profit_targets[i] = float(val)
                     except (TypeError, ValueError):
                         pass
+
+        # Sprint S3.1-B: exits_advanced thresholds (escalares float/int)
+        key = "strategy_params.exits_advanced.vix_spike_delta"
+        if key in overrides:
+            try:
+                self._vix_spike_delta = float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        key = "strategy_params.exits_advanced.vvix_panic_threshold"
+        if key in overrides:
+            try:
+                self._vvix_panic_threshold = float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        key = "strategy_params.exits_advanced.delta_drift_max"
+        if key in overrides:
+            try:
+                self._delta_drift_max = float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        key = "strategy_params.exits_advanced.spy_drop_pct_30m"
+        if key in overrides:
+            try:
+                self._spy_drop_pct_30m = float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        key = "strategy_params.exits_advanced.min_minutes_to_exp"
+        if key in overrides:
+            try:
+                self._min_minutes_to_exp = int(overrides[key])
+            except (TypeError, ValueError):
+                pass
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 

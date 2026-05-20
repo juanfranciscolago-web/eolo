@@ -468,6 +468,9 @@ def scan_theta_harvest(
     entry_window_minutes: float = ENTRY_WINDOW_MINUTES,
     vix_max_entry:        float = VIX_MAX_ENTRY,
     stop_loss_mult:       float = STOP_LOSS_MULT,  # Sprint S3.1-A: editable via UI
+    # Sprint S3.1-B: thresholds editables via UI (defaults = constantes del módulo)
+    vvix_panic_threshold: float = VVIX_PANIC_THRESHOLD,
+    min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -495,8 +498,8 @@ def scan_theta_harvest(
         return None
 
     # ── 1. VVIX Panic gate ─────────────────────────────────
-    if vvix is not None and vvix > VVIX_PANIC_THRESHOLD:
-        logger.warning(f"[ThetaHarvest] {ticker} — VVIX={vvix:.1f} > {VVIX_PANIC_THRESHOLD} PANIC, skip entrada")
+    if vvix is not None and vvix > vvix_panic_threshold:
+        logger.warning(f"[ThetaHarvest] {ticker} — VVIX={vvix:.1f} > {vvix_panic_threshold} PANIC, skip entrada")
         return None
 
     # ── 2. VIX gate ────────────────────────────────────────
@@ -567,10 +570,10 @@ def scan_theta_harvest(
 
     # Verificar tiempo mínimo hasta expiración
     mins_left = _minutes_to_expiry(chosen_exp)
-    if mins_left < MIN_MINUTES_TO_EXP:
+    if mins_left < min_minutes_to_exp:
         logger.info(
             f"[ThetaHarvest] {ticker} — {mins_left:.0f} min hasta exp {chosen_exp} "
-            f"< mínimo {MIN_MINUTES_TO_EXP} min"
+            f"< mínimo {min_minutes_to_exp} min"
         )
         return None
 
@@ -717,6 +720,12 @@ def evaluate_open_position(
     vvix_current:  Optional[float] = None,
     spy_drop_30m:  Optional[float] = None,   # % caída SPY últimos 30 min (positivo = caída)
     auto_close_et: float = 15.5,             # Paso 6 backlog v2: hora ET cierre forzado
+    # Sprint S3.1-B: thresholds editables via UI (defaults = constantes del módulo)
+    vix_spike_delta:      float = VIX_SPIKE_DELTA,
+    vvix_panic_threshold: float = VVIX_PANIC_THRESHOLD,
+    delta_drift_max:      float = DELTA_DRIFT_MAX,
+    spy_drop_pct_30m:     float = SPY_DROP_PCT_30M,
+    min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
 ) -> Optional[str]:
     """
     Evalúa si una posición theta harvest abierta debe cerrarse.
@@ -737,7 +746,7 @@ def evaluate_open_position(
     spread_type = position.get("spread_type", "put_credit_spread")
 
     # ── 1. VVIX Panic ─────────────────────────────────────
-    if vvix_current is not None and vvix_current > VVIX_PANIC_THRESHOLD:
+    if vvix_current is not None and vvix_current > vvix_panic_threshold:
         logger.warning(f"[ThetaHarvest] {ticker} VVIX_PANIC — VVIX={vvix_current:.1f}")
         return "VVIX_PANIC"
 
@@ -772,7 +781,7 @@ def evaluate_open_position(
     vix_at_entry = position.get("vix_at_entry")
     if vix_current is not None and vix_at_entry is not None:
         vix_delta = vix_current - float(vix_at_entry)
-        if vix_delta >= VIX_SPIKE_DELTA:
+        if vix_delta >= vix_spike_delta:
             logger.warning(
                 f"[ThetaHarvest] {ticker} VIX_SPIKE — "
                 f"VIX entrada={vix_at_entry:.1f} ahora={vix_current:.1f} "
@@ -782,20 +791,20 @@ def evaluate_open_position(
 
     # ── 4. Delta drift del short leg ───────────────────────
     current_short_delta = abs(short_c.get("delta") or 0)
-    if current_short_delta > DELTA_DRIFT_MAX:
+    if current_short_delta > delta_drift_max:
         logger.warning(
             f"[ThetaHarvest] {ticker} DELTA_DRIFT — "
-            f"short delta={current_short_delta:.3f} > {DELTA_DRIFT_MAX}"
+            f"short delta={current_short_delta:.3f} > {delta_drift_max}"
         )
         return "DELTA_DRIFT"
 
     # ── 5. SPY momentum contra PUT spreads ────────────────
     if (spy_drop_30m is not None
-            and spy_drop_30m >= SPY_DROP_PCT_30M
+            and spy_drop_30m >= spy_drop_pct_30m
             and "put" in spread_type):
         logger.warning(
             f"[ThetaHarvest] {ticker} SPY_DROP — "
-            f"SPY cayó {spy_drop_30m:.2f}% en 30 min (threshold={SPY_DROP_PCT_30M}%)"
+            f"SPY cayó {spy_drop_30m:.2f}% en 30 min (threshold={spy_drop_pct_30m}%)"
         )
         return "SPY_DROP"
 
@@ -826,7 +835,7 @@ def evaluate_open_position(
 
     # Tiempo mínimo hasta expiración
     mins_left = _minutes_to_expiry(exp)
-    if mins_left < MIN_MINUTES_TO_EXP:
+    if mins_left < min_minutes_to_exp:
         logger.info(
             f"[ThetaHarvest] {ticker} TIME_STOP — "
             f"solo {mins_left:.0f} min hasta expiración {exp}"
@@ -857,6 +866,9 @@ def scan_theta_harvest_tranches(
     vix_max_entry:        float = VIX_MAX_ENTRY,
     stop_loss_mult:       float = STOP_LOSS_MULT,    # Sprint S3.1-A: editable via UI
     tranche_profit_targets: Optional[list] = None,    # Sprint S3.1-A: None → módulo TRANCHE_PROFIT_TARGETS
+    # Sprint S3.1-B: propagados a scan_theta_harvest interno
+    vvix_panic_threshold: float = VVIX_PANIC_THRESHOLD,
+    min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -905,6 +917,8 @@ def scan_theta_harvest_tranches(
         entry_window_minutes  = entry_window_minutes,
         vix_max_entry         = vix_max_entry,
         stop_loss_mult        = stop_loss_mult,
+        vvix_panic_threshold  = vvix_panic_threshold,
+        min_minutes_to_exp    = min_minutes_to_exp,
     )
     if base_signal is None:
         return []
@@ -929,6 +943,8 @@ def scan_theta_harvest_tranches(
                 tranche_target = t_target,
                 vix_max_entry  = vix_max_entry,
                 stop_loss_mult = stop_loss_mult,
+                vvix_panic_threshold = vvix_panic_threshold,
+                min_minutes_to_exp   = min_minutes_to_exp,
             )
         if sig is not None:
             signals.append(sig)
