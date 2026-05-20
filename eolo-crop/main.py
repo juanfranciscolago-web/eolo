@@ -869,7 +869,7 @@ def api_state_edit():
     Behavior:
     - Validation all-or-nothing: si algún path falla, rechaza todo
     - Allowlist estricta (excluye campos de /api/config)
-    - Aplica a bot_instance._strategy_overrides (in-memory only)
+    - Aplica a bot_instance._strategy_overrides + persiste a Firestore (Sprint S3.X)
     - threading.Lock para concurrencia con bot loop
 
     Returns:
@@ -947,11 +947,24 @@ def api_state_edit():
         # Snapshot del state actual para response
         current_overrides = dict(bot_instance._strategy_overrides)
 
+        # Sprint S3.X: espejar overrides a Firestore para que sobrevivan restart.
+        # Safe-call: si Firestore falla, el in-memory ya quedó aplicado.
+        try:
+            from google.cloud import firestore as _fs
+            import time as _t
+            _db = _fs.Client()
+            _db.collection("eolo-crop-config").document("strategy_overrides").set({
+                "overrides": dict(bot_instance._strategy_overrides),
+                "updated_ts": _t.time(),
+            })
+        except Exception as _e:
+            logger.warning(f"[API /state/edit] persist overrides Firestore falló: {_e}")
+
     return jsonify({
         "ok": True,
         "applied": len(accepted),
         "overrides": current_overrides,
-        "note": "in-memory only — lost on restart. Firestore persistence in Sprint S3.X."
+        "note": "persisted to Firestore (eolo-crop-config/strategy_overrides); restored at boot + poll."
     }), 200
 
 
