@@ -1509,6 +1509,35 @@
     cursor: not-allowed;
     opacity: 0.5;
   }
+  /* Sprint S2.4: Audit Log drawer (frontend-only, localStorage) */
+  .audit-drawer {
+    position: fixed; top: 0; right: 0;
+    width: 360px; max-width: 90vw; height: 100vh;
+    background: #0d1117; border-left: 1px solid var(--border);
+    transform: translateX(100%); transition: transform .2s;
+    z-index: 1000; display: flex; flex-direction: column;
+  }
+  .audit-drawer.open { transform: translateX(0); }
+  .audit-drawer-header {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 16px; border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  .audit-list { overflow-y: auto; flex: 1; padding: 8px; }
+  .audit-entry {
+    border: 1px solid var(--border); border-radius: 6px;
+    padding: 8px; margin-bottom: 6px; font-size: 0.78rem;
+  }
+  .audit-entry .audit-field { color: var(--text); font-family: monospace; word-break: break-all; }
+  .audit-entry .audit-diff { color: #8b949e; margin: 4px 0; }
+  .audit-revert {
+    background: #21262d; border: 1px solid var(--border); color: var(--text);
+    padding: 3px 8px; border-radius: 4px; cursor: pointer; font-size: 0.72rem;
+  }
+  .audit-clear, .audit-close {
+    background: #21262d; border: 1px solid var(--border); color: var(--text);
+    padding: 3px 8px; border-radius: 4px; cursor: pointer; margin-left: 6px;
+  }
   /* Sprint S3.E: readonly hint en edit mode para fields que viven en /api/config */
   .s3-readonly-edit-mode {
     font-style: italic;
@@ -1649,10 +1678,27 @@
       ⚙ Configuración
     </button>
 
+    <!-- Sprint S2.4: Audit Log drawer toggle -->
+    <button id="btn-audit" onclick="toggleAuditDrawer()" style="background:#21262d;border:1px solid var(--border);color:var(--text);padding:6px 12px;border-radius:6px;cursor:pointer;font-family:inherit;font-size:0.82rem">
+      🕑 Audit Log
+    </button>
+
     <span id="mode-badge">📄 PAPER</span>
     <span id="updated">Cargando...</span>
   </div>
 </header>
+
+<!-- Sprint S2.4: Audit Log drawer -->
+<div id="audit-drawer" class="audit-drawer">
+  <div class="audit-drawer-header">
+    <span>Audit Log</span>
+    <div>
+      <button onclick="clearAuditLog()" class="audit-clear">Limpiar</button>
+      <button onclick="toggleAuditDrawer()" class="audit-close">✕</button>
+    </div>
+  </div>
+  <div id="audit-list" class="audit-list"></div>
+</div>
 
 <!-- Confirm overlay -->
 <div class="confirm-overlay" id="confirm-overlay">
@@ -4739,6 +4785,19 @@ let isEditMode = false;
 let pendingEdits = {};        // { fieldId: validValue } — exported as JSON
 let inputDraftValues = {};    // { fieldId: rawUserInput } — what user sees (valid or invalid, persists across re-renders)
 
+// Sprint S2.4: audit log de edits persistente en localStorage (ring buffer 100).
+let auditLog = [];            // [{ts, field, old, new}]
+const _AUDIT_KEY = 'crop_audit_log';
+const _AUDIT_MAX = 100;
+function _loadAuditLog() {
+  try { auditLog = JSON.parse(localStorage.getItem(_AUDIT_KEY) || '[]'); }
+  catch (e) { auditLog = []; }
+}
+function _saveAuditLog() {
+  try { localStorage.setItem(_AUDIT_KEY, JSON.stringify(auditLog.slice(-_AUDIT_MAX))); }
+  catch (e) {}
+}
+
 function setEditMode(enabled) {
   isEditMode = enabled;
   const bar = document.getElementById('edit-mode-bar');
@@ -4821,6 +4880,16 @@ async function saveEdits() {
     if (r.ok) {
       const applied = res.applied || keys.length;
       toast(`✅ ${applied} cambio${applied !== 1 ? 's' : ''} guardado${applied !== 1 ? 's' : ''}`, 'success', 3000);
+      // Sprint S2.4: registrar cada edit en audit log (antes de limpiar pendingEdits)
+      const _ts = Date.now();
+      for (const fid of keys) {
+        const sel = (typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(fid) : fid;
+        const el = document.querySelector(`[data-field="${sel}"]`);
+        const oldVal = el && el.dataset.original !== undefined ? el.dataset.original : null;
+        auditLog.push({ ts: _ts, field: fid, old: oldVal, new: pendingEdits[fid] });
+      }
+      _saveAuditLog();
+      if (typeof renderAuditLog === 'function') renderAuditLog();
       pendingEdits = {};
       inputDraftValues = {};
       setEditMode(false);
@@ -4837,6 +4906,68 @@ async function saveEdits() {
   } finally {
     if (saveBtn) saveBtn.disabled = false;
   }
+}
+
+// ── Sprint S2.4: Audit Log drawer ───────────────────────────────
+function toggleAuditDrawer() {
+  document.getElementById('audit-drawer').classList.toggle('open');
+  renderAuditLog();
+}
+
+function renderAuditLog() {
+  const list = document.getElementById('audit-list');
+  if (!list) return;
+  if (!auditLog.length) {
+    list.innerHTML = '<div class="audit-diff" style="padding:8px">Sin cambios registrados.</div>';
+    return;
+  }
+  list.innerHTML = auditLog.slice().reverse().map((e, ri) => {
+    const realIdx = auditLog.length - 1 - ri;
+    const t = new Date(e.ts).toLocaleString();
+    const oldStr = e.old === null || e.old === undefined ? '—' : e.old;
+    const hasOld = e.old !== null && e.old !== undefined;
+    return `<div class="audit-entry">
+      <div class="audit-field">${e.field}</div>
+      <div class="audit-diff">${oldStr} → <b>${e.new}</b></div>
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <span class="audit-diff">${t}</span>
+        ${hasOld ? `<button class="audit-revert" onclick="revertAuditEntry(${realIdx})">Revertir</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function revertAuditEntry(idx) {
+  const e = auditLog[idx];
+  if (!e || e.old === null || e.old === undefined) return;
+  const num = parseFloat(e.old);
+  const payloadVal = isNaN(num) ? e.old : num;   // los overrides numéricos van como number
+  try {
+    const r = await fetch('/api/state/edit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [e.field]: payloadVal }),
+    });
+    const res = await r.json().catch(() => ({}));
+    if (r.ok) {
+      toast(`↩ Revertido ${e.field} → ${e.old}`, 'success', 3000);
+      auditLog.push({ ts: Date.now(), field: e.field, old: e.new, new: e.old });
+      _saveAuditLog();
+      renderAuditLog();
+      fetchState();
+    } else {
+      toast('Error al revertir: ' + (res.error || `status ${r.status}`), 'error', 4000);
+    }
+  } catch (err) {
+    toast('Error de red: ' + err.message, 'error', 4000);
+  }
+}
+
+function clearAuditLog() {
+  auditLog = [];
+  _saveAuditLog();
+  renderAuditLog();
+  toast('Audit log limpiado', 'info', 2000);
 }
 
 function exportEditsJson() {
@@ -4882,7 +5013,9 @@ function _renderEditableNumber(currentValue, fieldId, min, max, step) {
   // Note: min/max NOT in HTML attrs — browser would auto-revert out-of-range values
   // before JS could mark .invalid. JS validates with min/max passed as args.
   // oninput (not just onchange) ensures realtime validation as user types.
+  // Sprint S2.4: data-original = valor de state (el "antes" para el audit log)
   return `<input type="number" class="editable-input${cssClass}" data-field="${fieldId}"
+    data-original="${currentValue}"
     value="${displayVal}" step="${step}"
     oninput="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})"
     onchange="window._handleEditChange('${fieldId}', this, ${min}, ${max}, ${currentValue})">`;
@@ -5254,6 +5387,8 @@ initCharts();
 renderTickerSelector();
 setInterval(tickClock, 1000);
 tickClock();
+// Sprint S2.4: restaurar audit log desde localStorage antes del primer render.
+_loadAuditLog();
 fetchState();
 setInterval(fetchState, REFRESH_MS);
 </script>
