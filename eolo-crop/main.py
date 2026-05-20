@@ -934,6 +934,16 @@ def api_state_edit():
         for path, value in accepted.items():
             bot_instance._strategy_overrides[path] = value
 
+        # Sprint S3.1-A: sync instance vars que las strategy fn leen via kwargs
+        # (stop_loss_mult, tranche_profit_targets). Safe-call: si el método no
+        # existe (revisión vieja del bot), seguimos sin error.
+        _apply_fn = getattr(bot_instance, '_apply_strategy_overrides_to_instance_vars', None)
+        if callable(_apply_fn):
+            try:
+                _apply_fn()
+            except Exception as _e:
+                logger.warning(f"[API /state/edit] _apply_strategy_overrides_to_instance_vars failed: {_e}")
+
         # Snapshot del state actual para response
         current_overrides = dict(bot_instance._strategy_overrides)
 
