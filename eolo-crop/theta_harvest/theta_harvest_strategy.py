@@ -476,6 +476,8 @@ def scan_theta_harvest(
     # Sprint S3.1-B: thresholds editables via UI (defaults = constantes del módulo)
     vvix_panic_threshold: float = VVIX_PANIC_THRESHOLD,
     min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
+    # Sprint S3.2: override {risk_level: [min, max]}; None → fallback a pivot_result
+    delta_by_risk:        Optional[dict] = None,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -523,9 +525,15 @@ def scan_theta_harvest(
 
     # ── 4. Delta target desde pivot analysis ──────────────
     if pivot_result and pivot_result.consensus_risk != "NO_TRADE":
-        delta_min = pivot_result.delta_min
-        delta_max = pivot_result.delta_max
         risk_level = pivot_result.consensus_risk
+        # Sprint S3.2: override por risk_level si delta_by_risk lo provee,
+        # fallback a pivot_result.delta_min/max (comportamiento idéntico al default).
+        if delta_by_risk and risk_level in delta_by_risk and len(delta_by_risk[risk_level]) >= 2:
+            delta_min = float(delta_by_risk[risk_level][0])
+            delta_max = float(delta_by_risk[risk_level][1])
+        else:
+            delta_min = pivot_result.delta_min
+            delta_max = pivot_result.delta_max
     else:
         # Fallback: usar rango completo del ticker
         delta_min  = cfg["delta_min_abs"]
@@ -874,6 +882,8 @@ def scan_theta_harvest_tranches(
     # Sprint S3.1-B: propagados a scan_theta_harvest interno
     vvix_panic_threshold: float = VVIX_PANIC_THRESHOLD,
     min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
+    # Sprint S3.2: propagado a scan_theta_harvest interno
+    delta_by_risk:        Optional[dict] = None,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -924,6 +934,7 @@ def scan_theta_harvest_tranches(
         stop_loss_mult        = stop_loss_mult,
         vvix_panic_threshold  = vvix_panic_threshold,
         min_minutes_to_exp    = min_minutes_to_exp,
+        delta_by_risk         = delta_by_risk,
     )
     if base_signal is None:
         return []
@@ -950,6 +961,7 @@ def scan_theta_harvest_tranches(
                 stop_loss_mult = stop_loss_mult,
                 vvix_panic_threshold = vvix_panic_threshold,
                 min_minutes_to_exp   = min_minutes_to_exp,
+                delta_by_risk        = delta_by_risk,
             )
         if sig is not None:
             signals.append(sig)

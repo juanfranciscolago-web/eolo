@@ -76,6 +76,8 @@ from theta_harvest.theta_harvest_strategy import (
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
     fetch_tick_ad, TickADContext,
+    # Sprint S3.2: dict default editable via UI
+    DELTA_BY_RISK,
 )
 from theta_harvest.macro_news_filter import is_news_day, log_calendar_status
 from helpers import get_access_token
@@ -332,6 +334,9 @@ class CropBotTheta:
         self._delta_drift_max:      float = DELTA_DRIFT_MAX
         self._spy_drop_pct_30m:     float = SPY_DROP_PCT_30M
         self._min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP
+        # Sprint S3.2: delta_by_risk dict de LISTAS mutables (copia profunda del módulo).
+        # Default = comportamiento idéntico al pre-S3.2 (fallback a pivot_result en el scan).
+        self._delta_by_risk: dict = {k: list(v) for k, v in DELTA_BY_RISK.items()}
 
 
         # Módulos
@@ -1173,6 +1178,8 @@ class CropBotTheta:
                     # Sprint S3.1-B: thresholds editables propagados al scan
                     vvix_panic_threshold  = self._vvix_panic_threshold,
                     min_minutes_to_exp    = self._min_minutes_to_exp,
+                    # Sprint S3.2: delta_by_risk override (dict de LISTAS mutables)
+                    delta_by_risk         = self._delta_by_risk,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -3303,6 +3310,26 @@ class CropBotTheta:
                     self._vix_velocity_buffer = deque(self._vix_velocity_buffer, maxlen=new_samples)
             except (TypeError, ValueError):
                 pass
+
+        # Sprint S3.2: delta_by_risk overrides — bracket notation
+        # "strategy_params.delta_by_risk.<LEVEL>[<idx>]" (parse sin regex)
+        prefix = "strategy_params.delta_by_risk."
+        for k, val in overrides.items():
+            if not k.startswith(prefix):
+                continue
+            rest = k[len(prefix):]              # ej "LOW[0]"
+            if "[" not in rest or not rest.endswith("]"):
+                continue
+            level = rest[:rest.index("[")]
+            try:
+                idx = int(rest[rest.index("[")+1:-1])
+            except (TypeError, ValueError):
+                continue
+            if level in self._delta_by_risk and 0 <= idx < len(self._delta_by_risk[level]):
+                try:
+                    self._delta_by_risk[level][idx] = float(val)
+                except (TypeError, ValueError):
+                    pass
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 
