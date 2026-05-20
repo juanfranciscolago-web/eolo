@@ -357,9 +357,12 @@ def is_auto_close_time(settings: dict = None) -> bool:
     if now.weekday() >= 5:
         return False
     sch = load_schedule(settings or {}, defaults=DEFAULTS_EQUITY)
-    if not sch.enabled:
-        return False
-    if not _tr_is_after_auto_close(now, sch):
+    # Fix 19-may: auto_close es SAFETY NET EOD — debe operar aunque
+    # trading_hours_enabled=False (ese flag gatea entries, no el cierre
+    # forzado). Comparación de hora inline para NO depender de sch.enabled
+    # (is_after_auto_close también guardea por enabled → nunca dispararía).
+    t = now.time().replace(second=0, microsecond=0)
+    if t < sch.auto_close:
         return False
     # Ceiling absoluto: no cerramos fuera del día de mercado
     ceiling = now.replace(hour=MARKET_CLOSE_CEILING[0],
@@ -390,7 +393,11 @@ def close_all_open_positions(market_data: MarketData, budget: float,
     all_tickers = TICKERS_EMA_GAP + TICKERS_LEVERAGED
     closed = 0
     for ticker in all_tickers:
-        if trader.positions.get(ticker) == "LONG":
+        side = trader.positions.get(ticker)
+        # Fix 19-may: cubre SHORTs también (antes solo LONG). LONG→SELL,
+        # SHORT→BUY (BUY_TO_COVER en bot_trader). CLOSE_ALL ∈ SAFETY_NETS
+        # → el Pure Isolation gate lo permite en ambas direcciones.
+        if side in ("LONG", "SHORT"):
             try:
                 # Usar precio en tiempo real para el cierre
                 price = market_data.get_quote(ticker)
@@ -399,9 +406,10 @@ def close_all_open_positions(market_data: MarketData, budget: float,
                     candles = market_data.get_candles(ticker, period_type="day", period=1)
                     price = float(candles["close"].iloc[-1]) if candles is not None and not candles.empty else 0
                 if price and price > 0:
+                    close_signal = "SELL" if side == "LONG" else "BUY"
                     result = {
                         "ticker":       ticker,
-                        "signal":       "SELL",
+                        "signal":       close_signal,
                         "price":        price,
                         "strategy":     "CLOSE_ALL",
                         "_budget":      budget,
