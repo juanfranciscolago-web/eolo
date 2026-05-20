@@ -109,6 +109,11 @@ SPY_DROP_PCT_30M     = 0.8    # salir PUT spreads si SPY baja > 0.8% en 30 min
 # Minutos mínimos hasta expiración para entrar
 MIN_MINUTES_TO_EXP = 20
 
+# Sprint S3.1-C: VIX velocity thresholds editables via UI
+VIX_VELOCITY_THRESHOLD_UP_PCT   = 0.03    # +3% en la ventana → cerrar PUTs
+VIX_VELOCITY_THRESHOLD_DOWN_PCT = -0.03   # -3% en la ventana → cerrar CALLs
+VIX_VELOCITY_WINDOW_SECONDS     = 120     # ventana de medición (loop corre cada 30s)
+
 # ── Payoff thresholds para selección de mejor spread ─────
 # Payoff ratio = net_credit / max_risk (credit / (width - credit))
 # Un $5 spread con $0.50 credit → payoff = 0.50/4.50 = 11.1%

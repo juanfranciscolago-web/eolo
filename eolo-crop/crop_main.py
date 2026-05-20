@@ -68,6 +68,10 @@ from theta_harvest.theta_harvest_strategy import (
     DELTA_DRIFT_MAX,
     SPY_DROP_PCT_30M,
     MIN_MINUTES_TO_EXP,
+    # Sprint S3.1-C: VIX velocity editables via UI
+    VIX_VELOCITY_THRESHOLD_UP_PCT,
+    VIX_VELOCITY_THRESHOLD_DOWN_PCT,
+    VIX_VELOCITY_WINDOW_SECONDS,
 )
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
@@ -457,9 +461,13 @@ class CropBotTheta:
         # Default False (conservador). Activación via Firestore: vix_velocity_enabled.
         self._vix_velocity_enabled: bool = False
 
-        # Buffer para detectar movimiento del VIX en ventana de 120s.
-        # maxlen=5: sample actual + 4 históricos × 30s = 120s ventana exacta.
-        self._vix_velocity_buffer: deque = deque(maxlen=5)
+        # Sprint S3.1-C: thresholds + ventana editables (defaults = constantes module-level)
+        self._vix_velocity_threshold_up_pct:   float = VIX_VELOCITY_THRESHOLD_UP_PCT
+        self._vix_velocity_threshold_down_pct: float = VIX_VELOCITY_THRESHOLD_DOWN_PCT
+        self._vix_velocity_window_seconds:     int   = VIX_VELOCITY_WINDOW_SECONDS
+        # samples = sample actual + N históricos × 30s. Para 120s → 5 (actual+4).
+        self._vix_velocity_samples: int = max(2, round(self._vix_velocity_window_seconds / 30) + 1)
+        self._vix_velocity_buffer: deque = deque(maxlen=self._vix_velocity_samples)
 
         # Cooldown: 1 disparo por día por dirección (reset en _auto_close_loop)
         self._vix_velocity_up_done: bool = False
@@ -2995,16 +3003,19 @@ class CropBotTheta:
         """
         Loop de monitoreo de velocidad del VIX. Corre cada 30s.
 
-        Detecta movimientos bruscos del VIX en ventana de 120s:
-        - Si VIX sube +3% en 120s → cierra todos los PUTs abiertos.
-        - Si VIX baja -3% en 120s → cierra todos los CALLs abiertos.
+        Detecta movimientos bruscos del VIX en la ventana configurada
+        (self._vix_velocity_window_seconds, default 120s):
+        - Si VIX sube ≥ threshold_up_pct → cierra todos los PUTs abiertos.
+        - Si VIX baja ≤ threshold_down_pct → cierra todos los CALLs abiertos.
+
+        Sprint S3.1-C: thresholds + window editables via UI.
 
         Cooldown: un disparo por día por dirección. Flags se resetean
         en _auto_close_loop (Paso 6).
 
         Bypass via Firestore flag vix_velocity_enabled (default False).
         """
-        logger.info("[VIXVelocity] Loop iniciado (cada 30s, ventana 120s)")
+        logger.info(f"[VIXVelocity] Loop iniciado (cada 30s, ventana {self._vix_velocity_window_seconds}s)")
         while self._running:
             await asyncio.sleep(30)
 
@@ -3028,35 +3039,35 @@ class CropBotTheta:
 
             self._vix_velocity_buffer.append(vix)
 
-            if len(self._vix_velocity_buffer) < 5:
+            if len(self._vix_velocity_buffer) < self._vix_velocity_samples:
                 continue
 
             oldest_vix = self._vix_velocity_buffer[0]
             newest_vix = self._vix_velocity_buffer[-1]
             delta_pct = (newest_vix / oldest_vix) - 1.0 if oldest_vix > 0 else 0.0
 
-            if delta_pct >= 0.03 and not self._vix_velocity_up_done:
+            if delta_pct >= self._vix_velocity_threshold_up_pct and not self._vix_velocity_up_done:
                 self._vix_velocity_up_done = True
                 puts = [
                     p for p in self._theta_positions
                     if "put" in (p.get("spread_type") or "")
                 ]
                 logger.warning(
-                    f"[VIXVelocity] VIX UP {delta_pct*100:+.2f}% en 120s "
+                    f"[VIXVelocity] VIX UP {delta_pct*100:+.2f}% en {self._vix_velocity_window_seconds}s "
                     f"(de {oldest_vix:.2f} a {newest_vix:.2f}) — "
                     f"cerrando {len(puts)} PUT(s)"
                 )
                 for pos in puts:
                     await self._close_theta_position_by_reason(pos, "VIX_VELOCITY_UP")
 
-            elif delta_pct <= -0.03 and not self._vix_velocity_down_done:
+            elif delta_pct <= self._vix_velocity_threshold_down_pct and not self._vix_velocity_down_done:
                 self._vix_velocity_down_done = True
                 calls = [
                     p for p in self._theta_positions
                     if "call" in (p.get("spread_type") or "")
                 ]
                 logger.warning(
-                    f"[VIXVelocity] VIX DOWN {delta_pct*100:+.2f}% en 120s "
+                    f"[VIXVelocity] VIX DOWN {delta_pct*100:+.2f}% en {self._vix_velocity_window_seconds}s "
                     f"(de {oldest_vix:.2f} a {newest_vix:.2f}) — "
                     f"cerrando {len(calls)} CALL(s)"
                 )
@@ -3262,6 +3273,34 @@ class CropBotTheta:
         if key in overrides:
             try:
                 self._min_minutes_to_exp = int(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        # Sprint S3.1-C: VIX velocity (thresholds + window dinámico)
+        key = "strategy_params.exits_advanced.vix_velocity_threshold_up_pct"
+        if key in overrides:
+            try:
+                self._vix_velocity_threshold_up_pct = float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        key = "strategy_params.exits_advanced.vix_velocity_threshold_down_pct"
+        if key in overrides:
+            try:
+                self._vix_velocity_threshold_down_pct = float(overrides[key])
+            except (TypeError, ValueError):
+                pass
+
+        key = "strategy_params.exits_advanced.vix_velocity_window_seconds"
+        if key in overrides:
+            try:
+                new_secs = int(overrides[key])
+                self._vix_velocity_window_seconds = new_secs
+                new_samples = max(2, round(new_secs / 30) + 1)
+                if new_samples != self._vix_velocity_samples:
+                    self._vix_velocity_samples = new_samples
+                    # Recrear deque preservando contenido actual con maxlen nuevo
+                    self._vix_velocity_buffer = deque(self._vix_velocity_buffer, maxlen=new_samples)
             except (TypeError, ValueError):
                 pass
 
