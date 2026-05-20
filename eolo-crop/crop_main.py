@@ -74,6 +74,8 @@ from theta_harvest.theta_harvest_strategy import (
     VIX_VELOCITY_WINDOW_SECONDS,
     # Sprint S3.3: per-ticker config editable via UI
     TICKER_CONFIG,
+    # Sprint S3.4: VIX credit table editable via UI
+    VIX_CREDIT_TABLE,
 )
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
@@ -342,6 +344,10 @@ class CropBotTheta:
         # Sprint S3.3: per-ticker config editable via UI (copia profunda).
         # Default = TICKER_CONFIG módulo (comportamiento idéntico al pre-S3.3).
         self._ticker_config: dict = {t: dict(cfg) for t, cfg in TICKER_CONFIG.items()}
+        # Sprint S3.4: VIX_CREDIT_TABLE editable (list-of-lists; tuples del módulo
+        # son inmutables, copiamos a listas mutables). Default = VIX_CREDIT_TABLE.
+        # Última fila conserva vix_ceil=float('inf'); ese campo NO es editable.
+        self._vix_credit_table: list = [list(row) for row in VIX_CREDIT_TABLE]
 
 
         # Módulos
@@ -1187,6 +1193,8 @@ class CropBotTheta:
                     delta_by_risk         = self._delta_by_risk,
                     # Sprint S3.3: per-ticker config override
                     ticker_cfg            = self._ticker_config.get(ticker),
+                    # Sprint S3.4: VIX_CREDIT_TABLE override (list-of-lists)
+                    vix_credit_table      = self._vix_credit_table,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -3352,6 +3360,28 @@ class CropBotTheta:
             if tk in self._ticker_config and field in self._ticker_config[tk]:
                 try:
                     self._ticker_config[tk][field] = int(val) if field in int_fields else float(val)
+                except (TypeError, ValueError):
+                    pass
+
+        # Sprint S3.4: vix_credit_table overrides — bracket-row + dot-col
+        # "strategy_params.vix_credit_table[<row>].<col>"  (col → índice tupla)
+        # vix_ceil (idx 0) NO es editable; UI/allowlist lo excluye.
+        prefix = "strategy_params.vix_credit_table["
+        col_idx = {"spy": 1, "qqq": 2, "iwm": 3, "tqqq": 4, "payoff_mult": 5}
+        for k, val in overrides.items():
+            if not k.startswith(prefix):
+                continue
+            rest = k[len(prefix):]              # ej "3].spy"
+            if "]." not in rest:
+                continue
+            row_str, col = rest.split("].", 1)
+            try:
+                row = int(row_str)
+            except (TypeError, ValueError):
+                continue
+            if col in col_idx and 0 <= row < len(self._vix_credit_table):
+                try:
+                    self._vix_credit_table[row][col_idx[col]] = float(val)
                 except (TypeError, ValueError):
                     pass
 

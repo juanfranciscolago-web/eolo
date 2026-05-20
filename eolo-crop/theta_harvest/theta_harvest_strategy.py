@@ -147,6 +147,7 @@ def _vix_credit_thresholds(
     vix: Optional[float],
     base_payoff_ratios: dict,
     ticker_cfg: Optional[dict] = None,    # Sprint S3.3: override editable via UI
+    vix_credit_table: Optional[list] = None,    # Sprint S3.4: override editable via UI
 ) -> tuple[float, dict]:
     """
     Devuelve (min_credit, min_payoff_ratios) ajustados al nivel de VIX actual.
@@ -157,7 +158,7 @@ def _vix_credit_thresholds(
         base = _cfg.get("min_credit", 0.40)
         return base, base_payoff_ratios
 
-    for vix_ceil, spy_min, qqq_min, iwm_min, tqqq_min, payoff_mult in VIX_CREDIT_TABLE:
+    for vix_ceil, spy_min, qqq_min, iwm_min, tqqq_min, payoff_mult in (vix_credit_table or VIX_CREDIT_TABLE):
         if vix < vix_ceil:
             # Dispatch per-ticker (Sub-sprint 2A) — antes binario SPY vs TQQQ-like.
             credit_min_map = {"SPY": spy_min, "QQQ": qqq_min, "IWM": iwm_min, "TQQQ": tqqq_min}
@@ -482,6 +483,8 @@ def scan_theta_harvest(
     delta_by_risk:        Optional[dict] = None,
     # Sprint S3.3: override per-ticker config; None → fallback a TICKER_CONFIG[ticker]
     ticker_cfg:           Optional[dict] = None,
+    # Sprint S3.4: override VIX_CREDIT_TABLE (list-of-lists); None → fallback al módulo
+    vix_credit_table:     Optional[list] = None,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -639,7 +642,7 @@ def scan_theta_harvest(
     long_mark  = long_contract.get("mark", long_ask)   or long_ask
 
     # ── Umbrales dinámicos por VIX ─────────────────────────
-    dyn_credit_min, dyn_payoff_ratios = _vix_credit_thresholds(ticker, vix, MIN_PAYOFF_RATIO, ticker_cfg=cfg)
+    dyn_credit_min, dyn_payoff_ratios = _vix_credit_thresholds(ticker, vix, MIN_PAYOFF_RATIO, ticker_cfg=cfg, vix_credit_table=vix_credit_table)
 
     if net_credit < dyn_credit_min:
         vix_str = f"{vix:.1f}" if vix is not None else "?"
@@ -891,6 +894,8 @@ def scan_theta_harvest_tranches(
     delta_by_risk:        Optional[dict] = None,
     # Sprint S3.3: propagado a scan_theta_harvest interno
     ticker_cfg:           Optional[dict] = None,
+    # Sprint S3.4: propagado a scan_theta_harvest interno
+    vix_credit_table:     Optional[list] = None,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -943,6 +948,7 @@ def scan_theta_harvest_tranches(
         min_minutes_to_exp    = min_minutes_to_exp,
         delta_by_risk         = delta_by_risk,
         ticker_cfg            = ticker_cfg,
+        vix_credit_table      = vix_credit_table,
     )
     if base_signal is None:
         return []
@@ -971,6 +977,7 @@ def scan_theta_harvest_tranches(
                 min_minutes_to_exp   = min_minutes_to_exp,
                 delta_by_risk        = delta_by_risk,
                 ticker_cfg           = ticker_cfg,
+                vix_credit_table     = vix_credit_table,
             )
         if sig is not None:
             signals.append(sig)
