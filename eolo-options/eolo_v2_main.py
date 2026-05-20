@@ -1005,10 +1005,15 @@ class EoloV2:
             )
             has_mispricing = bool(alerts)
             has_position   = bool(ticker_positions)
-            if not (has_tech_signal or has_mispricing or has_position):
+            # Fix 19-may: el trader exige mispricing_type para abrir (hard gate
+            # 14-may, options_trader.py:1525). Una señal técnica sin mispricing
+            # SIEMPRE termina en reject → no gastar token. Apertura: solo con
+            # mispricing. Cierre: con posición abierta. has_tech_signal se loguea
+            # para medir cuántas calls ahorra este gate.
+            if not (has_mispricing or has_position):
                 logger.debug(
-                    f"[EOLO v2] {ticker} — gate: sin señales/mispricing/posiciones, "
-                    f"skip Claude (ahorro API)"
+                    f"[EOLO v2] {ticker} — gate: sin mispricing/posiciones "
+                    f"(tech_signal={has_tech_signal}) skip Claude (ahorro API)"
                 )
                 return
 
