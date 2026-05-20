@@ -146,13 +146,15 @@ def _vix_credit_thresholds(
     ticker: str,
     vix: Optional[float],
     base_payoff_ratios: dict,
+    ticker_cfg: Optional[dict] = None,    # Sprint S3.3: override editable via UI
 ) -> tuple[float, dict]:
     """
     Devuelve (min_credit, min_payoff_ratios) ajustados al nivel de VIX actual.
     Si vix es None, usa los defaults sin cambios.
     """
+    _cfg = ticker_cfg or TICKER_CONFIG.get(ticker, {})
     if vix is None:
-        base = TICKER_CONFIG.get(ticker, {}).get("min_credit", 0.40)
+        base = _cfg.get("min_credit", 0.40)
         return base, base_payoff_ratios
 
     for vix_ceil, spy_min, qqq_min, iwm_min, tqqq_min, payoff_mult in VIX_CREDIT_TABLE:
@@ -160,7 +162,7 @@ def _vix_credit_thresholds(
             # Dispatch per-ticker (Sub-sprint 2A) — antes binario SPY vs TQQQ-like.
             credit_min_map = {"SPY": spy_min, "QQQ": qqq_min, "IWM": iwm_min, "TQQQ": tqqq_min}
             credit_min = credit_min_map.get(
-                ticker, TICKER_CONFIG.get(ticker, {}).get("min_credit", 0.40)
+                ticker, _cfg.get("min_credit", 0.40)
             )
             adjusted_payoff = {
                 k: round(v * payoff_mult, 4)
@@ -169,7 +171,7 @@ def _vix_credit_thresholds(
             return credit_min, adjusted_payoff
 
     # fallback (no debería llegar acá)
-    return TICKER_CONFIG.get(ticker, {}).get("min_credit", 0.40), base_payoff_ratios
+    return _cfg.get("min_credit", 0.40), base_payoff_ratios
 # Breakeven move máximo tolerable (% del subyacente) para entrar
 # Si el mercado solo necesita moverse X% para que el spread expire worthless
 # (= nuestra pérdida máxima), ese X es el "margen de seguridad"
@@ -478,6 +480,8 @@ def scan_theta_harvest(
     min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
     # Sprint S3.2: override {risk_level: [min, max]}; None → fallback a pivot_result
     delta_by_risk:        Optional[dict] = None,
+    # Sprint S3.3: override per-ticker config; None → fallback a TICKER_CONFIG[ticker]
+    ticker_cfg:           Optional[dict] = None,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -499,7 +503,8 @@ def scan_theta_harvest(
         tranche_target: fracción del crédito a capturar; None=aguantar EOD.
     """
     ticker = ticker.upper()
-    cfg    = TICKER_CONFIG.get(ticker)
+    # Sprint S3.3: override editable via UI, fallback a TICKER_CONFIG del módulo
+    cfg    = ticker_cfg or TICKER_CONFIG.get(ticker)
     if cfg is None:
         logger.warning(f"[ThetaHarvest] Ticker {ticker} no configurado")
         return None
@@ -634,7 +639,7 @@ def scan_theta_harvest(
     long_mark  = long_contract.get("mark", long_ask)   or long_ask
 
     # ── Umbrales dinámicos por VIX ─────────────────────────
-    dyn_credit_min, dyn_payoff_ratios = _vix_credit_thresholds(ticker, vix, MIN_PAYOFF_RATIO)
+    dyn_credit_min, dyn_payoff_ratios = _vix_credit_thresholds(ticker, vix, MIN_PAYOFF_RATIO, ticker_cfg=cfg)
 
     if net_credit < dyn_credit_min:
         vix_str = f"{vix:.1f}" if vix is not None else "?"
@@ -884,6 +889,8 @@ def scan_theta_harvest_tranches(
     min_minutes_to_exp:   int   = MIN_MINUTES_TO_EXP,
     # Sprint S3.2: propagado a scan_theta_harvest interno
     delta_by_risk:        Optional[dict] = None,
+    # Sprint S3.3: propagado a scan_theta_harvest interno
+    ticker_cfg:           Optional[dict] = None,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -935,6 +942,7 @@ def scan_theta_harvest_tranches(
         vvix_panic_threshold  = vvix_panic_threshold,
         min_minutes_to_exp    = min_minutes_to_exp,
         delta_by_risk         = delta_by_risk,
+        ticker_cfg            = ticker_cfg,
     )
     if base_signal is None:
         return []
@@ -962,6 +970,7 @@ def scan_theta_harvest_tranches(
                 vvix_panic_threshold = vvix_panic_threshold,
                 min_minutes_to_exp   = min_minutes_to_exp,
                 delta_by_risk        = delta_by_risk,
+                ticker_cfg           = ticker_cfg,
             )
         if sig is not None:
             signals.append(sig)
