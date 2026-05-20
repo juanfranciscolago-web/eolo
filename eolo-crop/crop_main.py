@@ -1336,15 +1336,26 @@ class CropBotTheta:
                         continue
 
                     # ── Actualizar unrealized_pnl en el dict de posición ──
+                    # Default: cur_val no válido (marks faltaron o try falló).
+                    pos["_cur_val_valid"] = False
                     try:
                         opt_side  = "puts" if "put" in pos.get("spread_type","") else "calls"
                         exp       = pos.get("expiration", "")
                         strikes   = chain.get(opt_side, {}).get(exp, {})
                         short_c   = strikes.get(str(pos.get("short_strike", ""))) or {}
                         long_c    = strikes.get(str(pos.get("long_strike",  ""))) or {}
-                        s_mark    = short_c.get("mark") or short_c.get("ask") or 0
-                        l_mark    = long_c.get("mark")  or long_c.get("bid")  or 0
-                        cur_val   = round(abs(s_mark - l_mark), 2)
+                        # FIX: distinguir "mark real" de "default 0" para no enmascarar
+                        # marks faltantes como cur_val=0 (rompe pricing en STOP_LOSS path).
+                        _s_raw = short_c.get("mark")
+                        if _s_raw is None:
+                            _s_raw = short_c.get("ask")
+                        _l_raw = long_c.get("mark")
+                        if _l_raw is None:
+                            _l_raw = long_c.get("bid")
+                        pos["_cur_val_valid"] = (_s_raw is not None and _l_raw is not None)
+                        s_mark  = _s_raw or 0
+                        l_mark  = _l_raw or 0
+                        cur_val = round(abs(s_mark - l_mark), 2)
                         net_credit = pos.get("net_credit", 0)
                         contracts  = pos.get("contracts", 1)
                         pos["unrealized_pnl"] = round(
@@ -1423,6 +1434,9 @@ class CropBotTheta:
                         "contracts":    pos.get("contracts", 1),
                         "reason":       f"ThetaHarvest {exit_reason or '?'}",
                         "strategy":     "theta_harvest",
+                        # FIX: usar net_debit de eval-time si los marks eran reales;
+                        # None → close_spread re-resuelve (graceful, idéntico a pre-fix).
+                        "close_debit":  (pos.get("current_value") if pos.get("_cur_val_valid") else None),
                     }
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
