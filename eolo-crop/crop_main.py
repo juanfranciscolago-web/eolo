@@ -72,6 +72,8 @@ from theta_harvest.theta_harvest_strategy import (
     VIX_VELOCITY_THRESHOLD_UP_PCT,
     VIX_VELOCITY_THRESHOLD_DOWN_PCT,
     VIX_VELOCITY_WINDOW_SECONDS,
+    # Sprint S3.3: per-ticker config editable via UI
+    TICKER_CONFIG,
 )
 from theta_harvest.pivot_analysis import (
     analyze_pivots, format_pivot_summary,
@@ -337,6 +339,9 @@ class CropBotTheta:
         # Sprint S3.2: delta_by_risk dict de LISTAS mutables (copia profunda del módulo).
         # Default = comportamiento idéntico al pre-S3.2 (fallback a pivot_result en el scan).
         self._delta_by_risk: dict = {k: list(v) for k, v in DELTA_BY_RISK.items()}
+        # Sprint S3.3: per-ticker config editable via UI (copia profunda).
+        # Default = TICKER_CONFIG módulo (comportamiento idéntico al pre-S3.3).
+        self._ticker_config: dict = {t: dict(cfg) for t, cfg in TICKER_CONFIG.items()}
 
 
         # Módulos
@@ -1180,6 +1185,8 @@ class CropBotTheta:
                     min_minutes_to_exp    = self._min_minutes_to_exp,
                     # Sprint S3.2: delta_by_risk override (dict de LISTAS mutables)
                     delta_by_risk         = self._delta_by_risk,
+                    # Sprint S3.3: per-ticker config override
+                    ticker_cfg            = self._ticker_config.get(ticker),
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -3328,6 +3335,23 @@ class CropBotTheta:
             if level in self._delta_by_risk and 0 <= idx < len(self._delta_by_risk[level]):
                 try:
                     self._delta_by_risk[level][idx] = float(val)
+                except (TypeError, ValueError):
+                    pass
+
+        # Sprint S3.3: ticker_config overrides — dot notation
+        # "strategy_params.ticker_config.<TICKER>.<field>" (max_dte = int, resto = float)
+        prefix = "strategy_params.ticker_config."
+        int_fields = {"max_dte"}
+        for k, val in overrides.items():
+            if not k.startswith(prefix):
+                continue
+            rest = k[len(prefix):]              # ej "SPY.spread_width"
+            if "." not in rest:
+                continue
+            tk, field = rest.split(".", 1)
+            if tk in self._ticker_config and field in self._ticker_config[tk]:
+                try:
+                    self._ticker_config[tk][field] = int(val) if field in int_fields else float(val)
                 except (TypeError, ValueError):
                     pass
 
