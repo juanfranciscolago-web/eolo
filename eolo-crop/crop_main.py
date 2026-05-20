@@ -491,6 +491,9 @@ class CropBotTheta:
 
         self._last_command_ts:      float        = 0.0
         self._last_settings_ts:     float        = 0.0
+        # Sprint S3.X: timestamp del último override aplicado desde Firestore.
+        # Guard para que _load_strategy_overrides_from_firestore sea idempotente.
+        self._last_overrides_ts:    float        = 0.0
         self._command_poll_interval = 5          # segundos
 
         # ── Strategy selection (dashboard toggles) ─────────
@@ -557,6 +560,10 @@ class CropBotTheta:
 
         # ── Restaurar posiciones theta desde Firestore (sobrevive reinicios) ─
         self._load_theta_positions_from_firestore()
+
+        # Sprint S3.X: restaurar strategy overrides desde Firestore al boot.
+        # Si el doc no existe (primera vez), no-op.
+        self._load_strategy_overrides_from_firestore()
 
         # Registrar handlers de eventos
         self.stream.add_handler(self._on_market_event)
@@ -2218,6 +2225,14 @@ class CropBotTheta:
 
     def _poll_settings(self):
         """Lee la config persistente (budget, max_positions) y la aplica."""
+        # Sprint S3.X: refrescar strategy overrides desde Firestore antes que
+        # el guard de settings, para que un POST nuevo se reflecte aún si el
+        # doc settings no cambió. Idempotente (guard interno por updated_ts).
+        try:
+            self._load_strategy_overrides_from_firestore()
+        except Exception as _e:
+            logger.debug(f"[StrategyOverrides] poll-load error: {_e}")
+
         try:
             from google.cloud import firestore as _fs
             db  = _fs.Client()
@@ -2688,6 +2703,33 @@ class CropBotTheta:
                 )
         except Exception as e:
             logger.warning(f"[ThetaHarvest] Error cargando posiciones desde Firestore: {e}")
+
+    def _load_strategy_overrides_from_firestore(self):
+        """Sprint S3.X: restaura _strategy_overrides desde Firestore (boot + poll)
+        y los aplica a instance vars. Guard por updated_ts (idempotente).
+
+        Doc: eolo-crop-config/strategy_overrides
+            {overrides: {<path>: <value>, ...}, updated_ts: float}
+        Si el doc no existe, no-op (comportamiento idéntico al pre-S3.X).
+        """
+        try:
+            from google.cloud import firestore as _fs
+            db = _fs.Client()
+            doc = db.collection("eolo-crop-config").document("strategy_overrides").get()
+            if not doc.exists:
+                return
+            data = doc.to_dict() or {}
+            updated_ts = float(data.get("updated_ts") or 0)
+            if updated_ts <= self._last_overrides_ts:
+                return
+            self._last_overrides_ts = updated_ts
+            overrides = data.get("overrides") or {}
+            if isinstance(overrides, dict) and overrides:
+                self._strategy_overrides.update(overrides)
+                self._apply_strategy_overrides_to_instance_vars()
+                logger.info(f"[StrategyOverrides] Restaurados {len(overrides)} overrides desde Firestore")
+        except Exception as e:
+            logger.warning(f"[StrategyOverrides] Error cargando overrides: {e}")
 
     def _save_theta_positions_to_firestore(self):
         """
