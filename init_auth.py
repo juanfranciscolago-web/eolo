@@ -1,4 +1,5 @@
 import os
+import time
 import base64
 import requests
 import webbrowser
@@ -69,6 +70,10 @@ def main(request):
     init_tokens_dict = retrieve_tokens(
         headers=init_token_headers, payload=init_token_payload
     )
+
+    # Sprint OAuth proactive alert: persist issued_at para que el health-check
+    # diario calcule edad y avise antes del 7d expiry de Schwab.
+    init_tokens_dict["refresh_token_issued_at"] = time.time()
 
     store_firestore_value(project_id="eolo-schwab-agent", collection_id="schwab-tokens", document_id="schwab-tokens-auth", value=init_tokens_dict)
 
