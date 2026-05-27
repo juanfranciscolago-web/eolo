@@ -1,4 +1,5 @@
 import os
+import time
 from flask import Request
 import base64
 import requests
@@ -44,6 +45,22 @@ def refresh_tokens(request):
         return None
 
     refresh_token_dict = refresh_token_response.json()
+
+    # Sprint OAuth proactive: preservar refresh_token_issued_at del doc previo.
+    # helpers.store_firestore_value usa .set() (sobreescribe completo) → sin esto, cada
+    # refresh exitoso borra el timestamp y el health-check pierde edad real.
+    # Si Schwab rota el refresh_token (nuevo valor), reseteamos issued_at = now.
+    prev_refresh = retrieve_firestore_value(
+        collection_id="schwab-tokens", document_id="schwab-tokens-auth", key="refresh_token"
+    )
+    prev_issued = retrieve_firestore_value(
+        collection_id="schwab-tokens", document_id="schwab-tokens-auth", key="refresh_token_issued_at"
+    )
+    new_refresh = refresh_token_dict.get("refresh_token")
+    if new_refresh and new_refresh != prev_refresh:
+        refresh_token_dict["refresh_token_issued_at"] = time.time()
+    elif prev_issued is not None:
+        refresh_token_dict["refresh_token_issued_at"] = prev_issued
 
     store_firestore_value(project_id="eolo-schwab-agent", collection_id="schwab-tokens", document_id="schwab-tokens-auth", value=refresh_token_dict)
 
