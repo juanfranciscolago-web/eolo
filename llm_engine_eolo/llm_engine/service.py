@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
         "LLM_MODEL": os.getenv("LLM_MODEL", "claude-sonnet-4-5-20250929"),
         "LLM_MAX_TOKENS": int(os.getenv("LLM_MAX_TOKENS", "4096")),
         "LLM_TEMPERATURE": float(os.getenv("LLM_TEMPERATURE", "0.3")),
-        "KB_PATH": os.getenv("KB_PATH", "/app/kb/EOLO_ThetaHarvest_v1.1.xlsx"),
+        "KB_PATH": os.getenv("KB_PATH", "/app/kb/EOLO_ThetaHarvest_v1.2.xlsx"),
         "PAPER_TRADING_ONLY": os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true",
     }
 
@@ -169,7 +169,7 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
         "request_id": request_id,
         "latency_ms": total_latency_ms,
         "model": CONFIG["LLM_MODEL"],
-        "kb_version": "v1.1",
+        "kb_version": "v1.2",
     }
     return result
 

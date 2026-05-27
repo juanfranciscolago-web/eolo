@@ -19,7 +19,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 # KB path relativo - funciona desde cualquier directorio
-KB_PATH = str(PROJECT_ROOT / "kb" / "EOLO_ThetaHarvest_v1.1.xlsx")
+KB_PATH = str(PROJECT_ROOT / "kb" / "EOLO_ThetaHarvest_v1.2.xlsx")
 
 from llm_engine.kb_loader import KBLoader
 from llm_engine.market_snapshot import MarketSnapshot

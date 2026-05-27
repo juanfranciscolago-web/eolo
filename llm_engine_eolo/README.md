@@ -46,7 +46,7 @@ llm_engine_eolo/
 │   ├── decision_parser.py            # JSON parsing + safety rails
 │   └── market_data_collector.py      # Indicadores técnicos (referencia)
 ├── kb/
-│   └── EOLO_ThetaHarvest_v0.9.xlsx   # Knowledge Base de Juan
+│   └── EOLO_ThetaHarvest_v1.2.xlsx   # Knowledge Base de Juan
 ├── tests/
 │   └── test_llm_engine.py            # Unit tests
 ├── llm_client.py                     # Cliente para Eolo Crop
