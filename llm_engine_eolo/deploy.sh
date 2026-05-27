@@ -28,7 +28,7 @@ gcloud run deploy ${SERVICE_NAME} \
   --max-instances 3 \
   --min-instances 0 \
   --concurrency 10 \
-  --set-env-vars="PAPER_TRADING_ONLY=true,LLM_MODEL=claude-sonnet-4-5-20250929,LLM_MAX_TOKENS=4096,LLM_TEMPERATURE=0.3,KB_PATH=/app/kb/EOLO_ThetaHarvest_v1.1.xlsx" \
+  --set-env-vars="PAPER_TRADING_ONLY=true,LLM_MODEL=claude-sonnet-4-5-20250929,LLM_MAX_TOKENS=4096,LLM_TEMPERATURE=0.3,KB_PATH=/app/kb/EOLO_ThetaHarvest_v1.2.xlsx" \
   --set-secrets="ANTHROPIC_API_KEY=anthropic-api-key:latest"
 
 echo ""
