@@ -4,7 +4,6 @@
 !.env.example
 *.key
 *.pem
-refresh_token_local.py
 secret_stuff.py
 token*.json
 credentials*.json
