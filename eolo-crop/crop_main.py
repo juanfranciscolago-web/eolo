@@ -356,6 +356,9 @@ class CropBotTheta:
         # Última fila conserva vix_ceil=float('inf'); ese campo NO es editable.
         self._vix_credit_table: list = [list(row) for row in VIX_CREDIT_TABLE]
 
+        # Tech debt #18: VIX history buffer para velocity_30m (demand-driven)
+        self._vix_price_history: list[tuple[float, float]] = []  # (ts_unix, vix_value), cleanup >35min
+
         # LLM Engine integration (feature flag default OFF)
         self._llm_engine_enabled: bool = False
         self._llm_engine_url: str = os.getenv("LLM_ENGINE_URL", "")
@@ -904,7 +907,39 @@ class CropBotTheta:
             pass
         self._last_vix  = vix
         self._last_vvix = vvix
+        # Tech debt #18: auto-record para velocity_30m
+        if vix is not None and vix > 0:
+            self._record_vix_history(float(vix))
         return vix, vvix
+
+    def _record_vix_history(self, vix: float) -> None:
+        """Append (ts, vix) al buffer + cleanup >35min para velocity_30m (tech debt #18)."""
+        now = time.time()
+        self._vix_price_history.append((now, vix))
+        # Cleanup samples >35min (deja margen para velocity_30m = 1800s)
+        cutoff = now - 35 * 60
+        self._vix_price_history = [
+            (ts, v) for ts, v in self._vix_price_history if ts >= cutoff
+        ]
+
+    def _compute_vix_velocity_30m(self) -> float:
+        """
+        Calcula VIX velocity en ventana 30min vs ahora (tech debt #18).
+        Returns 0.0 si no hay suficiente data (buffer recien empezado).
+        """
+        if len(self._vix_price_history) < 2:
+            return 0.0
+        now = time.time()
+        target_ts = now - 30 * 60  # 30 min ago
+        # Buscar el sample mas viejo dentro de la ventana de 30min
+        old_samples = [(ts, v) for ts, v in self._vix_price_history if ts >= target_ts]
+        if len(old_samples) < 2:
+            return 0.0
+        _, vix_old = old_samples[0]  # el primero >= 30min ago = mas viejo de la ventana
+        _, vix_now = self._vix_price_history[-1]  # ultimo del buffer
+        if vix_old == 0:
+            return 0.0
+        return (vix_now - vix_old) / vix_old * 100
 
     def _theta_spy_drop_30m(self) -> float:
         """
@@ -1176,8 +1211,8 @@ class CropBotTheta:
                         vix_level=vix,
                         pivot_result=pivot_result,
                         candle_buffer=self._candle_buffer,
-                        vix_velocity_30m_pct=0.0,
-                        vix_velocity_1d_pct=0.0,
+                        vix_velocity_30m_pct=self._compute_vix_velocity_30m(),
+                        vix_velocity_1d_pct=0.0,  # tech debt #20
                         allowed_dtes=self._compute_theta_dtes(),
                         open_positions_summary=positions_summary,
                     )
