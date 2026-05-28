@@ -48,7 +48,7 @@ sys.path.insert(0, os.path.join(BASE_DIR, ".."))        # raíz eolo/
 sys.path.insert(0, os.path.join(BASE_DIR, "..", "Bot")) # estrategias v1
 
 # ── Imports de módulos CROP (Theta Harvest only) ────────────────────────────
-from stream.options_stream import SchwabStream
+from stream.rest_polling   import SchwabRestPoller
 from stream.options_chain  import OptionChainFetcher
 from analysis.greeks       import enrich_contract
 from analysis.iv_surface   import IVSurface
@@ -379,7 +379,9 @@ class CropBotTheta:
 
 
         # Módulos
-        self.stream        = SchwabStream(tickers=TICKERS)
+        # Sprint 5 Fix B: REST polling reemplaza WS Schwab (tech debt #23).
+        # Interface compatible — add_handler/start/stop sin cambios downstream.
+        self.stream        = SchwabRestPoller(tickers=TICKERS)
         self.chain_fetcher = OptionChainFetcher(tickers=TICKERS, interval=30)
         # CROP: sin MispricingScanner (solo Theta Harvest)
         self.trader        = OptionsTrader(
