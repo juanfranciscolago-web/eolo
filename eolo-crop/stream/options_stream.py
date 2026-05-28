@@ -35,10 +35,15 @@ from helpers import get_access_token
 STREAMER_URL     = "wss://streamer-api.schwab.com/ws"
 SCHWAB_API_BASE  = "https://api.schwabapi.com"
 
-# Campos L1 Equities que nos interesan:
-# 0=Symbol, 1=Bid, 2=Ask, 3=Last, 4=BidSize, 5=AskSize
-# 8=Volume, 9=Open, 10=High, 11=Low, 12=Close, 31=Mark
-L1_FIELDS = "0,1,2,3,4,5,8,9,10,11,12,31"
+# Campos L1 Equities que nos interesan (Schwab API vigente):
+#   0=Symbol, 1=Bid, 2=Ask, 3=Last, 4=BidSize, 5=AskSize, 8=TotalVolume,
+#   9=LastSize, 10=HighPrice, 11=LowPrice, 12=PrevClose,
+#   17=OpenPrice, 18=NetChange, 33=MarkPrice, 42=NetPercentChange
+# Sprint 8.A port from Bot-v1.2/stream.py: antes suscribíamos 31 como "mark"
+# pero 31 = RegularMarketNetChange. El Mark real es field 33. Este archivo
+# es DEAD CODE en CROP (Sprint 5 Fix B reemplazó SchwabStream por
+# SchwabRestPoller); port se mantiene por consistencia con v2 + futuro.
+L1_FIELDS = "0,1,2,3,4,5,8,9,10,11,12,17,18,33,42"
 
 
 class SchwabStream:
@@ -143,12 +148,28 @@ class SchwabStream:
     # ── Parser de mensajes ─────────────────────────────────
 
     def _parse_l1(self, content: list) -> list[dict]:
-        """Parsea mensajes LEVELONE_EQUITIES a dicts normalizados."""
+        """Parsea mensajes LEVELONE_EQUITIES a dicts normalizados.
+
+        Sprint 8.A port from Bot-v1.2/stream.py. Dead code en CROP
+        (Sprint 5 Fix B reemplazó SchwabStream por SchwabRestPoller),
+        port se mantiene por consistencia.
+        """
         field_map = {
-            "0": "symbol", "1": "bid",  "2": "ask",   "3": "last",
-            "4": "bid_size","5": "ask_size", "8": "volume",
-            "9": "open", "10": "high", "11": "low", "12": "close",
-            "31": "mark"
+            "0":  "symbol",
+            "1":  "bid",
+            "2":  "ask",
+            "3":  "last",
+            "4":  "bid_size",
+            "5":  "ask_size",
+            "8":  "volume",
+            "9":  "last_size",
+            "10": "high",
+            "11": "low",
+            "12": "prev_close",
+            "17": "open",
+            "18": "net_change",
+            "33": "mark",
+            "42": "net_pct_change",
         }
         quotes = []
         for item in content:
