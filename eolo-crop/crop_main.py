@@ -366,6 +366,9 @@ class CropBotTheta:
         self._llm_cache_ttl_seconds: float = 30.0
         self._llm_tickers_enabled: dict = {"SPY": True, "QQQ": True, "IWM": True, "TQQQ": True}
         self._llm_max_positions: int = 10
+        # 4.C.1: threshold para overridear spread_type del sector
+        # (mas conservador que el strike hint threshold del scan = 7)
+        self._llm_spread_override_threshold: int = 8
         self._llm_client: Optional[LLMGateClient] = None  # lazy init
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
 
@@ -1185,6 +1188,11 @@ class CropBotTheta:
             logger.warning(f"[ThetaHarvest][DECISION] log emit failed: {_log_exc}")
         self._log_theta_decision(decision_id, _decision_log)
 
+        # 4.C.1: hint vars para pasar al scan (default None/0 si LLM off o spread mismatch)
+        llm_short_strike_hint: Optional[float] = None
+        llm_target_delta_hint: Optional[float] = None
+        llm_confidence_hint: int = 0
+
         # ───── LLM Engine wiring (feature flag) ───────────────────────────
         if self._llm_engine_enabled:
             # Skip si datos macro o pivot deficientes (snapshot seria engañoso)
@@ -1261,11 +1269,25 @@ class CropBotTheta:
 
                     llm_spread_type = llm_params["spread_type"]
                     if llm_spread_type != spread_type:
-                        logger.warning(
-                            f"[llm] {ticker} LLM verdict={verdict} overrides sector spread_type "
-                            f"{spread_type} -> {llm_spread_type}"
-                        )
-                        spread_type = llm_spread_type
+                        if confidence >= self._llm_spread_override_threshold:
+                            logger.warning(
+                                f"[llm] {ticker} LLM verdict={verdict} "
+                                f"(conf={confidence}>={self._llm_spread_override_threshold}) "
+                                f"OVERRIDES sector {spread_type} -> {llm_spread_type}"
+                            )
+                            spread_type = llm_spread_type
+                        else:
+                            logger.info(
+                                f"[llm] {ticker} LLM verdict={verdict} "
+                                f"(conf={confidence}<{self._llm_spread_override_threshold}) "
+                                f"REJECTED override, keeping sector spread_type={spread_type}"
+                            )
+                            # NO override; hint del LLM era para otro spread → no usar
+                    # Populate hint vars solo si spread_type final matchea con el LLM
+                    if spread_type == llm_spread_type:
+                        llm_short_strike_hint = llm_params.get("llm_short_strike")
+                        llm_target_delta_hint = llm_params.get("llm_target_delta")
+                        llm_confidence_hint = confidence
                 except Exception as e:
                     logger.exception(f"[llm] {ticker} wiring exception: {e}")
                     # Continuar con flow normal (rule-based)
@@ -1340,6 +1362,10 @@ class CropBotTheta:
                     ticker_cfg            = self._ticker_config.get(ticker),
                     # Sprint S3.4: VIX_CREDIT_TABLE override (list-of-lists)
                     vix_credit_table      = self._vix_credit_table,
+                    # 4.C.1: LLM hints (None si flag OFF o spread mismatch)
+                    llm_short_strike      = llm_short_strike_hint,
+                    llm_target_delta      = llm_target_delta_hint,
+                    llm_confidence        = llm_confidence_hint,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
@@ -3628,6 +3654,13 @@ class CropBotTheta:
         llm_tickers = overrides.get("strategy_params.llm_engine.tickers_enabled")
         if llm_tickers is not None and isinstance(llm_tickers, dict):
             self._llm_tickers_enabled = dict(llm_tickers)
+        # 4.C.1: spread override threshold
+        llm_spread_override = overrides.get("strategy_params.llm_engine.spread_override_threshold")
+        if llm_spread_override is not None:
+            try:
+                self._llm_spread_override_threshold = int(llm_spread_override)
+            except (TypeError, ValueError):
+                pass
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 
