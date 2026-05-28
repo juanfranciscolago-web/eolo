@@ -45,6 +45,11 @@ _MACD_MIN_CANDLES = 30  # min para MACD 15m razonable
 # Module-level flag para no spamear el warning de VIX velocity (tech debt #18)
 _VIX_WARNING_LOGGED = False
 
+# Module-level dict para no spamear el warning de MACD 15m por ticker (tech debt #17).
+# Reseteado solo en cold start del proceso. Acepta el trade-off de que un ticker
+# que recuperó buffer suficiente y luego lo vuelve a perder, no re-logueará.
+_MACD_15M_WARNED: dict[str, bool] = {}
+
 
 class MarketSnapshotDict(TypedDict, total=False):
     """TypedDict de hints para el snapshot. total=False = todos opcionales."""
@@ -275,10 +280,16 @@ def build_market_snapshot_from_crop(
                 snapshot["macd_signal_15m"] = macd_signal
                 snapshot["macd_histogram_15m"] = macd_hist
             else:
-                logger.warning(
-                    f"[snapshot] {ticker} MACD 15m: buffer={len(df_15m)} "
-                    f"< {_MACD_MIN_CANDLES} (tech debt #17)"
-                )
+                # Tech debt #17: one-shot por ticker — sin gate spammea cada ciclo
+                # theta_harvest mientras el buffer 15m no llega a 30 candles (~7.5h
+                # market time desde cold start si tickers no estan pre-warmed).
+                if not _MACD_15M_WARNED.get(ticker):
+                    logger.warning(
+                        f"[snapshot] {ticker} MACD 15m: buffer={len(df_15m)} "
+                        f"< {_MACD_MIN_CANDLES} (tech debt #17 — defaults=0.0 "
+                        f"hasta warm-up completo; no se re-logueará por ticker)"
+                    )
+                    _MACD_15M_WARNED[ticker] = True
                 snapshot["macd_line_15m"] = 0.0
                 snapshot["macd_signal_15m"] = 0.0
                 snapshot["macd_histogram_15m"] = 0.0
