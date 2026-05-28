@@ -38,6 +38,7 @@ import sys
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
+from typing import Optional
 from loguru import logger
 
 # ── Ajustar path ──────────────────────────────────────────
