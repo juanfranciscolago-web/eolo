@@ -106,6 +106,13 @@ from eolo_common.trading_hours import (
     now_et,
 )
 
+# ── LLM Engine integration (4.B.2) ──────────────────────────────
+from llm_gate import LLMGateClient, DecisionCache
+from llm_gate.snapshot import build_market_snapshot_from_crop
+from llm_gate.integration import (
+    should_call_llm, llm_decision_to_scan_params, decision_indicates_exit,
+)
+
 # ── Estrategias Eolo v1 (se importan con lazy-import para no romper
 #    si alguna dependencia falta en el entorno de opciones) ──────────
 try:
@@ -348,6 +355,16 @@ class CropBotTheta:
         # son inmutables, copiamos a listas mutables). Default = VIX_CREDIT_TABLE.
         # Última fila conserva vix_ceil=float('inf'); ese campo NO es editable.
         self._vix_credit_table: list = [list(row) for row in VIX_CREDIT_TABLE]
+
+        # LLM Engine integration (feature flag default OFF)
+        self._llm_engine_enabled: bool = False
+        self._llm_engine_url: str = os.getenv("LLM_ENGINE_URL", "")
+        self._llm_engine_threshold: int = 7
+        self._llm_cache_ttl_seconds: float = 30.0
+        self._llm_tickers_enabled: dict = {"SPY": True, "QQQ": True, "IWM": True, "TQQQ": True}
+        self._llm_max_positions: int = 10
+        self._llm_client: Optional[LLMGateClient] = None  # lazy init
+        self._llm_cache: Optional[DecisionCache] = None   # lazy init
 
 
         # Módulos
@@ -1132,6 +1149,92 @@ class CropBotTheta:
         except Exception as _log_exc:
             logger.warning(f"[ThetaHarvest][DECISION] log emit failed: {_log_exc}")
         self._log_theta_decision(decision_id, _decision_log)
+
+        # ───── LLM Engine wiring (feature flag) ───────────────────────────
+        if self._llm_engine_enabled:
+            # Skip si datos macro o pivot deficientes (snapshot seria engañoso)
+            if pivot_result is None or vix is None:
+                logger.debug(
+                    f"[llm] {ticker} skip: pivot_result={pivot_result is not None} "
+                    f"vix={vix is not None}"
+                )
+            else:
+                # Lazy init
+                if self._llm_client is None:
+                    self._llm_client = LLMGateClient(
+                        service_url=self._llm_engine_url,
+                        haiku_confidence_threshold=self._llm_engine_threshold,
+                    )
+                    self._llm_cache = DecisionCache(ttl_seconds=self._llm_cache_ttl_seconds)
+                    logger.info(f"[llm] client + cache initialized (url={self._llm_engine_url})")
+
+                try:
+                    positions_summary = self._format_open_positions_summary(ticker)
+                    snapshot = build_market_snapshot_from_crop(
+                        ticker=ticker,
+                        chain=chain,
+                        vix_level=vix,
+                        pivot_result=pivot_result,
+                        candle_buffer=self._candle_buffer,
+                        vix_velocity_30m_pct=0.0,
+                        vix_velocity_1d_pct=0.0,
+                        allowed_dtes=self._compute_theta_dtes(),
+                        open_positions_summary=positions_summary,
+                    )
+
+                    should_call, reason = should_call_llm(
+                        snapshot,
+                        tickers_enabled=self._llm_tickers_enabled,
+                        max_positions=self._llm_max_positions,
+                        current_positions_count=len(self._theta_positions),
+                    )
+                    if not should_call:
+                        logger.info(f"[llm] {ticker} pre-filter skip: {reason}")
+                        return
+
+                    cached = self._llm_cache.get(snapshot)
+                    if cached is not None:
+                        decision = cached
+                        logger.info(f"[llm] {ticker} cache HIT verdict={decision.get('verdict')}")
+                    else:
+                        decision = await asyncio.to_thread(self._llm_client.consult, snapshot)
+                        self._llm_cache.put(snapshot, decision)
+
+                    verdict = decision.get("verdict", "WAIT")
+                    confidence = decision.get("confidence", 0)
+                    main_reason = decision.get("main_reason", "")[:200]
+                    layered_path = decision.get("layered_path", "?")
+
+                    logger.info(
+                        f"[llm] {ticker} verdict={verdict} conf={confidence} "
+                        f"path={layered_path} reason={main_reason}"
+                    )
+
+                    if verdict == "WAIT":
+                        return
+
+                    if decision_indicates_exit(decision):
+                        closed = await self._close_theta_positions_for_ticker(
+                            ticker, reason=main_reason
+                        )
+                        logger.info(f"[llm] {ticker} CLOSE_POSITIONS executed: {closed} closed")
+                        return
+
+                    llm_params = llm_decision_to_scan_params(decision, ticker)
+                    if llm_params is None:
+                        return
+
+                    llm_spread_type = llm_params["spread_type"]
+                    if llm_spread_type != spread_type:
+                        logger.warning(
+                            f"[llm] {ticker} LLM verdict={verdict} overrides sector spread_type "
+                            f"{spread_type} -> {llm_spread_type}"
+                        )
+                        spread_type = llm_spread_type
+                except Exception as e:
+                    logger.exception(f"[llm] {ticker} wiring exception: {e}")
+                    # Continuar con flow normal (rule-based)
+        # ───── END LLM Engine wiring ──────────────────────────────────────
 
         # ── 5. Intentar abrir cada DTE libre ──────────────
         slots = self._theta_slots.get(ticker, {})
@@ -3180,6 +3283,33 @@ class CropBotTheta:
                 f"[VIXVelocity] Error cerrando {ticker} DTE={dte_slot}: {e}"
             )
 
+    # ── LLM Engine helpers (4.B.2) ─────────────────────────────────────────
+
+    async def _close_theta_positions_for_ticker(self, ticker: str, reason: str) -> int:
+        """Cierra todas las posiciones theta abiertas del ticker. Returns count cerradas."""
+        positions = [p for p in self._theta_positions if p.get("ticker") == ticker]
+        if not positions:
+            return 0
+        count = 0
+        for pos in positions:
+            try:
+                await self._close_theta_position_by_reason(pos, exit_reason=f"LLM_CLOSE: {reason}")
+                count += 1
+            except Exception as e:
+                logger.exception(f"[llm_close] error closing {pos.get('id')}: {e}")
+        return count
+
+    def _format_open_positions_summary(self, ticker: str) -> Optional[str]:
+        """Formato string de positions abiertas del ticker para el LLM snapshot."""
+        open_for_ticker = [p for p in self._theta_positions if p.get("ticker") == ticker]
+        if not open_for_ticker:
+            return None
+        return "; ".join(
+            f"{p.get('spread_type', '?')} {p.get('short_strike', '?')}/{p.get('long_strike', '?')} "
+            f"{p.get('dte', '?')}DTE T{p.get('tranche_id', '?')}"
+            for p in open_for_ticker
+        )
+
     # ── Paso 5: Slots dinámicos + Guard Iron Condor ────────────────────────
 
     def _compute_theta_dtes(self) -> list[int]:
@@ -3440,6 +3570,29 @@ class CropBotTheta:
                     self._vix_credit_table[row][col_idx[col]] = float(val)
                 except (TypeError, ValueError):
                     pass
+
+        # LLM Engine overrides
+        llm_enabled = overrides.get("strategy_params.llm_engine.enabled")
+        if llm_enabled is not None:
+            self._llm_engine_enabled = bool(llm_enabled)
+        llm_url = overrides.get("strategy_params.llm_engine.url")
+        if llm_url is not None:
+            self._llm_engine_url = str(llm_url)
+        llm_threshold = overrides.get("strategy_params.llm_engine.haiku_threshold")
+        if llm_threshold is not None:
+            try:
+                self._llm_engine_threshold = int(llm_threshold)
+            except (TypeError, ValueError):
+                pass
+        llm_ttl = overrides.get("strategy_params.llm_engine.cache_ttl_seconds")
+        if llm_ttl is not None:
+            try:
+                self._llm_cache_ttl_seconds = float(llm_ttl)
+            except (TypeError, ValueError):
+                pass
+        llm_tickers = overrides.get("strategy_params.llm_engine.tickers_enabled")
+        if llm_tickers is not None and isinstance(llm_tickers, dict):
+            self._llm_tickers_enabled = dict(llm_tickers)
 
     # ── Paso 3: Firestore helpers ──────────────────────────────────────────
 
