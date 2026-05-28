@@ -74,6 +74,11 @@ RANGE_BOUNDS_EXACT = {
     "strategy_params.exits_advanced.vix_velocity_threshold_up_pct":   (0.005, 0.2, float),
     "strategy_params.exits_advanced.vix_velocity_threshold_down_pct": (-0.2, -0.005, float),
     "strategy_params.exits_advanced.vix_velocity_window_seconds":     (30, 600, int),
+    # Sprint 7 (tech debt #22) — LLM Engine numeric keys.
+    # Booleans (enabled), strings (url) y dicts (tickers_enabled) no aplican aquí.
+    "strategy_params.llm_engine.haiku_threshold":             (1, 10, int),       # confidence 1-10
+    "strategy_params.llm_engine.cache_ttl_seconds":           (5.0, 300.0, float), # 5s a 5min
+    "strategy_params.llm_engine.spread_override_threshold":   (1, 10, int),       # confidence 1-10
 }
 
 
