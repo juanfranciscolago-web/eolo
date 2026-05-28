@@ -114,6 +114,11 @@ VIX_VELOCITY_THRESHOLD_UP_PCT   = 0.03    # +3% en la ventana → cerrar PUTs
 VIX_VELOCITY_THRESHOLD_DOWN_PCT = -0.03   # -3% en la ventana → cerrar CALLs
 VIX_VELOCITY_WINDOW_SECONDS     = 120     # ventana de medición (loop corre cada 30s)
 
+# 4.C.1: threshold de confidence para usar strike hint del LLM
+# (consistente con Haiku threshold del cliente; spread override = 8 en bot)
+LLM_HINT_THRESHOLD = 7
+LLM_DELTA_EXPANSION = 0.05   # ±0.05 sobre rango pivot al validar hint del LLM
+
 # ── Payoff thresholds para selección de mejor spread ─────
 # Payoff ratio = net_credit / max_risk (credit / (width - credit))
 # Un $5 spread con $0.50 credit → payoff = 0.50/4.50 = 11.1%
@@ -485,6 +490,10 @@ def scan_theta_harvest(
     ticker_cfg:           Optional[dict] = None,
     # Sprint S3.4: override VIX_CREDIT_TABLE (list-of-lists); None → fallback al módulo
     vix_credit_table:     Optional[list] = None,
+    # 4.C.1: LLM hints (Optional)
+    llm_short_strike:     Optional[float] = None,
+    llm_target_delta:     Optional[float] = None,
+    llm_confidence:       int = 0,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -604,9 +613,40 @@ def scan_theta_harvest(
         logger.warning(f"[ThetaHarvest] {ticker} — sin strikes para {chosen_exp}")
         return None
 
-    short_strike, short_contract = _find_best_strike(
-        strikes_for_exp, delta_min, delta_max, spread_type
-    )
+    # 4.C.1: LLM hint con gate por confidence + delta validation
+    short_strike = None
+    short_contract = None
+    if llm_short_strike is not None and llm_confidence >= LLM_HINT_THRESHOLD:
+        llm_key = str(llm_short_strike)
+        llm_contract = strikes_for_exp.get(llm_key)
+        if llm_contract is not None:
+            llm_delta_abs = abs(float(llm_contract.get("delta") or 0))
+            # Rango expanded: ±LLM_DELTA_EXPANSION sobre el rango pivot
+            if delta_min - LLM_DELTA_EXPANSION <= llm_delta_abs <= delta_max + LLM_DELTA_EXPANSION:
+                short_strike = float(llm_key)
+                short_contract = llm_contract
+                logger.info(
+                    f"[ThetaHarvest] {ticker} — using LLM hint strike={short_strike} "
+                    f"Δ={llm_delta_abs:.2f} conf={llm_confidence} "
+                    f"(rango rule {delta_min:.2f}-{delta_max:.2f} ±{LLM_DELTA_EXPANSION})"
+                )
+            else:
+                logger.warning(
+                    f"[ThetaHarvest] {ticker} — LLM hint strike={llm_short_strike} "
+                    f"Δ={llm_delta_abs:.2f} FUERA de rango expanded "
+                    f"[{delta_min-LLM_DELTA_EXPANSION:.2f},{delta_max+LLM_DELTA_EXPANSION:.2f}], "
+                    f"fallback rule-based"
+                )
+        else:
+            logger.warning(
+                f"[ThetaHarvest] {ticker} — LLM hint strike={llm_short_strike} "
+                f"NO existe en chain {chosen_exp}, fallback rule-based"
+            )
+
+    if short_strike is None:
+        short_strike, short_contract = _find_best_strike(
+            strikes_for_exp, delta_min, delta_max, spread_type
+        )
     if short_strike is None or short_contract is None:
         logger.info(
             f"[ThetaHarvest] {ticker} — sin strike con Δ {delta_min:.2f}–{delta_max:.2f} "
@@ -896,6 +936,10 @@ def scan_theta_harvest_tranches(
     ticker_cfg:           Optional[dict] = None,
     # Sprint S3.4: propagado a scan_theta_harvest interno
     vix_credit_table:     Optional[list] = None,
+    # 4.C.1: LLM hints (Optional; gating por LLM_HINT_THRESHOLD en scan)
+    llm_short_strike:     Optional[float] = None,
+    llm_target_delta:     Optional[float] = None,
+    llm_confidence:       int = 0,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -949,6 +993,9 @@ def scan_theta_harvest_tranches(
         delta_by_risk         = delta_by_risk,
         ticker_cfg            = ticker_cfg,
         vix_credit_table      = vix_credit_table,
+        llm_short_strike      = llm_short_strike,
+        llm_target_delta      = llm_target_delta,
+        llm_confidence        = llm_confidence,
     )
     if base_signal is None:
         return []
@@ -978,6 +1025,9 @@ def scan_theta_harvest_tranches(
                 delta_by_risk        = delta_by_risk,
                 ticker_cfg           = ticker_cfg,
                 vix_credit_table     = vix_credit_table,
+                llm_short_strike     = llm_short_strike,
+                llm_target_delta     = llm_target_delta,
+                llm_confidence       = llm_confidence,
             )
         if sig is not None:
             signals.append(sig)
