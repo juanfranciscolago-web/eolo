@@ -25,6 +25,11 @@
 #      {"type": "quote", "symbol", "ts" (sec),
 #       "bid", "ask", "last", "bid_size", "ask_size",
 #       "volume", "open", "high", "low", "close", "mark"}
+#
+#  Daily backfill (Sprint 6 — tech debt #15):
+#    Buffer interno separado `_daily_buffer` con ~252 candles 1-day del
+#    último año. Backfill al boot + refresh cada 1h. NO va a handlers
+#    externos: el snapshot lo lee directo via `get_daily_buffer()`.
 # ============================================================
 import asyncio
 import time
@@ -35,7 +40,10 @@ from loguru import logger
 
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(__file__)), ".."))
 from helpers import get_access_token
+from eolo_common.multi_tf import CandleBuffer
+from eolo_common.multi_tf.normalize import from_schwab_chart_equity
 
 # ── Constantes ────────────────────────────────────────────
 URL_PRICEHISTORY = "https://api.schwabapi.com/marketdata/v1/pricehistory"
@@ -43,14 +51,27 @@ URL_QUOTES       = "https://api.schwabapi.com/marketdata/v1/quotes"
 POLL_INTERVAL_SEC = 5
 TIMEOUT_SEC = 8
 
+# Sprint 6 — daily backfill (tech debt #15)
+DAILY_POLL_INTERVAL_SEC = 3600   # 1 hora — daily candles solo cambian intraday el último
+DAILY_BUFFER_SIZE = 300          # ~14 meses de daily candles (cómodo para EMA_200)
+DAILY_PARAMS = {
+    "periodType":            "year",
+    "period":                1,
+    "frequencyType":         "daily",
+    "frequency":             1,
+    "needExtendedHoursData": False,
+}
+
 
 class SchwabRestPoller:
     """
     Poller REST drop-in replacement de SchwabStream para CROP.
 
-    Dos loops paralelos a 5s:
-      • candles 1-min vía /pricehistory (alimenta CandleBuffer)
-      • quotes L1 vía /quotes (alimenta dashboard bid/ask/last/mark)
+    Tres loops async:
+      • candles 1-min vía /pricehistory cada 5s (alimenta CandleBuffer externo)
+      • quotes L1 vía /quotes cada 5s (alimenta dashboard bid/ask/last/mark)
+      • daily candles vía /pricehistory periodType=year cada 1h, backfill
+        inmediato al boot (alimenta _daily_buffer interno — tech debt #15)
     """
 
     def __init__(self, tickers: list[str]):
@@ -61,6 +82,10 @@ class SchwabRestPoller:
         # CandleBuffer.push solo dedupa contra buf[-1], no contra histórico —
         # sin este tracking re-pusheamos ~390 candles del día cada 5s.
         self._last_ts_per_symbol: dict[str, int] = {}
+        # Sprint 6: buffer daily separado para indicators (RSI/ATR/EMA/ADR daily).
+        # No va a handlers — consumido por snapshot via `get_daily_buffer()`.
+        self._daily_buffer = CandleBuffer(max_len=DAILY_BUFFER_SIZE)
+        self._last_daily_ts_per_symbol: dict[str, int] = {}
 
     # ── Compat con SchwabStream ────────────────────────────
 
@@ -72,19 +97,24 @@ class SchwabRestPoller:
         self._running = False
         logger.info("[REST_POLLER] Deteniendo polling...")
 
+    def get_daily_buffer(self) -> CandleBuffer:
+        """Acceso al buffer daily — consumido por snapshot.build_market_snapshot_from_crop."""
+        return self._daily_buffer
+
     # ── Loop principal ─────────────────────────────────────
 
     async def start(self) -> None:
         self._running = True
         logger.info(
             f"[REST_POLLER] Iniciando para {self.tickers} "
-            f"(intervalo {POLL_INTERVAL_SEC}s, candles + quotes)"
+            f"({POLL_INTERVAL_SEC}s candles + quotes, "
+            f"{DAILY_POLL_INTERVAL_SEC}s daily)"
         )
-        # Candle loop = 1 call por ticker; quote loop = 1 call batched
-        # para todos los tickers. Corren en paralelo, mismo cadencia.
+        # Loops paralelos: candles 5s + quotes 5s + daily 1h con backfill al boot.
         await asyncio.gather(
             self._candle_poll_loop(),
             self._quote_poll_loop(),
+            self._daily_poll_loop(),
             return_exceptions=True,
         )
 
@@ -121,6 +151,43 @@ class SchwabRestPoller:
         new_candles = self._dedup_and_filter(symbol, candles)
         for c in new_candles:
             await self._notify(symbol, {"type": "candle", **c})
+
+    async def _daily_poll_loop(self) -> None:
+        """
+        Backfill inmediato al boot (1 call por ticker) + refresh cada 1h.
+        Pushea directo a `_daily_buffer` — no notifica handlers (consumido
+        por snapshot.build_market_snapshot_from_crop via get_daily_buffer).
+        """
+        logger.info(f"[REST_POLLER] daily backfill iniciando para {self.tickers}...")
+        for ticker in self.tickers:
+            await self._poll_ticker_daily(ticker)
+        size = self._daily_buffer.size(self.tickers[0]) if self.tickers else 0
+        logger.info(
+            f"[REST_POLLER] daily backfill completado — "
+            f"{self.tickers[0]} buffer={size} candles"
+        )
+        while self._running:
+            await asyncio.sleep(DAILY_POLL_INTERVAL_SEC)
+            if not self._running:
+                break
+            for ticker in self.tickers:
+                await self._poll_ticker_daily(ticker)
+
+    async def _poll_ticker_daily(self, symbol: str) -> None:
+        candles = await asyncio.to_thread(self._fetch_daily_history_sync, symbol)
+        if not candles:
+            return
+        # Dedup con `>=` (no `>` como en intraday): el último daily candle
+        # del día actual está en formación durante RTH y queremos refrescarlo
+        # cada hora. CandleBuffer.push hace replace cuando ts_ms == buf[-1].ts_ms.
+        last_ts = self._last_daily_ts_per_symbol.get(symbol, 0)
+        new = [c for c in candles if c["time"] >= last_ts]
+        if new:
+            self._last_daily_ts_per_symbol[symbol] = new[-1]["time"]
+        for c in new:
+            norm = from_schwab_chart_equity(c)
+            if norm is not None:
+                self._daily_buffer.push(norm)
 
     async def _notify(self, ticker: str, data: dict) -> None:
         for fn in self._handlers:
@@ -171,6 +238,55 @@ class SchwabRestPoller:
             data = resp.json() or {}
         except Exception as e:
             logger.warning(f"[REST_POLLER] fetch failed {symbol}: {e}")
+            return []
+
+        raw = data.get("candles") or []
+        out = []
+        for c in raw:
+            ts = c.get("datetime")
+            if ts is None:
+                continue
+            out.append({
+                "symbol": symbol,
+                "time":   int(ts),
+                "open":   c.get("open"),
+                "high":   c.get("high"),
+                "low":    c.get("low"),
+                "close":  c.get("close"),
+                "volume": c.get("volume"),
+            })
+        return out
+
+    def _fetch_daily_history_sync(self, symbol: str) -> list[dict]:
+        """
+        Pega a /pricehistory con DAILY_PARAMS — retorna ~252 candles 1-day
+        del último año. Mismo shape `{symbol, time(ms), open, high, low,
+        close, volume}` que `_fetch_pricehistory_sync` para que el normalizer
+        `from_schwab_chart_equity` funcione sin cambios.
+        """
+        token = get_access_token()
+        if not token:
+            logger.warning(f"[REST_POLLER] daily: sin access_token para {symbol}")
+            return []
+        try:
+            resp = requests.get(
+                URL_PRICEHISTORY,
+                headers={"Authorization": f"Bearer {token}"},
+                params={"symbol": symbol, **DAILY_PARAMS},
+                timeout=TIMEOUT_SEC,
+            )
+            if resp.status_code == 401:
+                logger.warning(f"[REST_POLLER] daily 401 {symbol}, retry next cycle")
+                return []
+            if resp.status_code != 200:
+                logger.warning(
+                    f"[REST_POLLER] daily HTTP {resp.status_code} para {symbol}: "
+                    f"{resp.text[:120]}"
+                )
+                return []
+            data = resp.json() or {}
+        except Exception as e:
+            logger.warning(f"[REST_POLLER] daily fetch failed {symbol}: {e}")
             return []
 
         raw = data.get("candles") or []

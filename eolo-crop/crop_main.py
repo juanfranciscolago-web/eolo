@@ -1236,6 +1236,10 @@ class CropBotTheta:
                         vix_velocity_1d_pct=0.0,  # tech debt #20
                         allowed_dtes=self._compute_theta_dtes(),
                         open_positions_summary=positions_summary,
+                        # Sprint 6: daily indicators reales si el poller tiene buffer
+                        # (REST polling, no WS). Fallback silencioso a defaults si
+                        # `self.stream` es SchwabStream legacy sin get_daily_buffer.
+                        daily_buffer=getattr(self.stream, "get_daily_buffer", lambda: None)(),
                     )
 
                     should_call, reason = should_call_llm(

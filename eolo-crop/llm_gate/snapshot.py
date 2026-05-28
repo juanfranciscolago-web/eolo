@@ -160,6 +160,7 @@ def build_market_snapshot_from_crop(
     days_to_next_fomc: Optional[int] = None,
     days_to_next_cpi: Optional[int] = None,
     days_to_next_nfp: Optional[int] = None,
+    daily_buffer=None,  # Sprint 6 (tech debt #15): CandleBuffer con daily candles
 ) -> MarketSnapshotDict:
     """
     Construye snapshot completo para enviar al LLM.
@@ -299,19 +300,10 @@ def build_market_snapshot_from_crop(
     else:
         _apply_15m_defaults(snapshot)
 
-    # Daily — usamos pivot_result + defaults (tech debt #15)
-    try:
-        snapshot["atr_daily"] = float(pivot_result.atr.atr_day)
-    except Exception:
-        snapshot["atr_daily"] = 0.0
-
-    # Defaults neutrales para daily indicators sin data
-    snapshot["rsi_daily"] = _RSI_NEUTRAL
-    snapshot["ema_9_daily"] = _EMA_DEFAULT
-    snapshot["ema_21_daily"] = _EMA_DEFAULT
-    snapshot["ema_50_daily"] = _EMA_DEFAULT
-    snapshot["ema_200_daily"] = _EMA_DEFAULT
-    snapshot["adr_daily"] = 0.0  # TODO calcular del pivot atr.atr_day / pdc
+    # Daily — Sprint 6 (tech debt #15): real indicators desde daily_buffer.
+    # Fallback al pivot_result.atr.atr_day + defaults si daily_buffer no
+    # disponible (boot warm-up o caller sin Sprint 6).
+    _apply_daily_indicators(snapshot, ticker, daily_buffer, pivot_result)
 
     # Options context
     snapshot["iv_rank_spy"] = iv_rank_spy
@@ -391,3 +383,63 @@ def _apply_15m_defaults(snapshot: dict) -> None:
     snapshot["macd_line_15m"] = 0.0
     snapshot["macd_signal_15m"] = 0.0
     snapshot["macd_histogram_15m"] = 0.0
+
+
+def _apply_daily_defaults(snapshot: dict, pivot_result) -> None:
+    """Defaults daily (boot warm-up o daily_buffer no provisto — tech debt #15).
+
+    Fallback al pivot_result.atr.atr_day cuando está, sino 0.0. Resto = neutrales.
+    """
+    try:
+        snapshot["atr_daily"] = float(pivot_result.atr.atr_day)
+    except Exception:
+        snapshot["atr_daily"] = 0.0
+    snapshot["rsi_daily"] = _RSI_NEUTRAL
+    snapshot["ema_9_daily"] = _EMA_DEFAULT
+    snapshot["ema_21_daily"] = _EMA_DEFAULT
+    snapshot["ema_50_daily"] = _EMA_DEFAULT
+    snapshot["ema_200_daily"] = _EMA_DEFAULT
+    snapshot["adr_daily"] = 0.0
+
+
+def _apply_daily_indicators(snapshot: dict, ticker: str, daily_buffer, pivot_result) -> None:
+    """Sprint 6 (tech debt #15) — daily indicators reales desde daily_buffer.
+
+    CUÁNDO se llama: cada `build_market_snapshot_from_crop`. Si `daily_buffer`
+    es None o no tiene suficientes candles, fallback a `_apply_daily_defaults`.
+
+    THRESHOLDS:
+      - RSI(14)         requiere >=14
+      - ATR(14)         requiere >=14
+      - EMA(9/21/50)    requieren ese N de candles (graceful: si <N → 0.0)
+      - EMA(200)        idem (común que no haya 200 en cold start hasta backfill)
+      - ADR(20)         mean(high-low) sobre 20 días — si <20 → 0.0
+
+    Si daily_buffer tiene <14 candles → defaults completos (treat as warm-up).
+    """
+    if daily_buffer is None:
+        _apply_daily_defaults(snapshot, pivot_result)
+        return
+    try:
+        df = daily_buffer.as_df_1min(ticker)  # accessor genérico devuelve OHLCV ordenado
+    except Exception as e:
+        logger.warning(f"[snapshot] {ticker} daily_buffer.as_df_1min falló: {e}")
+        df = None
+    if df is None or len(df) < 14:
+        _apply_daily_defaults(snapshot, pivot_result)
+        return
+    try:
+        close = df["close"]
+        snapshot["rsi_daily"] = calculate_rsi(close, 14)
+        snapshot["atr_daily"] = calculate_atr(df["high"], df["low"], close, 14)
+        snapshot["ema_9_daily"]  = calculate_ema(close, 9)  if len(df) >= 9   else _EMA_DEFAULT
+        snapshot["ema_21_daily"] = calculate_ema(close, 21) if len(df) >= 21  else _EMA_DEFAULT
+        snapshot["ema_50_daily"] = calculate_ema(close, 50) if len(df) >= 50  else _EMA_DEFAULT
+        snapshot["ema_200_daily"]= calculate_ema(close, 200)if len(df) >= 200 else _EMA_DEFAULT
+        if len(df) >= 20:
+            snapshot["adr_daily"] = float((df["high"] - df["low"]).tail(20).mean())
+        else:
+            snapshot["adr_daily"] = 0.0
+    except Exception as e:
+        logger.warning(f"[snapshot] {ticker} daily indicators failed: {e}")
+        _apply_daily_defaults(snapshot, pivot_result)
