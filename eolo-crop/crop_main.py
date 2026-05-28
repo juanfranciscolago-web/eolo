@@ -179,7 +179,11 @@ AUTO_CLOSE_MINUTE = 27
 MAX_POSITIONS_PER_TICKER = 2
 
 # Buffer de velas por ticker (para indicadores Eolo v1)
-CANDLE_BUFFER_SIZE = 100
+# 4.D HZ-1 / tech debt #16 RESUELTA: bumpeado 100 → 500 para que el LLM snapshot
+# tenga suficiente data para calcular indicators 15m (RSI/ATR/EMA period 14
+# requiere >=14 candles 15m → ~225 min 1-min = 225+ candles 1-min).
+# 500 candles 1-min = 8.3h = sesion NYSE completa. Memory impact: ~200KB total.
+CANDLE_BUFFER_SIZE = 500
 
 # ── Helpers de serialización para Firestore ────────────────
 #

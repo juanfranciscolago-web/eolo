@@ -23,6 +23,7 @@ Output:
 """
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from typing import Optional, List, TypedDict, Dict, Any
 
 import pandas as pd
@@ -182,7 +183,9 @@ def build_market_snapshot_from_crop(
     snapshot: MarketSnapshotDict = {}
 
     # Identificacion
-    snapshot["timestamp"] = datetime.now(timezone.utc).isoformat()
+    # 4.D HZ-3 RESUELTA: timestamp en ET (no UTC) para que el LLM no confunda
+    # 14:00 UTC con 14:00 ET. ISO format con offset (ej. "2026-05-28T10:00:00-04:00").
+    snapshot["timestamp"] = datetime.now(ZoneInfo("America/New_York")).isoformat()
     snapshot["ticker"] = ticker
     snapshot["session_phase"] = "regular"  # TODO computar fase real en v0.2
 

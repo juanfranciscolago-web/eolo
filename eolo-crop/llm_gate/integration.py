@@ -32,6 +32,7 @@ def should_call_llm(
     Returns (should_call, reason).
 
     Reglas (NO_CALL si alguna aplica):
+    0. Ticker != SPY (4.D HZ-2: LLM scope = SPY only; KB diseñado para SPY/VIX)
     1. Ticker no enabled en tickers_enabled
     2. Hora fuera de ventana 9:30-12:00 ET (para entries) — permitir para
        exits si has_open_positions
@@ -42,6 +43,12 @@ def should_call_llm(
     Si pasa, return (True, "ok") y el caller invoca el LLM.
     """
     ticker = snapshot.get("ticker", "?")
+
+    # Rule 0 (4.D HZ-2): LLM scope = SPY only. KB diseñado para SPY/VIX
+    # correlation. QQQ/IWM/TQQQ van rule-based puro (Haiku los rechazaba con
+    # conf=9 anyway, gastando $ inutilmente).
+    if ticker != "SPY":
+        return False, f"non_spy_ticker_llm_scope_spy_only: {ticker}"
 
     # Rule 1: ticker enabled
     if not tickers_enabled.get(ticker, False):
