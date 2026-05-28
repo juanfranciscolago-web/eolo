@@ -1257,13 +1257,19 @@ class CropBotTheta:
                         logger.info(f"[llm] {ticker} pre-filter skip: {reason}")
                         return
 
-                    cached = self._llm_cache.get(snapshot)
+                    # Sprint 8.B: chain_ts = ahora (handler de chain_update gatilla
+                    # este flow apenas llega chain nueva, así que time.time() ≈
+                    # arrival time del chain actual). Una llamada al LLM más tarde
+                    # con el mismo chain comparte chain_ts ≈ idéntico; cuando llega
+                    # un chain refrescado (>30s), invalidación dispara.
+                    chain_ts = time.time()
+                    cached = self._llm_cache.get(snapshot, current_chain_ts=chain_ts)
                     if cached is not None:
                         decision = cached
                         logger.info(f"[llm] {ticker} cache HIT verdict={decision.get('verdict')}")
                     else:
                         decision = await asyncio.to_thread(self._llm_client.consult, snapshot)
-                        self._llm_cache.put(snapshot, decision)
+                        self._llm_cache.put(snapshot, decision, chain_ts=chain_ts)
 
                     verdict = decision.get("verdict", "WAIT")
                     confidence = decision.get("confidence", 0)

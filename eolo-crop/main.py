@@ -762,6 +762,15 @@ def api_state():
 
         state["pnl"] = _pnl_from_bot(bot)
         state["strategy_params"] = _strategy_params()
+
+        # Sprint 8.B: LLM cache stats para observabilidad post-deploy.
+        try:
+            llm_cache = getattr(bot, "_llm_cache", None)
+            if llm_cache is not None and hasattr(llm_cache, "stats"):
+                state.setdefault("stats", {})["llm_cache"] = llm_cache.stats()
+        except Exception as ce:
+            logger.debug(f"[API /state] Could not read llm_cache stats: {ce}")
+
         return jsonify(state), 200
 
     except Exception as e:
