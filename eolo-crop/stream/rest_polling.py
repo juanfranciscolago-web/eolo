@@ -62,6 +62,17 @@ DAILY_PARAMS = {
     "needExtendedHoursData": False,
 }
 
+# Sprint 7 — VIX yesterday close para vix_velocity_1d_pct (tech debt #20)
+# Símbolo $VIX verificado 2026-04-20 con test_macro_quotes (cuenta bot).
+VIX_SYMBOL = "$VIX"
+VIX_HISTORY_PARAMS = {
+    "periodType":            "month",
+    "period":                1,
+    "frequencyType":         "daily",
+    "frequency":             1,
+    "needExtendedHoursData": False,
+}
+
 
 class SchwabRestPoller:
     """
@@ -86,6 +97,9 @@ class SchwabRestPoller:
         # No va a handlers — consumido por snapshot via `get_daily_buffer()`.
         self._daily_buffer = CandleBuffer(max_len=DAILY_BUFFER_SIZE)
         self._last_daily_ts_per_symbol: dict[str, int] = {}
+        # Sprint 7: cache de VIX close de ayer para vix_velocity_1d_pct (tech debt #20).
+        # Refrescado en el daily loop (cada 1h). None hasta el primer fetch exitoso.
+        self._vix_yesterday_close: float | None = None
 
     # ── Compat con SchwabStream ────────────────────────────
 
@@ -100,6 +114,10 @@ class SchwabRestPoller:
     def get_daily_buffer(self) -> CandleBuffer:
         """Acceso al buffer daily — consumido por snapshot.build_market_snapshot_from_crop."""
         return self._daily_buffer
+
+    def get_vix_yesterday_close(self):
+        """Sprint 7 (#20): VIX close de ayer — None hasta el primer fetch exitoso."""
+        return self._vix_yesterday_close
 
     # ── Loop principal ─────────────────────────────────────
 
@@ -154,17 +172,20 @@ class SchwabRestPoller:
 
     async def _daily_poll_loop(self) -> None:
         """
-        Backfill inmediato al boot (1 call por ticker) + refresh cada 1h.
-        Pushea directo a `_daily_buffer` — no notifica handlers (consumido
-        por snapshot.build_market_snapshot_from_crop via get_daily_buffer).
+        Backfill inmediato al boot (1 call por ticker + 1 call para VIX) +
+        refresh cada 1h. Daily candles van a `_daily_buffer`; VIX yesterday
+        close va a `_vix_yesterday_close`. No notifica handlers — consumidos
+        por snapshot vía get_daily_buffer() / get_vix_yesterday_close().
         """
-        logger.info(f"[REST_POLLER] daily backfill iniciando para {self.tickers}...")
+        logger.info(f"[REST_POLLER] daily backfill iniciando para {self.tickers} + VIX...")
         for ticker in self.tickers:
             await self._poll_ticker_daily(ticker)
+        await self._refresh_vix_yesterday()
         size = self._daily_buffer.size(self.tickers[0]) if self.tickers else 0
         logger.info(
             f"[REST_POLLER] daily backfill completado — "
-            f"{self.tickers[0]} buffer={size} candles"
+            f"{self.tickers[0]} buffer={size} candles, "
+            f"VIX yesterday={self._vix_yesterday_close}"
         )
         while self._running:
             await asyncio.sleep(DAILY_POLL_INTERVAL_SEC)
@@ -172,6 +193,13 @@ class SchwabRestPoller:
                 break
             for ticker in self.tickers:
                 await self._poll_ticker_daily(ticker)
+            await self._refresh_vix_yesterday()
+
+    async def _refresh_vix_yesterday(self) -> None:
+        """Sprint 7 (#20): refresh del cache _vix_yesterday_close."""
+        vix_close = await asyncio.to_thread(self._fetch_vix_yesterday_sync)
+        if vix_close is not None:
+            self._vix_yesterday_close = vix_close
 
     async def _poll_ticker_daily(self, symbol: str) -> None:
         candles = await asyncio.to_thread(self._fetch_daily_history_sync, symbol)
@@ -305,6 +333,52 @@ class SchwabRestPoller:
                 "volume": c.get("volume"),
             })
         return out
+
+    def _fetch_vix_yesterday_sync(self):
+        """
+        Pega a /pricehistory para `$VIX` con últimos ~21 daily candles.
+        Retorna `close` del PENÚLTIMO candle (= ayer al cierre RTH). El
+        último elemento es el día actual en formación durante RTH; sólo
+        post-close ese candle está cerrado.
+
+        Retorna None en cualquier error.
+        """
+        token = get_access_token()
+        if not token:
+            logger.warning("[REST_POLLER] VIX: sin access_token")
+            return None
+        try:
+            resp = requests.get(
+                URL_PRICEHISTORY,
+                headers={"Authorization": f"Bearer {token}"},
+                params={"symbol": VIX_SYMBOL, **VIX_HISTORY_PARAMS},
+                timeout=TIMEOUT_SEC,
+            )
+            if resp.status_code == 401:
+                logger.warning("[REST_POLLER] VIX 401, retry next cycle")
+                return None
+            if resp.status_code != 200:
+                logger.warning(
+                    f"[REST_POLLER] VIX HTTP {resp.status_code}: {resp.text[:120]}"
+                )
+                return None
+            data = resp.json() or {}
+        except Exception as e:
+            logger.warning(f"[REST_POLLER] VIX fetch failed: {e}")
+            return None
+
+        candles = data.get("candles") or []
+        if len(candles) < 2:
+            logger.warning(
+                f"[REST_POLLER] VIX: solo {len(candles)} candles, "
+                f"no puedo computar yesterday"
+            )
+            return None
+        # Ordenadas asc por datetime; penúltimo = ayer al cierre.
+        try:
+            return float(candles[-2].get("close"))
+        except (TypeError, ValueError):
+            return None
 
     def _fetch_quotes_sync(self, symbols: list[str]) -> dict[str, dict]:
         """

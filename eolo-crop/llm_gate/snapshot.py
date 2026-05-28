@@ -161,6 +161,7 @@ def build_market_snapshot_from_crop(
     days_to_next_cpi: Optional[int] = None,
     days_to_next_nfp: Optional[int] = None,
     daily_buffer=None,  # Sprint 6 (tech debt #15): CandleBuffer con daily candles
+    vix_yesterday_close: Optional[float] = None,  # Sprint 7 (tech debt #20)
 ) -> MarketSnapshotDict:
     """
     Construye snapshot completo para enviar al LLM.
@@ -223,10 +224,17 @@ def build_market_snapshot_from_crop(
         snapshot["pdl"] = price
         snapshot["pdc"] = price
 
-    # VIX (level + velocities pasadas como params)
+    # VIX (level + velocities)
     snapshot["vix_level"] = float(vix_level)
     snapshot["vix_velocity_30m_pct"] = float(vix_velocity_30m_pct)
-    snapshot["vix_velocity_1d_pct"] = float(vix_velocity_1d_pct)
+    # Sprint 7 (tech debt #20): si tenemos vix_yesterday_close cacheado,
+    # computamos 1d en vivo. Sino, fallback al arg pasado (default 0.0).
+    if vix_yesterday_close is not None:
+        snapshot["vix_velocity_1d_pct"] = _compute_vix_velocity_1d(
+            float(vix_level), vix_yesterday_close
+        )
+    else:
+        snapshot["vix_velocity_1d_pct"] = float(vix_velocity_1d_pct)
     snapshot["vix_vs_prev_close_pct"] = float(vix_vs_prev_close_pct)
 
     # Fibonacci levels
@@ -443,3 +451,22 @@ def _apply_daily_indicators(snapshot: dict, ticker: str, daily_buffer, pivot_res
     except Exception as e:
         logger.warning(f"[snapshot] {ticker} daily indicators failed: {e}")
         _apply_daily_defaults(snapshot, pivot_result)
+
+
+def _compute_vix_velocity_1d(vix_current: float, vix_yesterday_close) -> float:
+    """Sprint 7 (tech debt #20) — VIX velocity 1d en porcentaje.
+
+    Fórmula estándar: (vix_today - vix_yesterday) / vix_yesterday * 100.
+    Public (sin underscore prefix) para testing fácil.
+
+    Returns 0.0 si yesterday_close es None, <=0, o si el cálculo lanza.
+    """
+    if vix_yesterday_close is None:
+        return 0.0
+    try:
+        y = float(vix_yesterday_close)
+        if y <= 0.0:
+            return 0.0
+        return ((float(vix_current) - y) / y) * 100.0
+    except (TypeError, ValueError):
+        return 0.0
