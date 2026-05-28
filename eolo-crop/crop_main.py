@@ -3806,9 +3806,14 @@ class CropBotTheta:
                                     or (llm_confidence_hint if llm_confidence_hint else None),
             "main_reason":          (decision.get("reason") or decision.get("main_reason") or "")[:300],
             "layered_path":         decision.get("layered_path"),
-            "tacit_rules_applied": None,    # LLM Engine v0.3 follow-up
-            "similar_case_used":   None,    # LLM Engine v0.3 follow-up
-            "safety_overrides":    [],
+            # Sprint 10: extraer del response del LLM Engine. El cliente
+            # preserva el dict tal cual viene del engine, que ya emite estos
+            # fields según Decision pydantic model (decision_parser.py:39, 43).
+            # Defensive contra responses incompletas: `or []` para listas,
+            # default None preservado para Optional.
+            "tacit_rules_applied": decision.get("tacit_rules_applied") or [],
+            "similar_case_used":   decision.get("similar_case_used"),
+            "safety_overrides":    decision.get("safety_overrides") or [],
         }
         setup = {
             "dte":                       dte,

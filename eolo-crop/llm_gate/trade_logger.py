@@ -9,8 +9,11 @@
 #    `eolo-crop-theta-trades` — coexisten sin interferir).
 #  - Shape enriquecido con decision_source, decision_meta, setup
 #    completo y outcome auto-clasificado en case_quality.
-#  - KB-specific fields (tacit_rules_applied, similar_case_used)
-#    quedan opcionales hasta que el LLM Engine v0.3 los retorne.
+#  - KB-specific fields (tacit_rules_applied, similar_case_used) se
+#    extraen del response del LLM Engine cuando viene. Puede estar
+#    [] / None si el LLM no los emite en una respuesta dada (confidence
+#    baja, setup ambiguo, fallback path). Wiring en
+#    crop_main._record_trade_open_sprint9 (Sprint 10).
 #
 #  USO:
 #    logger_obj = TradeLogger(project_id="eolo-schwab-agent",
