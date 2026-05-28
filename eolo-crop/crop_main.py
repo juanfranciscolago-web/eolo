@@ -1202,8 +1202,14 @@ class CropBotTheta:
 
         # ───── LLM Engine wiring (feature flag) ───────────────────────────
         if self._llm_engine_enabled:
+            # Tech debt #24: short-circuit non-SPY ANTES de build_market_snapshot.
+            # `should_call_llm` Rule 0 (llm_gate/integration.py:50) ya rechaza
+            # non-SPY, pero hoy el snapshot se computa primero (RSI/ATR/EMA/MACD/
+            # VWAP en 2 timeframes) y se descarta. Save ~5-10ms/ticker × 3 = ~15-30ms/ciclo.
+            if ticker != "SPY":
+                logger.debug(f"[llm] {ticker} skip: LLM scope = SPY only (rule-based path)")
             # Skip si datos macro o pivot deficientes (snapshot seria engañoso)
-            if pivot_result is None or vix is None:
+            elif pivot_result is None or vix is None:
                 logger.debug(
                     f"[llm] {ticker} skip: pivot_result={pivot_result is not None} "
                     f"vix={vix is not None}"
