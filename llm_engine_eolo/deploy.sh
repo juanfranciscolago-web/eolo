@@ -10,7 +10,7 @@
 
 set -e
 
-PROJECT_ID="${GCP_PROJECT_ID:-eolo-trading}"
+PROJECT_ID="${GCP_PROJECT_ID:-eolo-schwab-agent}"
 REGION="${GCP_REGION:-us-central1}"
 SERVICE_NAME="llm-engine-service"
 
@@ -24,7 +24,7 @@ gcloud run deploy ${SERVICE_NAME} \
   --no-allow-unauthenticated \
   --memory 1Gi \
   --cpu 1 \
-  --timeout 30s \
+  --timeout 60s \
   --max-instances 3 \
   --min-instances 0 \
   --concurrency 10 \
