@@ -34,6 +34,7 @@ EDITABLE_ALLOWLIST_PREFIXES = [
     "strategy_params.vix_credit_table[",       # 30 fieldIds (excluye vix_ceil)
     "strategy_params.target_dtes.by_weekday.", # 7 per-day arrays
     "strategy_params.position_sizing.",         # Sprint S3.5: 100 paths (5d × 4t × 5dte)
+    "strategy_params.llm_engine.",              # Bloque 4 Fase 2: 6 paths LLM feature flag
 ]
 EDITABLE_BLOCKLIST_EXACT = {
     # Overlap con /api/config — readonly UI, rechazo backend
