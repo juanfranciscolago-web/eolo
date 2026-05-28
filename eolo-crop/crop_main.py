@@ -110,6 +110,7 @@ from eolo_common.trading_hours import (
 # ── LLM Engine integration (4.B.2) ──────────────────────────────
 from llm_gate import LLMGateClient, DecisionCache
 from llm_gate.snapshot import build_market_snapshot_from_crop
+from llm_gate.trade_logger import TradeLogger  # Sprint 9
 from llm_gate.integration import (
     should_call_llm, llm_decision_to_scan_params, decision_indicates_exit,
 )
@@ -376,6 +377,8 @@ class CropBotTheta:
         self._llm_spread_override_threshold: int = 8
         self._llm_client: Optional[LLMGateClient] = None  # lazy init
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
+        # Sprint 9: TradeLogger lazy init en el primer record_open.
+        self._trade_logger: Optional[TradeLogger] = None
 
 
         # Módulos
@@ -1452,6 +1455,25 @@ class CropBotTheta:
                             "theta":            pos.get("theta"),
                             "vega":             pos.get("vega"),
                         })
+                        # Sprint 9: registro estructurado a collection nueva
+                        # `eolo-crop-trades`. Aditivo — coexiste con el legacy
+                        # `eolo-crop-theta-trades`.
+                        try:
+                            sprint9_id = self._record_trade_open_sprint9(
+                                ticker=ticker,
+                                decision=decision,
+                                signal=signal,
+                                dte=dte,
+                                pos=pos,
+                                vix=vix,
+                                vvix=vvix,
+                                decision_id=decision_id,
+                                llm_confidence_hint=llm_confidence_hint,
+                            )
+                            if sprint9_id:
+                                pos["sprint9_trade_id"] = sprint9_id
+                        except Exception as _s9e:
+                            logger.warning(f"[Sprint9] record_trade_open failed: {_s9e}")
                         _decision_log.setdefault("executed_trades", []).append(trade_id)
                         opened_any = True
                         # Sumar crédito total del día
@@ -1670,6 +1692,24 @@ class CropBotTheta:
                                 self._log_theta_trade_close(_trade_id_close, _exit_payload)
                             except Exception as _fs_e:
                                 logger.warning(f"[ThetaHarvest][FS] trade_close prepare failed: {_fs_e}")
+                            # Sprint 9: registrar outcome en collection nueva
+                            try:
+                                _s9_id = pos.get("sprint9_trade_id")
+                                if _s9_id and self._trade_logger is not None:
+                                    _outcome = {
+                                        "pnl_pct":            _exit_payload.get("pnl_pct"),
+                                        "pnl_usd":            _exit_payload.get("pnl"),
+                                        "exit_reason":        exit_reason,
+                                        "hold_time_sec":      int(
+                                            time.time() - (pos.get("opened_at") or time.time())
+                                        ),
+                                        "exit_credit_paid_usd": _exit_payload.get("exit_credit"),
+                                        "vix_at_exit":        vix,
+                                        "safety_overrides":   [],
+                                    }
+                                    self._trade_logger.record_trade_close(_s9_id, _outcome)
+                            except Exception as _s9ce:
+                                logger.warning(f"[Sprint9] record_trade_close failed: {_s9ce}")
 
                         # Liberar el DTE slot solo cuando TODOS los tranches del
                         # mismo DTE están cerrados. T0 cierra antes (35% target)
@@ -3725,6 +3765,76 @@ class CropBotTheta:
               })
         except Exception as _e:
             logger.warning(f"[ThetaHarvest][FS] trade_open write failed: {_e}")
+
+    def _record_trade_open_sprint9(
+        self,
+        ticker: str,
+        decision: dict,
+        signal,
+        dte: int,
+        pos: dict,
+        vix,
+        vvix,
+        decision_id: Optional[str] = None,
+        llm_confidence_hint: int = 0,
+    ) -> Optional[str]:
+        """Sprint 9: lazy-init TradeLogger y registrar OPEN.
+
+        Decision_source heurística: si `llm_confidence_hint > 0` significa
+        que el LLM aportó hints al spread → LLM_OVERRIDE/LLM. Si no,
+        RULE_BASED. Granularidad HAIKU vs SONNET queda para Sprint 9.1
+        cuando el LLM Engine devuelva esa info.
+        """
+        if self._trade_logger is None:
+            try:
+                self._trade_logger = TradeLogger(
+                    project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent"),
+                    bot_revision=os.environ.get("K_REVISION", "unknown"),
+                    main_sha=os.environ.get("MAIN_SHA", "unknown"),
+                    kb_version="v1.2",
+                )
+            except Exception as _ie:
+                logger.warning(f"[Sprint9] TradeLogger lazy init failed: {_ie}")
+                return None
+        if llm_confidence_hint and llm_confidence_hint > 0:
+            decision_source = "LLM"
+        else:
+            decision_source = "RULE_BASED"
+        decision_meta = {
+            "verdict":              decision.get("verdict"),
+            "confidence":           decision.get("confidence")
+                                    or (llm_confidence_hint if llm_confidence_hint else None),
+            "main_reason":          (decision.get("reason") or decision.get("main_reason") or "")[:300],
+            "layered_path":         decision.get("layered_path"),
+            "tacit_rules_applied": None,    # LLM Engine v0.3 follow-up
+            "similar_case_used":   None,    # LLM Engine v0.3 follow-up
+            "safety_overrides":    [],
+        }
+        setup = {
+            "dte":                       dte,
+            "spread_type":               signal.spread_type,
+            "short_strike":              signal.short_strike,
+            "long_strike":               signal.long_strike,
+            "spread_width":              abs(signal.long_strike - signal.short_strike),
+            "short_delta":               signal.short_delta,
+            "credit_received_usd":       signal.net_credit,
+            "contracts":                 pos.get("contracts", 1),
+            "vix_at_open":               vix,
+            "vvix_at_open":              vvix,
+            "delta":                     pos.get("delta"),
+            "gamma":                     pos.get("gamma"),
+            "theta":                     pos.get("theta"),
+            "vega":                      pos.get("vega"),
+            "tranche_id":                signal.tranche_id,
+            "tranche_target":            signal.tranche_target,
+        }
+        return self._trade_logger.record_trade_open(
+            ticker=ticker,
+            decision_source=decision_source,
+            decision_meta=decision_meta,
+            setup=setup,
+            decision_id=decision_id,
+        )
 
     def _log_theta_trade_close(self, trade_id: str, exit_payload: dict) -> None:
         """Actualiza doc existente del trade con status=CLOSED + campos exit."""
