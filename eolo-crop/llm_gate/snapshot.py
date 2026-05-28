@@ -331,7 +331,27 @@ def build_market_snapshot_from_crop(
 
 
 def _apply_2m_defaults(snapshot: dict, price: float) -> None:
-    """Defaults para indicators 2m cuando buffer insuficiente."""
+    """Defaults intencionales 2m — comportamiento de "ventana parcial" (tech debt #21).
+
+    CUÁNDO se llama: el CandleBuffer no tiene suficientes 2-min candles para
+    indicators con look-back >= 14 bars (RSI/ATR). En cold start del bot esto
+    puede tardar ~28 min de market time en saturar. NO es un error, es la
+    fase warm-up legítima del stream feed.
+
+    QUÉ devuelve: neutrales que NO sesgan la decisión del LLM ni del
+    rule-based downstream:
+      - RSI=50 (zona neutra, ni overbought ni oversold)
+      - ATR=0 (señala "no volatility info" → consumers que dividen por ATR
+        deben guardarse contra 0)
+      - EMA_9 / EMA_21 / VWAP / VWAP_bands = price actual (la "mejor
+        aproximación" sin histórico es el precio spot)
+      - bvp_pct / svp_pct = 50 (volume profile balanced)
+      - volume_current_bar / volume_avg_20bar = 0
+
+    CUÁNDO INDICA BUG: si el buffer tiene >100 candles y aún caemos aquí,
+    es signo de que `_resample_to_df` retornó None — investigar el path
+    de normalize/push antes de aceptar el default.
+    """
     snapshot["rsi_2m"] = _RSI_NEUTRAL
     snapshot["atr_2m"] = 0.0
     snapshot["ema_9_2m"] = price
@@ -348,7 +368,22 @@ def _apply_2m_defaults(snapshot: dict, price: float) -> None:
 
 
 def _apply_15m_defaults(snapshot: dict) -> None:
-    """Defaults para indicators 15m cuando buffer insuficiente."""
+    """Defaults intencionales 15m — comportamiento de "ventana parcial" (tech debt #21).
+
+    CUÁNDO se llama: el resample 15m del CandleBuffer (1-min → 15-min) no
+    cubre los 15 bars mínimos para RSI/ATR ni los 30 para MACD. Como cada
+    bar de 15-min requiere 15 candles 1-min consecutivas, el warm-up es más
+    largo que el 2m (~7.5h de market time en cold start). NO es un error.
+
+    QUÉ devuelve: defaults neutrales = 0.0 para EMA/MACD y 50 para RSI.
+    A diferencia de `_apply_2m_defaults`, NO usamos `price` como aproximación
+    para EMA_9 / EMA_21 — el LLM/rule-based downstream debe detectar la
+    diferencia (ema=0 → flag "indicators no disponibles") y proceder con
+    cautela en lugar de tratar "ema = price" como señal alcista.
+
+    CUÁNDO INDICA BUG: ver `_apply_2m_defaults` — buffer poblado pero
+    resample falla = path de normalize/push roto.
+    """
     snapshot["rsi_15m"] = _RSI_NEUTRAL
     snapshot["atr_15m"] = 0.0
     snapshot["ema_9_15m"] = 0.0
