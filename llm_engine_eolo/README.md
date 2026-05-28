@@ -4,10 +4,11 @@ Servicio LLM que toma decisiones de trading de Theta Harvest basadas en el Knowl
 
 ## 📋 Estado del proyecto
 
-- **Versión:** 0.1.0
+- **Versión:** 0.2.0
 - **Modo:** Paper Trading EXCLUSIVAMENTE
-- **Modelo:** Claude Sonnet 4.6 (`claude-sonnet-4-5-20250929`)
-- **KB cargado:** v0.9 — 6 casos + 43 reglas (2 axiomas, 1 prohibitiva, 6 maestras, 6 protocolo, 28 tácticas)
+- **Modelo principal:** Claude Sonnet 4.6 (`claude-sonnet-4-5-20250929`) en `/decide`
+- **Pre-filtro layered:** Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) en `/pre_decide`
+- **KB cargado:** v1.2 — 6 casos + 61 reglas (2 axiomas, 5 prohibitivas, 11 maestras, 6 protocolo, 13 tactical_plus, 24 tácticas)
 
 ## 🏗️ Arquitectura
 
@@ -44,6 +45,7 @@ llm_engine_eolo/
 │   ├── market_snapshot.py            # Pydantic model + formatter
 │   ├── prompt_builder.py             # System + user prompts
 │   ├── decision_parser.py            # JSON parsing + safety rails
+│   ├── haiku_prefilter.py            # Pre-filtro layered (v0.2)
 │   └── market_data_collector.py      # Indicadores técnicos (referencia)
 ├── kb/
 │   └── EOLO_ThetaHarvest_v1.2.xlsx   # Knowledge Base de Juan
@@ -76,12 +78,15 @@ python tests/test_llm_engine.py
 
 Debería mostrar:
 ```
-✅ KB loaded: {'total_rules': 43, ...}
+✅ KB v1.1 loaded: {'total_rules': 61, ...}
 ✅ VIX spike override: [...]
 ✅ Low confidence override
 ✅ IC sequential accepted
 ✅ Markdown wrapper parsed correctly
 ✅ Prompts built: system=... chars, user=... chars
+OK Haiku prompts built: system=... chars, user=... chars
+OK PreDecision parser OK
+OK PreDecision parser fallback (should_call_full=True)
 🎉 All tests passed!
 ```
 
@@ -148,13 +153,14 @@ Stats del KB.
 
 ```json
 {
-  "total_rules": 43,
+  "total_rules": 61,
   "rules_by_tier": {
     "AXIOMA": 2,
-    "PROHIBITIVA": 1,
-    "MAESTRA": 6,
+    "PROHIBITIVA": 5,
+    "MAESTRA": 11,
     "PROTOCOLO": 6,
-    "TACTICAL": 28
+    "TACTICAL_PLUS": 13,
+    "TACTICAL": 24
   },
   "total_cases": 6,
   "gold_cases": 0
@@ -211,6 +217,50 @@ Endpoint principal. Recibe `MarketSnapshot`, retorna `Decision`.
 }
 ```
 
+### `POST /pre_decide`
+
+Pre-filtro con Claude Haiku 4.5. Recibe el mismo `MarketSnapshot` que `/decide` y decide si vale la pena llamar a Sonnet, o si la respuesta obvia es NO_TRADE.
+
+**Use case**: reducir 60-70% de calls a Sonnet filtrando setups que el pre-filtro ya identifica como WAIT obvios (VIX spike, macro events en <=1 día, fuera de ventana 9:30-12:00 ET, prohibitivas activas).
+
+**Response:**
+```json
+{
+  "should_call_full": false,
+  "reason": "VIX velocity 30m +7.50% > +5% threshold → PROHIBITIVA TR-Juan-058 triggered. HIGH_SPIKING_UP regime = defensive mode. NO_TRADE.",
+  "haiku_confidence": 9,
+  "meta": {
+    "request_id": "pre_...",
+    "latency_ms": 1434,
+    "model": "claude-haiku-4-5-20251001"
+  }
+}
+```
+
+## 🪶 Layered approach (v0.2)
+
+Flujo recomendado para clientes (eolo-crop):
+
+```
+1. Build MarketSnapshot
+2. POST /pre_decide → PreDecision (~1.5s, ~$0.003)
+3. Si should_call_full=False AND haiku_confidence >= 7 → skip Sonnet, WAIT (NO_TRADE)
+4. Si should_call_full=True OR haiku_confidence < 7 → POST /decide (Sonnet, ~17s, ~$0.02)
+5. Sonnet decide verdict + strikes + deltas
+```
+
+**Threshold de confidence 7** = decisión del cliente, no del servidor. Política conservadora: cuando Haiku duda, dejamos que Sonnet decida.
+
+**Fallback policy en `/pre_decide`**: cualquier error (prompt build, API timeout, parse fail) retorna `should_call_full=True` — el cliente seguirá a Sonnet, garantizando que ningún error en Haiku haga perder oportunidades.
+
+**Comparativa Haiku 4.5 vs Sonnet 4.6** (medido en smoke v0.2):
+
+| Métrica | Haiku 4.5 | Sonnet 4.6 |
+|---|---|---|
+| Latencia típica | 1.4-1.9s | 14-18s |
+| Cost por call | ~$0.003 | ~$0.02 |
+| System prompt | ~2050 chars (AXIOMAS + PROHIBITIVAS only) | ~9615 chars (KB completa + cases) |
+
 ## 🛡️ Safety Rails
 
 El parser aplica overrides automáticos:
@@ -235,6 +285,7 @@ El parser aplica overrides automáticos:
 - ✅ Deploy a Cloud Run
 
 ### v0.2 (próximas 2 semanas)
+- ✅ Layered architecture (Haiku pre-filter + Sonnet decisions)
 - [ ] Integración real con schwab-py en Eolo Crop
 - [ ] 30+ trades en paper money loggeados
 - [ ] Dashboard simple para revisar decisiones
@@ -249,7 +300,6 @@ El parser aplica overrides automáticos:
 ### v1.0 (3 meses)
 - [ ] Move to production con safeguards
 - [ ] Multi-ticker support (QQQ, IWM)
-- [ ] Layered architecture (Haiku pre-filter + Sonnet decisions)
 
 ## 🐛 Troubleshooting
 

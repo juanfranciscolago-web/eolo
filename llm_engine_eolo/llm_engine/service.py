@@ -18,6 +18,9 @@ from llm_engine.kb_loader import KBLoader
 from llm_engine.market_snapshot import MarketSnapshot
 from llm_engine.prompt_builder import build_prompts
 from llm_engine.decision_parser import safe_decision_pipeline, Decision
+from llm_engine.haiku_prefilter import (
+    build_haiku_prompts, parse_pre_decision, PreDecision
+)
 
 # Logging setup
 logging.basicConfig(
@@ -40,6 +43,7 @@ async def lifespan(app: FastAPI):
     CONFIG = {
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "LLM_MODEL": os.getenv("LLM_MODEL", "claude-sonnet-4-5-20250929"),
+        "HAIKU_MODEL": os.getenv("HAIKU_MODEL", "claude-haiku-4-5-20251001"),
         "LLM_MAX_TOKENS": int(os.getenv("LLM_MAX_TOKENS", "4096")),
         "LLM_TEMPERATURE": float(os.getenv("LLM_TEMPERATURE", "0.3")),
         "KB_PATH": os.getenv("KB_PATH", "/app/kb/EOLO_ThetaHarvest_v1.2.xlsx"),
@@ -170,6 +174,81 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
         "latency_ms": total_latency_ms,
         "model": CONFIG["LLM_MODEL"],
         "kb_version": "v1.2",
+    }
+    return result
+
+
+@app.post("/pre_decide")
+async def pre_decide(snapshot: MarketSnapshot, request: Request) -> dict:
+    """
+    Pre-filter con Haiku 4.5. Decide si vale la pena llamar a /decide (Sonnet).
+
+    Output:
+        {
+          "should_call_full": bool,
+          "reason": str,
+          "haiku_confidence": int,
+          "meta": {request_id, latency_ms, model}
+        }
+
+    Fallback policy: cualquier error (prompt build, API, parse) -> should_call_full=True
+    (mejor pasar a Sonnet que perder oportunidad).
+    """
+    start_time = time.time()
+    request_id = f"pre_{int(start_time * 1000)}"
+    logger.info(f"[{request_id}] Pre-decide: {snapshot.ticker} @ ${snapshot.price}")
+
+    try:
+        system_prompt, user_prompt = build_haiku_prompts(kb_loader, snapshot)
+    except Exception as e:
+        logger.error(f"[{request_id}] Haiku prompt build failed: {e}")
+        return {
+            "should_call_full": True,
+            "reason": f"haiku_prompt_build_error: {str(e)[:80]}",
+            "haiku_confidence": 0,
+            "meta": {"request_id": request_id, "fallback": True},
+        }
+
+    try:
+        response = anthropic_client.messages.create(
+            model=CONFIG["HAIKU_MODEL"],
+            max_tokens=512,
+            temperature=0.2,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}]
+        )
+        raw_output = response.content[0].text
+        latency_ms = int((time.time() - start_time) * 1000)
+        logger.info(f"[{request_id}] Haiku response in {latency_ms}ms")
+
+    except (APITimeoutError, APIError) as e:
+        logger.error(f"[{request_id}] Haiku API error: {e}")
+        return {
+            "should_call_full": True,
+            "reason": f"haiku_api_error: {str(e)[:80]}",
+            "haiku_confidence": 0,
+            "meta": {"request_id": request_id, "fallback": True},
+        }
+
+    pre_decision = parse_pre_decision(raw_output)
+    total_latency_ms = int((time.time() - start_time) * 1000)
+
+    log_entry = {
+        "request_id": request_id,
+        "ticker": snapshot.ticker,
+        "should_call_full": pre_decision.should_call_full,
+        "reason": pre_decision.reason,
+        "haiku_confidence": pre_decision.haiku_confidence,
+        "latency_ms": total_latency_ms,
+        "model": CONFIG["HAIKU_MODEL"],
+    }
+    logger.info(f"[{request_id}] PRE_DECISION_LOG: {json.dumps(log_entry)}")
+
+    result = pre_decision.model_dump()
+    result["meta"] = {
+        "request_id": request_id,
+        "latency_ms": total_latency_ms,
+        "model": CONFIG["HAIKU_MODEL"],
     }
     return result
 

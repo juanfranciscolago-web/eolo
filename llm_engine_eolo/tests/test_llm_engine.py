@@ -243,6 +243,48 @@ def test_prompt_building():
     print(f"✅ Prompts built: system={len(system)} chars, user={len(user)} chars")
 
 
+def test_haiku_prompts_build():
+    """build_haiku_prompts arma system + user prompts cortos."""
+    from llm_engine.haiku_prefilter import build_haiku_prompts
+    kb = KBLoader(KB_PATH)
+    snapshot = make_test_snapshot()
+    system, user = build_haiku_prompts(kb, snapshot)
+    assert "AXIOMAS" in system
+    assert "PROHIBITIVAS" in system
+    assert "should_call_full" in system
+    assert "SPY" in user
+    assert "VIX" in user
+    assert len(system) < 5000, f"Haiku system prompt too long: {len(system)} chars"
+    print(f"OK Haiku prompts built: system={len(system)} chars, user={len(user)} chars")
+
+
+def test_pre_decision_parser_ok():
+    """parse_pre_decision parsea JSON valido."""
+    from llm_engine.haiku_prefilter import parse_pre_decision, PreDecision
+    raw = '''```json
+{
+  "should_call_full": false,
+  "reason": "VIX velocity > 5% (spike intraday)",
+  "haiku_confidence": 9
+}
+```'''
+    pd = parse_pre_decision(raw)
+    assert isinstance(pd, PreDecision)
+    assert pd.should_call_full is False
+    assert pd.haiku_confidence == 9
+    print(f"OK PreDecision parser OK")
+
+
+def test_pre_decision_parser_fallback():
+    """parse_pre_decision fallback a should_call_full=True en error."""
+    from llm_engine.haiku_prefilter import parse_pre_decision
+    raw = "this is not json at all"
+    pd = parse_pre_decision(raw)
+    assert pd.should_call_full is True, "fallback DEBE ser should_call_full=True"
+    assert pd.haiku_confidence == 0
+    print(f"OK PreDecision parser fallback (should_call_full=True)")
+
+
 if __name__ == "__main__":
     test_kb_loads()
     test_no_ghost_rules()
@@ -252,4 +294,7 @@ if __name__ == "__main__":
     test_safety_rail_no_iron_condor_directo()
     test_decision_parser_with_markdown()
     test_prompt_building()
+    test_haiku_prompts_build()
+    test_pre_decision_parser_ok()
+    test_pre_decision_parser_fallback()
     print("\n🎉 All tests passed!")
