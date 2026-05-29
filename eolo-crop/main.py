@@ -79,6 +79,10 @@ RANGE_BOUNDS_EXACT = {
     "strategy_params.llm_engine.haiku_threshold":             (1, 10, int),       # confidence 1-10
     "strategy_params.llm_engine.cache_ttl_seconds":           (5.0, 300.0, float), # 5s a 5min
     "strategy_params.llm_engine.spread_override_threshold":   (1, 10, int),       # confidence 1-10
+    # Sprint 15 — trading window config editable. Tipo (regex_pattern, str).
+    "strategy_params.exits_advanced.entry_window_start_et":   (r"^\d{2}:\d{2}$", str),
+    "strategy_params.exits_advanced.entry_window_end_et":     (r"^\d{2}:\d{2}$", str),
+    "strategy_params.exits_advanced.auto_close_et":           (r"^\d{2}:\d{2}$", str),
 }
 
 
@@ -88,7 +92,28 @@ def _validate_value_range(path: str, value):
     """
     # Strict exact match primero
     if path in RANGE_BOUNDS_EXACT:
-        lo, hi, expected_type = RANGE_BOUNDS_EXACT[path]
+        entry = RANGE_BOUNDS_EXACT[path]
+        # Sprint 15: tuple-2 (regex_pattern, str) vs tuple-3 (lo, hi, type)
+        if len(entry) == 2:
+            pattern, expected_type = entry
+            if expected_type is str:
+                if not isinstance(value, str):
+                    return False, f"expected string, got {type(value).__name__}"
+                import re as _re
+                if not _re.match(pattern, value):
+                    return False, f"value {value!r} doesn't match pattern {pattern!r}"
+                # Validación semántica HH:MM legal (00:00..23:59)
+                try:
+                    hh, mm = value.split(":")
+                    hh_i, mm_i = int(hh), int(mm)
+                    if not (0 <= hh_i <= 23 and 0 <= mm_i <= 59):
+                        return False, f"value {value!r} not a valid time (HH 0-23, MM 0-59)"
+                except (ValueError, AttributeError):
+                    return False, f"value {value!r} not parseable as HH:MM"
+                return True, None
+            # Tuple-2 sin str type → caer al path no-matchea
+            return True, None
+        lo, hi, expected_type = entry
         if expected_type is int:
             if isinstance(value, bool) or not isinstance(value, int):
                 return False, f"expected int, got {type(value).__name__}"

@@ -15,8 +15,37 @@ ET = ZoneInfo("America/New_York")
 # Pre-filter thresholds
 _VIX_SPIKE_VEL_PCT = 5.0
 _MACRO_EVENT_BLOCK_DAYS = 1
-_ENTRY_WINDOW_START = time(9, 30)
-_ENTRY_WINDOW_END = time(12, 0)
+# Sprint 15: defaults overridables vía strategy_overrides.
+_ENTRY_WINDOW_START_DEFAULT = time(9, 30)
+_ENTRY_WINDOW_END_DEFAULT = time(12, 0)
+
+
+def _parse_hhmm(s: str) -> Optional[time]:
+    """Sprint 15: parse "HH:MM" → datetime.time. Returns None si inválido."""
+    try:
+        hh, mm = s.split(":")
+        return time(int(hh), int(mm))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _get_entry_window(bot_instance=None) -> Tuple[time, time]:
+    """Sprint 15: lee override entry_window_{start,end}_et de
+    bot_instance._strategy_overrides si existe, sino default 09:30-12:00 ET.
+
+    Defensivo: cualquier fallo retorna defaults.
+    """
+    if bot_instance is not None and hasattr(bot_instance, "_strategy_overrides"):
+        overrides = getattr(bot_instance, "_strategy_overrides", {}) or {}
+        start_str = overrides.get("strategy_params.exits_advanced.entry_window_start_et")
+        end_str = overrides.get("strategy_params.exits_advanced.entry_window_end_et")
+        start = _parse_hhmm(start_str) if start_str else None
+        end = _parse_hhmm(end_str) if end_str else None
+        return (
+            start if start else _ENTRY_WINDOW_START_DEFAULT,
+            end if end else _ENTRY_WINDOW_END_DEFAULT,
+        )
+    return _ENTRY_WINDOW_START_DEFAULT, _ENTRY_WINDOW_END_DEFAULT
 
 
 def should_call_llm(
@@ -25,6 +54,7 @@ def should_call_llm(
     max_positions: int,
     current_positions_count: int,
     now_et: Optional[datetime] = None,
+    bot_instance: Optional[Any] = None,
 ) -> Tuple[bool, str]:
     """
     Pre-filter para decidir si llamar al LLM Engine.
@@ -57,7 +87,9 @@ def should_call_llm(
     now_et = now_et or datetime.now(ET)
     now_time = now_et.time()
     has_positions = snapshot.get("has_open_positions", False)
-    is_entry_window = _ENTRY_WINDOW_START <= now_time <= _ENTRY_WINDOW_END
+    # Sprint 15: ventana editable vía strategy_overrides (con fallback a default)
+    _window_start, _window_end = _get_entry_window(bot_instance)
+    is_entry_window = _window_start <= now_time <= _window_end
 
     # Rule 2: ventana horaria — permitir fuera de ventana SI hay open positions (eval exits)
     if not is_entry_window and not has_positions:

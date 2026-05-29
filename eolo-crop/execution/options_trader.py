@@ -39,6 +39,7 @@ import re
 import time
 from datetime import datetime, timezone
 from typing import Literal, Optional
+from zoneinfo import ZoneInfo
 from loguru import logger
 
 try:
@@ -152,7 +153,9 @@ def _log_paper_trade(action: str, symbol: str, ticker: str, contracts: int,
         fill_price           → precio de llenado (para slippage live)
     """
     order_id  = f"PAPER-{int(time.time() * 1000) % 10_000_000:07d}"
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Sprint 15 (Fase E): timestamp en ET con sufijo explícito. Antes era naive
+    # (container TZ = UTC) y el dashboard lo mostraba como si fuera ET → ~4h shift.
+    timestamp = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d %H:%M:%S ET")
     price_str = f"{limit:.2f}" if limit else "MARKET"
     total_est = round((limit or 0) * contracts * 100, 2)
 
