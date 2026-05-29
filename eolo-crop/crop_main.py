@@ -1290,6 +1290,7 @@ class CropBotTheta:
                         tickers_enabled=self._llm_tickers_enabled,
                         max_positions=self._llm_max_positions,
                         current_positions_count=len(self._theta_positions),
+                        bot_instance=self,  # Sprint 15: ventana editable
                     )
                     if not should_call:
                         # Sprint 11: tag por razón. `reason` viene con sufijos
@@ -3730,6 +3731,23 @@ class CropBotTheta:
                     self._vix_velocity_buffer = deque(self._vix_velocity_buffer, maxlen=new_samples)
             except (TypeError, ValueError):
                 pass
+
+        # Sprint 15: auto_close_et override (rebuilds self._schedule.auto_close).
+        # /api/config también puede setearlo; el override aquí gana porque corre
+        # AL FINAL de cada _poll_settings cycle (línea ~2767).
+        key = "strategy_params.exits_advanced.auto_close_et"
+        if key in overrides:
+            val = overrides[key]
+            if isinstance(val, str):
+                try:
+                    import dataclasses as _dc
+                    from datetime import time as _time
+                    hh, mm = val.split(":")
+                    new_close = _time(int(hh), int(mm))
+                    if self._schedule.auto_close != new_close:
+                        self._schedule = _dc.replace(self._schedule, auto_close=new_close)
+                except (TypeError, ValueError, AttributeError):
+                    pass
 
         # Sprint S3.2: delta_by_risk overrides — bracket notation
         # "strategy_params.delta_by_risk.<LEVEL>[<idx>]" (parse sin regex)
