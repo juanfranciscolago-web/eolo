@@ -963,6 +963,8 @@ class CropBotTheta:
         Calcula la caída de SPY en los últimos 30 minutos como %.
         Retorna 0.0 si no hay datos suficientes.
         Positivo = caída (ej. 0.9 = cayó 0.9%).
+
+        Sprint 14: sanity guards contra anchor stale (Bug latente 28-may 12:03 ET).
         """
         import time as _time
         now_ts  = _time.time()
@@ -978,14 +980,43 @@ class CropBotTheta:
         if spy_price > 0:
             self._spy_price_history.append((now_ts, spy_price))
 
+        # Sprint 14: mínimo de samples para evitar anchor por 1 punto stale
+        MIN_HISTORY_POINTS = 5  # ~2.5 min con polling 30s
+        if len(self._spy_price_history) < MIN_HISTORY_POINTS:
+            logger.debug(
+                f"[ThetaHarvest] SPY drop: history insuficiente "
+                f"({len(self._spy_price_history)} < {MIN_HISTORY_POINTS})"
+            )
+            return 0.0
+
         # Buscar precio hace 30 min
         older = [(ts, px) for ts, px in self._spy_price_history if ts <= cutoff]
         if not older or spy_price <= 0:
             return 0.0
         price_30m_ago = older[-1][1]
         if price_30m_ago <= 0:
+            logger.warning(
+                f"[ThetaHarvest] SPY drop: anchor inválido "
+                f"30m_ago=${price_30m_ago:.2f} now=${spy_price:.2f}"
+            )
             return 0.0
         drop_pct = (price_30m_ago - spy_price) / price_30m_ago * 100
+
+        # Sprint 14: sanity check — drops absurdos (> circuit breaker) descartados
+        SANITY_MAX_DROP_PCT = 10.0
+        if abs(drop_pct) > SANITY_MAX_DROP_PCT:
+            logger.warning(
+                f"[ThetaHarvest] SPY drop anchor sospechoso: "
+                f"30m_ago=${price_30m_ago:.2f} now=${spy_price:.2f} "
+                f"drop={drop_pct:.2f}% > sanity {SANITY_MAX_DROP_PCT}% — descartado"
+            )
+            return 0.0
+
+        logger.debug(
+            f"[ThetaHarvest] SPY drop calc: "
+            f"30m_ago=${price_30m_ago:.2f} now=${spy_price:.2f} "
+            f"drop={drop_pct:.2f}% (samples={len(self._spy_price_history)})"
+        )
         return max(0.0, drop_pct)  # positivo = caída, negativo no nos interesa
 
     def _theta_init_slots(self, ticker: str, today: str):
