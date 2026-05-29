@@ -1687,6 +1687,16 @@ class CropBotTheta:
                     dte_slot    = (pos.get("dte_slot") or pos.get("dte") or "?")
                     spread_type = pos.get("spread_type", "") or ""
                     exit_reason = exit_reason or "UNKNOWN"
+                    # Sprint 13: si exit es mark-based (STOP_LOSS/PROFIT) y los marks
+                    # no eran fiables, abortar este ciclo y reintentar en el próximo.
+                    # evaluate_open_position ya gatea con _are_marks_reliable, pero
+                    # mantenemos defense-in-depth: _cur_val_valid se setea en :1618.
+                    if exit_reason in ("STOP_LOSS", "PROFIT") and not pos.get("_cur_val_valid"):
+                        logger.debug(
+                            f"[ThetaHarvest] {pos_ticker} close {exit_reason} aborted — "
+                            f"_cur_val_valid=False, retry next cycle"
+                        )
+                        continue
                     close_decision = {
                         "action":       "CLOSE_SPREAD",
                         "ticker":       pos_ticker,
