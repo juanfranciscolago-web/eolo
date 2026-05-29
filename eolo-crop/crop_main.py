@@ -110,6 +110,8 @@ from eolo_common.trading_hours import (
 # ── LLM Engine integration (4.B.2) ──────────────────────────────
 from llm_gate import LLMGateClient, DecisionCache
 from llm_gate.snapshot import build_market_snapshot_from_crop
+from llm_gate.trade_logger import TradeLogger  # Sprint 9
+from llm_gate.metrics import LLMMetrics  # Sprint 11
 from llm_gate.integration import (
     should_call_llm, llm_decision_to_scan_params, decision_indicates_exit,
 )
@@ -376,6 +378,11 @@ class CropBotTheta:
         self._llm_spread_override_threshold: int = 8
         self._llm_client: Optional[LLMGateClient] = None  # lazy init
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
+        # Sprint 9: TradeLogger lazy init en el primer record_open.
+        self._trade_logger: Optional[TradeLogger] = None
+        # Sprint 11: LLM metrics eager init para tener stats expuestos desde
+        # el boot — no requiere I/O ni conexiones externas.
+        self._llm_metrics: LLMMetrics = LLMMetrics()
 
 
         # Módulos
@@ -1254,6 +1261,17 @@ class CropBotTheta:
                         current_positions_count=len(self._theta_positions),
                     )
                     if not should_call:
+                        # Sprint 11: tag por razón. `reason` viene con sufijos
+                        # variables (ej. "outside_entry_window_no_positions
+                        # (15:25 ET)") — quedarnos con la primera palabra para
+                        # agrupar en el dict de stats.
+                        try:
+                            self._llm_metrics.record_pre_filter_skip(
+                                (reason or "unspecified").split()[0]
+                                if (reason or "").strip() else "unspecified"
+                            )
+                        except Exception:
+                            pass
                         logger.info(f"[llm] {ticker} pre-filter skip: {reason}")
                         return
 
@@ -1268,8 +1286,42 @@ class CropBotTheta:
                         decision = cached
                         logger.info(f"[llm] {ticker} cache HIT verdict={decision.get('verdict')}")
                     else:
+                        # Sprint 11: cronometrar consult() + record_call.
+                        _llm_t0 = time.time()
                         decision = await asyncio.to_thread(self._llm_client.consult, snapshot)
+                        _llm_latency_ms = (time.time() - _llm_t0) * 1000.0
                         self._llm_cache.put(snapshot, decision, chain_ts=chain_ts)
+                        try:
+                            # decision_source: aproximación desde layered_path
+                            # (haiku_skip / haiku_pass / haiku_low_conf). Si el
+                            # layered_path es "haiku_skip" no llegamos aquí
+                            # (consult devuelve el dict de haiku skip pero igual
+                            # cuenta como llamada). Detectamos sonnet por defecto.
+                            _layered = (decision.get("layered_path") or "").lower()
+                            if _layered.startswith("haiku_skip"):
+                                _source = "LLM_HAIKU_SKIP"
+                                _model  = "haiku"
+                            elif _layered in ("haiku_pass", "haiku_low_conf"):
+                                _source = "LLM_SONNET_CONSULT"
+                                _model  = "sonnet"
+                            else:
+                                _source = "LLM_UNKNOWN"
+                                _model  = "sonnet"
+                            # tokens: el cliente actual no los expone explícitamente.
+                            # Dejamos 0 hasta que decision.meta los incluya. La
+                            # estimación de costo quedará en 0 por ahora — fix
+                            # cuando el engine devuelva usage stats.
+                            _meta = decision.get("meta") or {}
+                            self._llm_metrics.record_call(
+                                verdict=decision.get("verdict"),
+                                latency_ms=_llm_latency_ms,
+                                decision_source=_source,
+                                input_tokens=int(_meta.get("input_tokens") or 0),
+                                output_tokens=int(_meta.get("output_tokens") or 0),
+                                model=_model,
+                            )
+                        except Exception as _me:
+                            logger.warning(f"[llm] metrics record_call failed: {_me}")
 
                     verdict = decision.get("verdict", "WAIT")
                     confidence = decision.get("confidence", 0)
@@ -1452,6 +1504,25 @@ class CropBotTheta:
                             "theta":            pos.get("theta"),
                             "vega":             pos.get("vega"),
                         })
+                        # Sprint 9: registro estructurado a collection nueva
+                        # `eolo-crop-trades`. Aditivo — coexiste con el legacy
+                        # `eolo-crop-theta-trades`.
+                        try:
+                            sprint9_id = self._record_trade_open_sprint9(
+                                ticker=ticker,
+                                decision=decision,
+                                signal=signal,
+                                dte=dte,
+                                pos=pos,
+                                vix=vix,
+                                vvix=vvix,
+                                decision_id=decision_id,
+                                llm_confidence_hint=llm_confidence_hint,
+                            )
+                            if sprint9_id:
+                                pos["sprint9_trade_id"] = sprint9_id
+                        except Exception as _s9e:
+                            logger.warning(f"[Sprint9] record_trade_open failed: {_s9e}")
                         _decision_log.setdefault("executed_trades", []).append(trade_id)
                         opened_any = True
                         # Sumar crédito total del día
@@ -1670,6 +1741,24 @@ class CropBotTheta:
                                 self._log_theta_trade_close(_trade_id_close, _exit_payload)
                             except Exception as _fs_e:
                                 logger.warning(f"[ThetaHarvest][FS] trade_close prepare failed: {_fs_e}")
+                            # Sprint 9: registrar outcome en collection nueva
+                            try:
+                                _s9_id = pos.get("sprint9_trade_id")
+                                if _s9_id and self._trade_logger is not None:
+                                    _outcome = {
+                                        "pnl_pct":            _exit_payload.get("pnl_pct"),
+                                        "pnl_usd":            _exit_payload.get("pnl"),
+                                        "exit_reason":        exit_reason,
+                                        "hold_time_sec":      int(
+                                            time.time() - (pos.get("opened_at") or time.time())
+                                        ),
+                                        "exit_credit_paid_usd": _exit_payload.get("exit_credit"),
+                                        "vix_at_exit":        vix,
+                                        "safety_overrides":   [],
+                                    }
+                                    self._trade_logger.record_trade_close(_s9_id, _outcome)
+                            except Exception as _s9ce:
+                                logger.warning(f"[Sprint9] record_trade_close failed: {_s9ce}")
 
                         # Liberar el DTE slot solo cuando TODOS los tranches del
                         # mismo DTE están cerrados. T0 cierra antes (35% target)
@@ -3725,6 +3814,81 @@ class CropBotTheta:
               })
         except Exception as _e:
             logger.warning(f"[ThetaHarvest][FS] trade_open write failed: {_e}")
+
+    def _record_trade_open_sprint9(
+        self,
+        ticker: str,
+        decision: dict,
+        signal,
+        dte: int,
+        pos: dict,
+        vix,
+        vvix,
+        decision_id: Optional[str] = None,
+        llm_confidence_hint: int = 0,
+    ) -> Optional[str]:
+        """Sprint 9: lazy-init TradeLogger y registrar OPEN.
+
+        Decision_source heurística: si `llm_confidence_hint > 0` significa
+        que el LLM aportó hints al spread → LLM_OVERRIDE/LLM. Si no,
+        RULE_BASED. Granularidad HAIKU vs SONNET queda para Sprint 9.1
+        cuando el LLM Engine devuelva esa info.
+        """
+        if self._trade_logger is None:
+            try:
+                self._trade_logger = TradeLogger(
+                    project_id=os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent"),
+                    bot_revision=os.environ.get("K_REVISION", "unknown"),
+                    main_sha=os.environ.get("MAIN_SHA", "unknown"),
+                    kb_version="v1.2",
+                )
+            except Exception as _ie:
+                logger.warning(f"[Sprint9] TradeLogger lazy init failed: {_ie}")
+                return None
+        if llm_confidence_hint and llm_confidence_hint > 0:
+            decision_source = "LLM"
+        else:
+            decision_source = "RULE_BASED"
+        decision_meta = {
+            "verdict":              decision.get("verdict"),
+            "confidence":           decision.get("confidence")
+                                    or (llm_confidence_hint if llm_confidence_hint else None),
+            "main_reason":          (decision.get("reason") or decision.get("main_reason") or "")[:300],
+            "layered_path":         decision.get("layered_path"),
+            # Sprint 10: extraer del response del LLM Engine. El cliente
+            # preserva el dict tal cual viene del engine, que ya emite estos
+            # fields según Decision pydantic model (decision_parser.py:39, 43).
+            # Defensive contra responses incompletas: `or []` para listas,
+            # default None preservado para Optional.
+            "tacit_rules_applied": decision.get("tacit_rules_applied") or [],
+            "similar_case_used":   decision.get("similar_case_used"),
+            "safety_overrides":    decision.get("safety_overrides") or [],
+        }
+        setup = {
+            "dte":                       dte,
+            "spread_type":               signal.spread_type,
+            "short_strike":              signal.short_strike,
+            "long_strike":               signal.long_strike,
+            "spread_width":              abs(signal.long_strike - signal.short_strike),
+            "short_delta":               signal.short_delta,
+            "credit_received_usd":       signal.net_credit,
+            "contracts":                 pos.get("contracts", 1),
+            "vix_at_open":               vix,
+            "vvix_at_open":              vvix,
+            "delta":                     pos.get("delta"),
+            "gamma":                     pos.get("gamma"),
+            "theta":                     pos.get("theta"),
+            "vega":                      pos.get("vega"),
+            "tranche_id":                signal.tranche_id,
+            "tranche_target":            signal.tranche_target,
+        }
+        return self._trade_logger.record_trade_open(
+            ticker=ticker,
+            decision_source=decision_source,
+            decision_meta=decision_meta,
+            setup=setup,
+            decision_id=decision_id,
+        )
 
     def _log_theta_trade_close(self, trade_id: str, exit_payload: dict) -> None:
         """Actualiza doc existente del trade con status=CLOSED + campos exit."""
