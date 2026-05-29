@@ -111,6 +111,7 @@ from eolo_common.trading_hours import (
 from llm_gate import LLMGateClient, DecisionCache
 from llm_gate.snapshot import build_market_snapshot_from_crop
 from llm_gate.trade_logger import TradeLogger  # Sprint 9
+from llm_gate.metrics import LLMMetrics  # Sprint 11
 from llm_gate.integration import (
     should_call_llm, llm_decision_to_scan_params, decision_indicates_exit,
 )
@@ -379,6 +380,9 @@ class CropBotTheta:
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
         # Sprint 9: TradeLogger lazy init en el primer record_open.
         self._trade_logger: Optional[TradeLogger] = None
+        # Sprint 11: LLM metrics eager init para tener stats expuestos desde
+        # el boot — no requiere I/O ni conexiones externas.
+        self._llm_metrics: LLMMetrics = LLMMetrics()
 
 
         # Módulos
@@ -1257,6 +1261,17 @@ class CropBotTheta:
                         current_positions_count=len(self._theta_positions),
                     )
                     if not should_call:
+                        # Sprint 11: tag por razón. `reason` viene con sufijos
+                        # variables (ej. "outside_entry_window_no_positions
+                        # (15:25 ET)") — quedarnos con la primera palabra para
+                        # agrupar en el dict de stats.
+                        try:
+                            self._llm_metrics.record_pre_filter_skip(
+                                (reason or "unspecified").split()[0]
+                                if (reason or "").strip() else "unspecified"
+                            )
+                        except Exception:
+                            pass
                         logger.info(f"[llm] {ticker} pre-filter skip: {reason}")
                         return
 
@@ -1271,8 +1286,42 @@ class CropBotTheta:
                         decision = cached
                         logger.info(f"[llm] {ticker} cache HIT verdict={decision.get('verdict')}")
                     else:
+                        # Sprint 11: cronometrar consult() + record_call.
+                        _llm_t0 = time.time()
                         decision = await asyncio.to_thread(self._llm_client.consult, snapshot)
+                        _llm_latency_ms = (time.time() - _llm_t0) * 1000.0
                         self._llm_cache.put(snapshot, decision, chain_ts=chain_ts)
+                        try:
+                            # decision_source: aproximación desde layered_path
+                            # (haiku_skip / haiku_pass / haiku_low_conf). Si el
+                            # layered_path es "haiku_skip" no llegamos aquí
+                            # (consult devuelve el dict de haiku skip pero igual
+                            # cuenta como llamada). Detectamos sonnet por defecto.
+                            _layered = (decision.get("layered_path") or "").lower()
+                            if _layered.startswith("haiku_skip"):
+                                _source = "LLM_HAIKU_SKIP"
+                                _model  = "haiku"
+                            elif _layered in ("haiku_pass", "haiku_low_conf"):
+                                _source = "LLM_SONNET_CONSULT"
+                                _model  = "sonnet"
+                            else:
+                                _source = "LLM_UNKNOWN"
+                                _model  = "sonnet"
+                            # tokens: el cliente actual no los expone explícitamente.
+                            # Dejamos 0 hasta que decision.meta los incluya. La
+                            # estimación de costo quedará en 0 por ahora — fix
+                            # cuando el engine devuelva usage stats.
+                            _meta = decision.get("meta") or {}
+                            self._llm_metrics.record_call(
+                                verdict=decision.get("verdict"),
+                                latency_ms=_llm_latency_ms,
+                                decision_source=_source,
+                                input_tokens=int(_meta.get("input_tokens") or 0),
+                                output_tokens=int(_meta.get("output_tokens") or 0),
+                                model=_model,
+                            )
+                        except Exception as _me:
+                            logger.warning(f"[llm] metrics record_call failed: {_me}")
 
                     verdict = decision.get("verdict", "WAIT")
                     confidence = decision.get("confidence", 0)

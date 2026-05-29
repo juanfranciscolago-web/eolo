@@ -771,6 +771,15 @@ def api_state():
         except Exception as ce:
             logger.debug(f"[API /state] Could not read llm_cache stats: {ce}")
 
+        # Sprint 11: LLM operational metrics. Eager-init en CropBotTheta.__init__
+        # → siempre presente con counters en 0 si todavía no hubo actividad.
+        try:
+            llm_metrics = getattr(bot, "_llm_metrics", None)
+            if llm_metrics is not None and hasattr(llm_metrics, "stats"):
+                state.setdefault("stats", {})["llm_metrics"] = llm_metrics.stats()
+        except Exception as me:
+            logger.debug(f"[API /state] Could not read llm_metrics stats: {me}")
+
         return jsonify(state), 200
 
     except Exception as e:
