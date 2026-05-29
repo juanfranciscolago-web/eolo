@@ -487,7 +487,7 @@ def fetch_sector_direction(token: str, ticker: str = "SPY") -> Optional[SectorDi
     top_movers   = []
     for sym, weight in weights.items():
         quote  = (data.get(sym) or {}).get("quote", {})
-        change = quote.get("netPercentChangeInDouble") or quote.get("percentChange") or 0.0
+        change = quote.get("netPercentChange") or quote.get("markPercentChange") or 0.0
         try:
             change = float(change)
         except (TypeError, ValueError):
