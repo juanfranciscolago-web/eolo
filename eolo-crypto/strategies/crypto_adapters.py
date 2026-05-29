@@ -1,4 +1,5 @@
 import importlib
+import inspect
 import os
 import sys
 from datetime import datetime, timezone
@@ -238,19 +239,30 @@ class StrategyRunner:
             logger.warning(f"[STRAT] No pude importar {module_name}: {e}")
             return None
 
-        # Intento 1 (principal): detect_signal(df, ticker) + calculate_indicators
+        # Intento 1 (principal): detect_signal(df) o detect_signal(df, ticker)
+        # B11 (28-may-2026): detectar arity dinámicamente. Algunas strategies V1
+        # aceptan solo (df) — sin esto, el adapter las llama con (df, ticker) y
+        # lanza TypeError silencioso (capturado por except → HOLD permanente,
+        # solo visible en state.last_signals[].reason, no en logs).
+        # Estrategias afectadas pre-B11: bollinger, vwap_rsi (1 arg).
         if hasattr(mod, "detect_signal"):
             detect = mod.detect_signal
             calc   = getattr(mod, "calculate_indicators", None)
-            def wrapper_ds(df, symbol):
+            try:
+                _sig = inspect.signature(detect)
+                _accepts_ticker = len(_sig.parameters) >= 2
+            except (ValueError, TypeError):
+                _accepts_ticker = True  # fail-open: asume 2-arg
+            def wrapper_ds(df, symbol, _detect=detect, _calc=calc,
+                           _accepts_ticker=_accepts_ticker, _name=name):
                 try:
-                    df_local = calc(df.copy()) if calc is not None else df
-                    out = detect(df_local, symbol)
+                    df_local = _calc(df.copy()) if _calc is not None else df
+                    out = _detect(df_local, symbol) if _accepts_ticker else _detect(df_local)
                 except Exception as e:
                     return {"signal": "HOLD",
                             "reason": f"err:{type(e).__name__}:{e}",
-                            "strategy": name}
-                return self._normalize_output(out, name)
+                            "strategy": _name}
+                return self._normalize_output(out, _name)
             return wrapper_ds
 
         # Intento 2: evaluate(df, symbol=None)

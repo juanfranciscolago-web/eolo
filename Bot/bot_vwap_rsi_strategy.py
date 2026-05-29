@@ -41,6 +41,16 @@ def calculate_rsi(df: pd.DataFrame, period: int = RSI_PERIOD) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
+def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
+    """B12 (28-may-2026): wrapper que agrega vwap + rsi para el adapter de crypto.
+    V1 sigue usando calculate_vwap / calculate_rsi directamente en su pipeline analyze().
+    """
+    df = df.copy()
+    df["vwap"] = calculate_vwap(df)
+    df["rsi"]  = calculate_rsi(df)
+    return df
+
+
 # ── Señal ─────────────────────────────────────────────────
 
 def detect_signal(df: pd.DataFrame) -> str:

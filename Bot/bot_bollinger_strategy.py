@@ -30,6 +30,11 @@ def calculate_bollinger(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+# B12 (28-may-2026): alias para el adapter de crypto. V1 sigue usando
+# calculate_bollinger directamente en su pipeline analyze().
+calculate_indicators = calculate_bollinger
+
+
 # ── Señal ─────────────────────────────────────────────────
 
 def detect_signal(df: pd.DataFrame) -> str:
