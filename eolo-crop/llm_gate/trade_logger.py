@@ -29,12 +29,11 @@
 #  problema de telemetría.
 # ============================================================
 import uuid
-import logging
 from datetime import datetime
 from typing import Optional, Dict, Any
 from zoneinfo import ZoneInfo
 
-logger = logging.getLogger(__name__)
+from loguru import logger
 
 FIRESTORE_COLLECTION = "eolo-crop-trades"
 ET = ZoneInfo("America/New_York")
