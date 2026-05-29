@@ -774,6 +774,47 @@ def scan_theta_harvest(
 
 # ── Evaluación de posición abierta ────────────────────────
 
+def _are_marks_reliable(short_c: dict, long_c: dict) -> tuple[bool, str]:
+    """Sprint 13 — Bug #2 guard.
+
+    Retorna (True, "ok") si los marks del chain son confiables para evaluar
+    STOP_LOSS / PROFIT. Si no, retorna (False, reason) y el caller debe
+    saltearse las exit conditions mark-based y reintentar próximo ciclo.
+
+    Casos detectados:
+      - mark missing en cualquier leg (None)
+      - mark explícito en 0 (proxy de quote stale)
+      - ask <= 0 en cualquier leg (no hay offer → no se puede cerrar)
+      - bid/ask spread > 2× mark (iliquidez extrema, mark fantasma)
+
+    Backdrop: el `or 0` después de bid/ask en `evaluate_open_position` (línea ~825)
+    colapsa bid=0.0 a 0 vía short-circuit (0 es falsy). En strikes 0DTE
+    profundamente OTM (ej. QQQ K=732 con underlying $740) los bid suelen ser 0,
+    produciendo current_value=abs(short_ask - 0) → spread fantasma > stop_loss.
+    """
+    sm = short_c.get("mark")
+    lm = long_c.get("mark")
+    if sm is None or lm is None:
+        return False, "mark_missing"
+    if sm == 0 or lm == 0:
+        return False, "mark_zero"
+
+    sb = short_c.get("bid", 0) or 0
+    sa = short_c.get("ask", 0) or 0
+    lb = long_c.get("bid", 0)  or 0
+    la = long_c.get("ask", 0)  or 0
+    if sa <= 0 or la <= 0:
+        return False, "ask_zero"
+
+    # Spread bid/ask > 2x mark = iliquidez extrema (mark probablemente fantasma).
+    if sm > 0 and (sa - sb) > sm * 2:
+        return False, "short_bidask_too_wide"
+    if lm > 0 and (la - lb) > lm * 2:
+        return False, "long_bidask_too_wide"
+
+    return True, "ok"
+
+
 def evaluate_open_position(
     position:      dict,
     current_chain: dict,
@@ -830,13 +871,25 @@ def evaluate_open_position(
     profit_target = position.get("profit_target", 0.0)
     stop_loss_val = position.get("stop_loss", float("inf"))
 
+    # Sprint 13: marks unreliable → skip mark-based exits (STOP_LOSS, PROFIT).
+    # Bug: el `or 0` después de bid/ask colapsa bid=0.0 a 0 → spread fantasma
+    # en strikes profundamente OTM 0DTE. STOP_LOSS espurio cerró 3 tranches
+    # QQQ K=732/728 0DTE simultáneamente con data_quality=quote_unavailable.
+    marks_ok, _mark_reason = _are_marks_reliable(short_c, long_c)
+
     # ── 2. Stop loss mecánico ──────────────────────────────
     if current_value >= stop_loss_val:
-        logger.warning(
-            f"[ThetaHarvest] {ticker} STOP_LOSS — "
-            f"valor ${current_value:.2f} ≥ stop ${stop_loss_val:.2f}"
-        )
-        return "STOP_LOSS"
+        if not marks_ok:
+            logger.debug(
+                f"[ThetaHarvest] {ticker} STOP_LOSS skipped — marks unreliable "
+                f"({_mark_reason}) | valor=${current_value:.2f} stop=${stop_loss_val:.2f}"
+            )
+        else:
+            logger.warning(
+                f"[ThetaHarvest] {ticker} STOP_LOSS — "
+                f"valor ${current_value:.2f} ≥ stop ${stop_loss_val:.2f}"
+            )
+            return "STOP_LOSS"
 
     # ── 3. VIX Spike ──────────────────────────────────────
     vix_at_entry = position.get("vix_at_entry")
@@ -872,15 +925,22 @@ def evaluate_open_position(
     # ── 6. Profit target (per-tranche) ───────────────────
     # tranche_target=None (T2) → profit_target=-1.0 en to_decision() → nunca dispara.
     # T2 solo cierra por TIME_STOP o STOP_LOSS.
+    # Sprint 13: marks unreliable → skip PROFIT (espurio).
     tranche_target_val = position.get("tranche_target", 0.65)
     tranche_id_val     = position.get("tranche_id", 1)
     if tranche_target_val is not None and current_value <= profit_target:
-        logger.info(
-            f"[ThetaHarvest] {ticker} PROFIT T{tranche_id_val} "
-            f"({int(tranche_target_val*100)}% capturado) — "
-            f"spread valor ${current_value:.2f} ≤ target ${profit_target:.2f}"
-        )
-        return "PROFIT"
+        if not marks_ok:
+            logger.debug(
+                f"[ThetaHarvest] {ticker} PROFIT T{tranche_id_val} skipped — marks "
+                f"unreliable ({_mark_reason}) | valor=${current_value:.2f}"
+            )
+        else:
+            logger.info(
+                f"[ThetaHarvest] {ticker} PROFIT T{tranche_id_val} "
+                f"({int(tranche_target_val*100)}% capturado) — "
+                f"spread valor ${current_value:.2f} ≤ target ${profit_target:.2f}"
+            )
+            return "PROFIT"
 
     # ── 7. Time stop EOD ─────────────────────────────────
     # Paso 6 backlog v2: hora unificada de cierre forzado desde Firestore (auto_close_et)
