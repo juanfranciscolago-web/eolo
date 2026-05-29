@@ -262,18 +262,36 @@ class EoloCryptoOrchestrator:
         # en la misma dirección antes de ejecutar. Evita trades
         # por señal de una sola estrategia (especialmente en 4h donde
         # cada estrategia vota una sola vez por candle).
+        #
+        # B13 (28-may-2026): cuando el gate descarta signals con len>=1
+        # pero <min_consensus, loguea [WHAT_IF_C1] con la señal que
+        # consensus=1 habría ejecutado. Permite A/B test sin doble bot.
+        # Usa candle["close"] directo porque la variable `price` se
+        # asigna después de este gate (línea ~282).
         min_consensus = runtime_config.min_strategy_consensus
         if sells and len(sells) < min_consensus:
             logger.debug(
                 f"[CONSENSUS] {symbol} SELL insuficiente "
                 f"({len(sells)}/{min_consensus}): {sells}"
             )
+            if len(sells) >= 1:
+                logger.info(
+                    f"[WHAT_IF_C1] {symbol} SELL would-have-traded "
+                    f"({len(sells)} strategies: {sorted(sells)}) "
+                    f"at price={candle['close']:.6f}"
+                )
             sells = []
         if buys and len(buys) < min_consensus:
             logger.debug(
                 f"[CONSENSUS] {symbol} BUY insuficiente "
                 f"({len(buys)}/{min_consensus}): {buys}"
             )
+            if len(buys) >= 1:
+                logger.info(
+                    f"[WHAT_IF_C1] {symbol} BUY would-have-traded "
+                    f"({len(buys)} strategies: {sorted(buys)}) "
+                    f"at price={candle['close']:.6f}"
+                )
             buys = []
 
         if not sells and not buys:
