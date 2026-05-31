@@ -551,6 +551,44 @@
   .chart-wrap-hist { height: 200px; }
   canvas { max-height: 260px; }
 
+  /* ── LLM Metrics section (UP-2.2) ── */
+  .llm-charts-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    padding: 0 0 16px;
+  }
+  .llm-tables-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 16px;
+    padding: 0 0 12px;
+  }
+  @media (max-width: 900px) {
+    .llm-charts-grid { grid-template-columns: 1fr; }
+    .llm-tables-grid { grid-template-columns: 1fr; }
+  }
+  .llm-mini-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  .llm-mini-table tr { border-bottom: 1px solid var(--border); }
+  .llm-mini-table tr:last-child { border-bottom: none; }
+  .llm-mini-table td { padding: 6px 4px; color: var(--text); }
+  .llm-mini-table td.llm-key { color: var(--muted); }
+  .llm-mini-table td.llm-count { text-align: right; font-weight: 600; }
+  .llm-mini-table td.llm-empty { color: var(--dim); font-style: italic; text-align: center; padding: 16px; }
+  .llm-footer {
+    font-size: 0.7rem;
+    color: var(--muted);
+    text-align: right;
+    padding-top: 4px;
+    font-family: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+  }
+
   /* ══════════════════════════════════════════
      PERFORMANCE SECTION
   ══════════════════════════════════════════ */
@@ -2301,6 +2339,73 @@
 </div>
 
 <!-- ══════════════════════════════════════════
+     LLM METRICS — Sprint 11 + Sprint 21 observability
+══════════════════════════════════════════ -->
+<div class="section">
+  <h2>🧠 LLM Metrics
+    <span class="hint">Sprint 11 + Sprint 21 — observability del pre-filter + Sonnet consult</span>
+  </h2>
+
+  <!-- Cards row -->
+  <div class="grid" style="padding:0 0 16px">
+    <div class="card">
+      <h3>Total calls</h3>
+      <div class="value" id="llm-total-calls">—</div>
+      <div class="sub" id="llm-total-calls-sub">sample: 0</div>
+    </div>
+    <div class="card">
+      <h3>Calls / hour</h3>
+      <div class="value blue" id="llm-calls-per-hour">—</div>
+      <div class="sub" id="llm-calls-per-hour-sub">since reset</div>
+    </div>
+    <div class="card">
+      <h3>Cost USD</h3>
+      <div class="value green" id="llm-cost-usd">—</div>
+      <div class="sub" id="llm-cost-usd-sub">no calls yet</div>
+    </div>
+    <div class="card">
+      <h3>Error rate</h3>
+      <div class="value" id="llm-error-rate">—</div>
+      <div class="sub" id="llm-error-rate-sub">0 / 0</div>
+    </div>
+  </div>
+
+  <!-- Charts row (3 columns, stack on mobile) -->
+  <div class="llm-charts-grid">
+    <div class="card">
+      <h3>Verdict distribution</h3>
+      <div class="chart-wrap chart-wrap-tall"><canvas id="llm-verdicts-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Latency p50 / p95 / p99 (ms)</h3>
+      <div class="chart-wrap chart-wrap-tall"><canvas id="llm-latency-chart"></canvas></div>
+    </div>
+    <div class="card">
+      <h3>Decision sources</h3>
+      <div class="chart-wrap chart-wrap-tall"><canvas id="llm-sources-chart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- Tables row (2 columns) -->
+  <div class="llm-tables-grid">
+    <div class="card">
+      <h3>Pre-filter skips</h3>
+      <table class="llm-mini-table" id="llm-prefilter-table">
+        <tbody><tr><td colspan="2" class="llm-empty">No data</td></tr></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <h3>Errors</h3>
+      <table class="llm-mini-table" id="llm-errors-table">
+        <tbody><tr><td colspan="2" class="llm-empty">No data</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="llm-footer" id="llm-footer">Última reset: —  ·  elapsed: —</div>
+</div>
+
+<!-- ══════════════════════════════════════════
      CONFIG MODAL (oculto por defecto)
 ══════════════════════════════════════════ -->
 <div id="config-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:200;align-items:center;justify-content:center">
@@ -2784,6 +2889,7 @@ const STRAT_ORDER = ['ema','gap','vwap_rsi','bollinger','orb','rsi_sma200','supe
 
 let state = {};
 let pnlChart = null, donutChart = null;
+let llmVerdictsChart = null, llmLatencyChart = null, llmSourcesChart = null;
 const TH_CHART_TICKERS = ['SPY', 'QQQ', 'IWM', 'TQQQ'];
 const thCharts = { SPY: null, QQQ: null, IWM: null, TQQQ: null };
 let thChartMode  = 'price';  // 'price' | 'pnl'
@@ -2953,6 +3059,270 @@ function render() {
   updateStatusbar();
   updateRiskManagement();
   updateStrategyMatrices();
+  renderLLMMetrics(state && state.stats ? state.stats.llm_metrics : null);
+}
+
+// ══════════════════════════════════════════
+// LLM METRICS (UP-2.2 — Sprint 11 + Sprint 21 frontend)
+// ══════════════════════════════════════════
+const LLM_VERDICT_COLORS = {
+  SELL_PUT:        '#3fb950',  // green
+  SELL_CALL:       '#3fb950',
+  WAIT:            '#fbbf24',  // yellow
+  CLOSE_POSITIONS: '#f85149',  // red
+  ABORT:           '#f85149',
+};
+const LLM_SOURCE_COLORS = {
+  LLM_HAIKU_PASS:     '#39d0d8',  // cyan
+  LLM_SONNET_CONSULT: '#58a6ff',  // blue
+  FALLBACK:           '#8b949e',  // muted
+};
+const LLM_FALLBACK_COLOR = '#8b949e';
+
+function _setText(id, value) {
+  const el = document.getElementById(id);
+  if (el) el.textContent = value;
+}
+
+function _sumObjectValues(obj) {
+  if (!obj || typeof obj !== 'object') return 0;
+  let s = 0;
+  for (const v of Object.values(obj)) {
+    const n = Number(v);
+    if (Number.isFinite(n)) s += n;
+  }
+  return s;
+}
+
+function _colorsFor(labels, palette) {
+  return labels.map(l => palette[l] || LLM_FALLBACK_COLOR);
+}
+
+function _filteredEntries(obj) {
+  if (!obj || typeof obj !== 'object') return [];
+  return Object.entries(obj)
+    .map(([k, v]) => [k, Number(v) || 0])
+    .filter(([, v]) => v > 0)
+    .sort((a, b) => b[1] - a[1]);
+}
+
+function _resetLLMUI() {
+  _setText('llm-total-calls', '—');
+  _setText('llm-total-calls-sub', 'sample: 0');
+  _setText('llm-calls-per-hour', '—');
+  _setText('llm-calls-per-hour-sub', 'since reset');
+  _setText('llm-cost-usd', '—');
+  _setText('llm-cost-usd-sub', 'no calls yet');
+  _setText('llm-error-rate', '—');
+  _setText('llm-error-rate-sub', '0 / 0');
+  _renderLLMMiniTable('llm-prefilter-table', {});
+  _renderLLMMiniTable('llm-errors-table', {});
+  _setText('llm-footer', 'Última reset: —  ·  elapsed: —');
+}
+
+function _renderLLMMiniTable(tableId, dict) {
+  const table = document.getElementById(tableId);
+  if (!table) return;
+  const tbody = table.querySelector('tbody');
+  if (!tbody) return;
+  const rows = _filteredEntries(dict);
+  if (rows.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="2" class="llm-empty">No data</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows
+    .map(([k, v]) => `<tr><td class="llm-key">${k}</td><td class="llm-count">${v}</td></tr>`)
+    .join('');
+}
+
+function _upsertDoughnut(chartRef, canvasId, labels, data, colors) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return chartRef;
+  if (chartRef) {
+    chartRef.data.labels = labels;
+    chartRef.data.datasets[0].data = data;
+    chartRef.data.datasets[0].backgroundColor = colors;
+    chartRef.update('none');
+    return chartRef;
+  }
+  return new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderColor: '#0d1117', borderWidth: 2 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#e6edf3', font: { size: 10 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: (ctxItem) => {
+              const total = ctxItem.dataset.data.reduce((a, b) => a + b, 0);
+              const v = ctxItem.parsed;
+              const pct = total > 0 ? (v / total * 100).toFixed(1) : '0.0';
+              return ` ${ctxItem.label}: ${v} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function _upsertPie(chartRef, canvasId, labels, data, colors) {
+  // Same shape as doughnut but type='pie'.
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return chartRef;
+  if (chartRef) {
+    chartRef.data.labels = labels;
+    chartRef.data.datasets[0].data = data;
+    chartRef.data.datasets[0].backgroundColor = colors;
+    chartRef.update('none');
+    return chartRef;
+  }
+  return new Chart(ctx, {
+    type: 'pie',
+    data: {
+      labels,
+      datasets: [{ data, backgroundColor: colors, borderColor: '#0d1117', borderWidth: 2 }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'bottom', labels: { color: '#e6edf3', font: { size: 10 }, boxWidth: 12 } },
+        tooltip: {
+          callbacks: {
+            label: (ctxItem) => {
+              const total = ctxItem.dataset.data.reduce((a, b) => a + b, 0);
+              const v = ctxItem.parsed;
+              const pct = total > 0 ? (v / total * 100).toFixed(1) : '0.0';
+              return ` ${ctxItem.label}: ${v} (${pct}%)`;
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+function _upsertLatencyBar(chartRef, canvasId, p50, p95, p99) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return chartRef;
+  const data = [p50, p95, p99];
+  if (chartRef) {
+    chartRef.data.datasets[0].data = data;
+    chartRef.update('none');
+    return chartRef;
+  }
+  return new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: ['p50', 'p95', 'p99'],
+      datasets: [{
+        data,
+        backgroundColor: ['#3fb950', '#f97316', '#f85149'],
+        borderWidth: 0,
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: (c) => ` ${c.label}: ${c.parsed.x.toFixed(0)} ms` } },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: { color: '#8b949e', font: { size: 10 }, callback: v => `${v} ms` },
+          grid: { color: '#21262d' },
+        },
+        y: {
+          ticks: { color: '#8b949e', font: { size: 10 } },
+          grid: { color: '#21262d' },
+        },
+      },
+    },
+  });
+}
+
+function renderLLMMetrics(m) {
+  if (!m || typeof m !== 'object') {
+    _resetLLMUI();
+    return;
+  }
+
+  // ── Cards ──
+  const calls = Number(m.total_calls) || 0;
+  _setText('llm-total-calls', calls.toLocaleString());
+  const sample = (m.latency_ms && Number(m.latency_ms.sample_size)) || 0;
+  _setText('llm-total-calls-sub', `sample: ${sample}`);
+
+  const cph = Number(m.calls_per_hour) || 0;
+  _setText('llm-calls-per-hour', cph.toFixed(1));
+  const elapsed = Number(m.elapsed_hours) || 0;
+  _setText('llm-calls-per-hour-sub', `since reset (${elapsed.toFixed(1)}h)`);
+
+  const cost = Number(m.cost_estimate_usd) || 0;
+  if (calls > 0) {
+    _setText('llm-cost-usd', `$${cost.toFixed(4)}`);
+    _setText('llm-cost-usd-sub', `avg $${(cost / calls).toFixed(4)}/call`);
+  } else {
+    _setText('llm-cost-usd', '—');
+    _setText('llm-cost-usd-sub', 'no calls yet');
+  }
+
+  const totalErrors = _sumObjectValues(m.errors);
+  if (calls > 0) {
+    const rate = totalErrors / calls * 100;
+    _setText('llm-error-rate', `${rate.toFixed(1)}%`);
+    _setText('llm-error-rate-sub', `${totalErrors} / ${calls}`);
+  } else {
+    _setText('llm-error-rate', '—');
+    _setText('llm-error-rate-sub', '0 / 0');
+  }
+
+  // ── Charts ──
+  const verdicts = m.verdicts || {};
+  const vLabels = Object.keys(verdicts).filter(k => Number(verdicts[k]) > 0);
+  const vData = vLabels.map(k => Number(verdicts[k]));
+  const vColors = _colorsFor(vLabels, LLM_VERDICT_COLORS);
+  llmVerdictsChart = _upsertDoughnut(llmVerdictsChart, 'llm-verdicts-chart', vLabels, vData, vColors);
+
+  const lat = m.latency_ms || {};
+  llmLatencyChart = _upsertLatencyBar(
+    llmLatencyChart,
+    'llm-latency-chart',
+    Number(lat.p50) || 0,
+    Number(lat.p95) || 0,
+    Number(lat.p99) || 0,
+  );
+
+  const sources = m.decision_sources || {};
+  const sLabels = Object.keys(sources).filter(k => Number(sources[k]) > 0);
+  const sData = sLabels.map(k => Number(sources[k]));
+  const sColors = _colorsFor(sLabels, LLM_SOURCE_COLORS);
+  llmSourcesChart = _upsertPie(llmSourcesChart, 'llm-sources-chart', sLabels, sData, sColors);
+
+  // ── Tables ──
+  _renderLLMMiniTable('llm-prefilter-table', m.pre_filter_skips || {});
+  _renderLLMMiniTable('llm-errors-table', m.errors || {});
+
+  // ── Footer ──
+  let ts = '—';
+  const resetAt = Number(m.last_reset_at);
+  if (Number.isFinite(resetAt) && resetAt > 0) {
+    ts = new Date(resetAt * 1000).toLocaleString('en-US', {
+      timeZone: 'America/New_York',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false,
+    });
+  }
+  _setText('llm-footer', `Última reset: ${ts} ET  ·  elapsed: ${elapsed.toFixed(1)}h`);
 }
 
 function updateHeader() {
