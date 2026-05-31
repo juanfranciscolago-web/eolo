@@ -62,13 +62,22 @@ class LLMMetrics:
         input_tokens: int = 0,
         output_tokens: int = 0,
         model: str = "sonnet",
+        haiku_input_tokens: int = 0,
+        haiku_output_tokens: int = 0,
     ) -> None:
-        """Registra una llamada al LLM (post-pre-filter, llegó a consult)."""
+        """Registra una llamada al LLM (post-pre-filter, llegó a consult).
+
+        Sprint 21 fix: si haiku_input_tokens/haiku_output_tokens > 0, suma
+        el cost del pre-filter Haiku al cost del modelo principal. Caso
+        layered haiku_pass / haiku_low_conf: Sonnet primario + Haiku pre.
+        """
         try:
             latency = float(latency_ms)
         except (TypeError, ValueError):
             latency = 0.0
         cost = self._compute_cost(input_tokens, output_tokens, model)
+        if haiku_input_tokens or haiku_output_tokens:
+            cost += self._compute_cost(haiku_input_tokens, haiku_output_tokens, "haiku")
         with self._lock:
             self._total_calls += 1
             if verdict:
