@@ -21,6 +21,46 @@ from loguru import logger
 
 import crop_main
 
+# ─── Sprint OBS-1: build/version metadata cached al import ─────────────
+import subprocess as _subprocess
+import sys as _sys
+
+
+def _cached_git_field(cmd_args: list, default: str = "unknown") -> str:
+    """Lee un campo de git al import. Retorna `default` si el subprocess falla
+    (caso típico: container sin .git ni git binary)."""
+    try:
+        result = _subprocess.run(
+            cmd_args,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            cwd=os.path.dirname(os.path.abspath(__file__)),
+        )
+        if result.returncode != 0:
+            return default
+        return (result.stdout or "").strip() or default
+    except Exception:
+        return default
+
+
+_GIT_COMMIT: str = (
+    os.environ.get("GIT_COMMIT")
+    or _cached_git_field(["git", "rev-parse", "--short", "HEAD"])
+)
+_GIT_BRANCH: str = (
+    os.environ.get("GIT_BRANCH")
+    or _cached_git_field(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+)
+_BUILD_TIMESTAMP_EPOCH: float = time.time()
+_BUILD_TIMESTAMP_ISO: str = (
+    os.environ.get("BUILD_TIMESTAMP")
+    or datetime.utcfromtimestamp(_BUILD_TIMESTAMP_EPOCH).strftime("%Y-%m-%dT%H:%M:%SZ")
+)
+_KB_VERSION: str = "v1.2"
+_LLM_ENGINE_URL_DEFAULT: str = "https://llm-engine-service-nmjz4iwcea-uc.a.run.app"
+
+
 # Sprint S3.A: lock para edits in-memory de _strategy_overrides
 # Asegura no race conditions con bot loop (asyncio thread)
 _state_edit_lock = threading.Lock()
@@ -823,6 +863,144 @@ def api_state():
                 "pivots": {},
             }
         }), 200  # Devolver 200 siempre para no romper el dashboard
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Sprint OBS-1 — GET /api/version (build/version metadata)
+# ══════════════════════════════════════════════════════════════════════
+def _fetch_engine_health(engine_url: str) -> dict:
+    """Best-effort proxy de /health del LLM Engine.
+
+    Robusto: si auth o network fallan, devuelve un payload con `status`
+    descriptivo en lugar de propagar la excepción. Caso típico local dev
+    sin metadata server → `auth_unavailable`.
+    """
+    try:
+        from google.auth.transport import requests as _ga_requests
+        from google.oauth2 import id_token as _id_token
+        token = _id_token.fetch_id_token(_ga_requests.Request(), engine_url)
+    except Exception as _e:
+        return {"status": "auth_unavailable", "model": "unknown", "error": str(_e)[:200]}
+    try:
+        import urllib.request as _ur
+        req = _ur.Request(
+            f"{engine_url.rstrip('/')}/health",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        with _ur.urlopen(req, timeout=3) as resp:
+            body = resp.read().decode("utf-8", errors="replace")
+        return json.loads(body)
+    except Exception as _e:
+        return {"status": "unreachable", "error": str(_e)[:200]}
+
+
+@app.route("/api/version")
+def api_version():
+    """Sprint OBS-1: build/version metadata para live debugging."""
+    engine_url = os.environ.get("LLM_ENGINE_URL", _LLM_ENGINE_URL_DEFAULT)
+    return jsonify({
+        "git_commit":         _GIT_COMMIT,
+        "git_branch":         _GIT_BRANCH,
+        "build_timestamp":    _BUILD_TIMESTAMP_ISO,
+        "kb_version":         _KB_VERSION,
+        "llm_engine_url":     engine_url,
+        "llm_engine_health":  _fetch_engine_health(engine_url),
+        "python_version":     _sys.version.split()[0],
+        "bot_uptime_seconds": round(time.time() - _BUILD_TIMESTAMP_EPOCH, 1),
+    }), 200
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Sprint OBS-2 (backend) — GET /api/trades?date&limit&ticker&...
+# ══════════════════════════════════════════════════════════════════════
+import re as _re
+_UUID_RE = _re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+)
+
+
+@app.route("/api/trades")
+def api_trades():
+    """Sprint OBS-2 backend: trades UUID del día con full decision_meta.
+
+    Filtra automáticamente el day-doc legacy (sólo IDs con shape UUID).
+    Rango temporal por timestamp_open en zona ET (DST-aware via ZoneInfo).
+    """
+    from zoneinfo import ZoneInfo
+    _ET = ZoneInfo("America/New_York")
+
+    # ── Parse params ──
+    date_str = (request.args.get("date") or "").strip()
+    try:
+        if date_str:
+            target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        else:
+            target_date = datetime.now(_ET).date()
+    except ValueError:
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
+
+    try:
+        limit = min(max(int(request.args.get("limit", 50)), 1), 200)
+    except (ValueError, TypeError):
+        return jsonify({"error": "limit must be integer"}), 400
+
+    ticker_filter = ((request.args.get("ticker") or "").strip().upper()) or None
+    include_closed = (request.args.get("include_closed", "true").lower() != "false")
+    include_open   = (request.args.get("include_open",   "true").lower() != "false")
+
+    # ── Firestore query ──
+    try:
+        from google.cloud import firestore as _fs
+        from llm_gate.trade_logger import FIRESTORE_COLLECTION
+    except ImportError as _e:
+        return jsonify({"error": f"firestore_import_failed: {_e}"}), 500
+
+    start_dt = datetime(target_date.year, target_date.month, target_date.day,
+                        0, 0, 0, tzinfo=_ET)
+    end_dt   = datetime(target_date.year, target_date.month, target_date.day,
+                        23, 59, 59, tzinfo=_ET)
+    start_iso = start_dt.isoformat()
+    end_iso   = end_dt.isoformat()
+    date_prefix = target_date.isoformat()
+
+    try:
+        project = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
+        db = _fs.Client(project=project)
+        coll = db.collection(FIRESTORE_COLLECTION)
+        query = (
+            coll
+            .where(filter=_fs.FieldFilter("timestamp_open", ">=", start_iso))
+            .where(filter=_fs.FieldFilter("timestamp_open", "<=", end_iso))
+            .order_by("timestamp_open", direction=_fs.Query.DESCENDING)
+            .limit(limit * 3)  # buffer para filtrar legacy day-doc
+        )
+
+        trades: list = []
+        for doc in query.stream():
+            if not _UUID_RE.match(doc.id):
+                continue  # skip day-doc legacy
+            data = doc.to_dict() or {}
+            data.setdefault("trade_id", doc.id)
+            if ticker_filter and (data.get("ticker") or "").upper() != ticker_filter:
+                continue
+            has_close = data.get("timestamp_close") is not None
+            if has_close and not include_closed:
+                continue
+            if (not has_close) and not include_open:
+                continue
+            trades.append(data)
+            if len(trades) >= limit:
+                break
+    except Exception as _e:
+        logger.error(f"[api_trades] query failed: {_e}")
+        return jsonify({"error": f"query_failed: {str(_e)[:200]}"}), 500
+
+    return jsonify({
+        "date":   date_prefix,
+        "count":  len(trades),
+        "limit":  limit,
+        "trades": trades,
+    }), 200
 
 
 @app.route("/daily-open-reset", methods=["GET", "POST"])
