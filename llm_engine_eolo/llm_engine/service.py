@@ -134,8 +134,16 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
             messages=[{"role": "user", "content": user_prompt}]
         )
         raw_output = response.content[0].text
+        # Sprint 21: usage stats para cost_estimate_usd real en LLMMetrics (bot CROP).
+        # Defensive: si el SDK cambia o el response no trae usage, fallback a 0.
+        _usage = getattr(response, "usage", None)
+        input_tokens  = int(getattr(_usage, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(_usage, "output_tokens", 0) or 0)
         llm_latency_ms = int((time.time() - start_time) * 1000)
-        logger.info(f"[{request_id}] LLM response in {llm_latency_ms}ms")
+        logger.info(
+            f"[{request_id}] LLM response in {llm_latency_ms}ms "
+            f"(in={input_tokens} out={output_tokens})"
+        )
 
     except APITimeoutError:
         logger.error(f"[{request_id}] Anthropic timeout")
@@ -174,6 +182,10 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
         "latency_ms": total_latency_ms,
         "model": CONFIG["LLM_MODEL"],
         "kb_version": "v1.2",
+        # Sprint 21: tokens consumidos en esta llamada. El bot CROP
+        # (crop_main.py:1346-1353) ya los lee para LLMMetrics.record_call().
+        "input_tokens":  input_tokens,
+        "output_tokens": output_tokens,
     }
     return result
 
@@ -218,8 +230,16 @@ async def pre_decide(snapshot: MarketSnapshot, request: Request) -> dict:
             messages=[{"role": "user", "content": user_prompt}]
         )
         raw_output = response.content[0].text
+        # Sprint 21: capturar usage del pre-filter Haiku también
+        # (LLMMetrics tracks Haiku skips/passes; cost real requiere ambos).
+        _usage = getattr(response, "usage", None)
+        input_tokens  = int(getattr(_usage, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(_usage, "output_tokens", 0) or 0)
         latency_ms = int((time.time() - start_time) * 1000)
-        logger.info(f"[{request_id}] Haiku response in {latency_ms}ms")
+        logger.info(
+            f"[{request_id}] Haiku response in {latency_ms}ms "
+            f"(in={input_tokens} out={output_tokens})"
+        )
 
     except (APITimeoutError, APIError) as e:
         logger.error(f"[{request_id}] Haiku API error: {e}")
@@ -249,6 +269,10 @@ async def pre_decide(snapshot: MarketSnapshot, request: Request) -> dict:
         "request_id": request_id,
         "latency_ms": total_latency_ms,
         "model": CONFIG["HAIKU_MODEL"],
+        # Sprint 21: tokens del pre-filter Haiku. El bot CROP
+        # contabiliza cost de ambos modelos (Haiku skip + Sonnet consult).
+        "input_tokens":  input_tokens,
+        "output_tokens": output_tokens,
     }
     return result
 
