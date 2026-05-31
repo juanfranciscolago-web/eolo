@@ -729,6 +729,108 @@
   .trade-table td.ticker-cell { font-weight: 700; font-family: inherit; }
   .trade-table .empty-row td { text-align: center; color: var(--muted); padding: 20px; }
 
+  /* ── Trade Detail expandable (OBS-2 frontend) ── */
+  .trade-row-clickable {
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  .trade-row-clickable:hover {
+    background-color: rgba(88, 166, 255, 0.08);
+  }
+  .trade-row-clickable.expanded {
+    background-color: rgba(88, 166, 255, 0.12);
+  }
+  .trade-detail-row {
+    background-color: rgba(13, 17, 23, 0.6);
+  }
+  .trade-detail-cell {
+    padding: 14px 16px !important;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+  .trade-detail-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+  @media (max-width: 900px) {
+    .trade-detail-grid { grid-template-columns: 1fr; }
+  }
+  .trade-detail-card {
+    padding: 12px;
+    background: rgba(33, 38, 45, 0.5);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .trade-detail-card h4 {
+    font-size: 0.78rem;
+    color: var(--blue);
+    margin: 0 0 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .trade-detail-kv {
+    display: flex;
+    justify-content: space-between;
+    padding: 4px 0;
+    font-size: 0.82rem;
+    border-bottom: 1px dotted rgba(139, 148, 158, 0.15);
+  }
+  .trade-detail-kv:last-child { border-bottom: none; }
+  .trade-detail-kv .key {
+    color: var(--muted);
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+  }
+  .trade-detail-kv .value {
+    color: var(--text);
+    font-variant-numeric: tabular-nums;
+  }
+  .trade-rule-chip {
+    display: inline-block;
+    padding: 3px 8px;
+    margin: 2px 4px 2px 0;
+    background: rgba(88, 166, 255, 0.15);
+    color: #58a6ff;
+    border: 1px solid rgba(88, 166, 255, 0.3);
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-family: 'SF Mono', Menlo, Consolas, monospace;
+  }
+  .trade-rule-chip-axioma { background: rgba(249, 115, 22, 0.15); color: #f97316; border-color: rgba(249, 115, 22, 0.3); }
+  .trade-rule-chip-maestra { background: rgba(63, 185, 80, 0.15); color: #3fb950; border-color: rgba(63, 185, 80, 0.3); }
+  .trade-detail-reason {
+    padding: 10px;
+    background: rgba(0, 0, 0, 0.2);
+    border-left: 3px solid var(--blue);
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text);
+    margin-top: 4px;
+    white-space: pre-wrap;
+    font-family: -apple-system, sans-serif;
+  }
+  .trade-cost-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    background: rgba(63, 185, 80, 0.15);
+    color: #3fb950;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .trade-source-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    font-weight: 600;
+  }
+  .trade-source-LLM_SONNET_CONSULT { background: rgba(88, 166, 255, 0.15); color: #58a6ff; }
+  .trade-source-LLM_HAIKU_SKIP     { background: rgba(57, 208, 216, 0.15); color: #39d0d8; }
+  .trade-source-RULE_BASED         { background: rgba(139, 148, 158, 0.15); color: #8b949e; }
+  .trade-source-FALLBACK           { background: rgba(248, 81, 73, 0.15); color: #f85149; }
+
   /* ══════════════════════════════════════════
      CONFIRM OVERLAY
   ══════════════════════════════════════════ */
@@ -2282,6 +2384,9 @@
       <div class="trade-tab" id="tab-all" onclick="showTab('all')">
         Todos los Trades <span class="tab-count" id="count-all">0</span>
       </div>
+      <div class="trade-tab" id="tab-llm-detail" onclick="showTab('llm-detail')">
+        🧠 LLM Detail <span class="tab-count" id="count-llm-detail">0</span>
+      </div>
     </div>
 
     <!-- Pane: Abiertas -->
@@ -2331,6 +2436,23 @@
         </thead>
         <tbody id="all-body">
           <tr class="empty-row"><td colspan="14">Sin trades aún</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Pane: LLM Detail (OBS-2 frontend) — click row para expandir -->
+    <div id="pane-llm-detail" style="display:none;overflow-x:auto;max-height:520px;overflow-y:auto">
+      <table class="trade-table">
+        <thead>
+          <tr>
+            <th>Entrada</th><th>Salida</th><th>Ticker</th><th>Source</th>
+            <th>Verdict</th><th>Conf</th><th>Path</th>
+            <th>Tokens (in/out)</th><th>Cost est.</th>
+            <th>P&L %</th><th>Exit</th>
+          </tr>
+        </thead>
+        <tbody id="llm-detail-body">
+          <tr class="empty-row"><td colspan="11">Sin trades con detail LLM. Ejecutá <code>window._injectMockTrades()</code> en consola para testear.</td></tr>
         </tbody>
       </table>
     </div>
@@ -3608,9 +3730,11 @@ function applyFilter(t, f) {
 
 function showTab(tab) {
   activeTab = tab;
-  ['open', 'closed', 'all'].forEach(t => {
-    document.getElementById('pane-' + t).style.display = t === tab ? '' : 'none';
-    document.getElementById('tab-'  + t).classList.toggle('active', t === tab);
+  ['open', 'closed', 'all', 'llm-detail'].forEach(t => {
+    const pane = document.getElementById('pane-' + t);
+    const btn  = document.getElementById('tab-'  + t);
+    if (pane) pane.style.display = t === tab ? '' : 'none';
+    if (btn)  btn.classList.toggle('active', t === tab);
   });
 }
 
@@ -5761,6 +5885,277 @@ tickClock();
 _loadAuditLog();
 fetchState();
 setInterval(fetchState, REFRESH_MS);
+
+// ══════════════════════════════════════════
+// Trade Detail expandible (OBS-2 frontend)
+// Backend endpoint /api/trades viene en PR paralelo
+// (feat/be-version-trades-endpoints). Mientras no esté
+// deployado, usar window._injectMockTrades() en consola.
+// ══════════════════════════════════════════
+let _tradesCache = [];               // últimos /api/trades response
+let _expandedTradeIds = new Set();   // qué rows están expanded
+
+async function fetchTrades(date = null, limit = 50) {
+  try {
+    const params = new URLSearchParams();
+    if (date) params.set('date', date);
+    params.set('limit', String(limit));
+    const r = await fetch(`/api/trades?${params}`);
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data = await r.json();
+    _tradesCache = data.trades || [];
+    renderLLMDetailTab();
+    return data;
+  } catch (e) {
+    // Silent fail mientras backend no esté: el tab muestra empty-row.
+    return null;
+  }
+}
+
+function renderLLMDetailTab() {
+  const tbody = document.getElementById('llm-detail-body');
+  if (!tbody) return;
+
+  const countEl = document.getElementById('count-llm-detail');
+  if (countEl) countEl.textContent = _tradesCache.length;
+
+  if (!_tradesCache.length) {
+    tbody.innerHTML = `<tr class="empty-row"><td colspan="11">Sin trades con detail LLM. Ejecutá <code>window._injectMockTrades()</code> en consola para testear.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = _tradesCache.map(t => buildSummaryRowHTML(t)).join('');
+
+  // Wire click handlers (idempotent — sólo agrega listener si data-trade-id)
+  tbody.querySelectorAll('tr[data-trade-id]').forEach(row => {
+    if (row.dataset.expandableWired === 'true') return;
+    row.dataset.expandableWired = 'true';
+    row.classList.add('trade-row-clickable');
+    row.addEventListener('click', (e) => {
+      if (e.target.closest('a, button, input, select')) return;
+      toggleTradeDetail(row.dataset.tradeId);
+    });
+  });
+
+  // Re-expand rows que estaban expanded antes del re-render
+  Array.from(_expandedTradeIds).forEach(tid => {
+    if (!_tradesCache.find(t => t.trade_id === tid)) {
+      _expandedTradeIds.delete(tid);
+      return;
+    }
+    expandTradeDetail(tid, { skipStateUpdate: true });
+  });
+}
+
+function buildSummaryRowHTML(t) {
+  const dm = t.decision_meta || {};
+  const source = (t.decision_source || 'UNKNOWN').toUpperCase();
+  const verdict = dm.verdict || '—';
+  const conf = (dm.confidence != null) ? dm.confidence : '—';
+  const path = dm.layered_path || '—';
+  const inTok = dm.input_tokens || 0;
+  const outTok = dm.output_tokens || 0;
+  const rate = String(dm.model || '').toLowerCase().includes('haiku')
+    ? { in: 0.8, out: 4.0 } : { in: 3.0, out: 15.0 };
+  const cost = (inTok / 1e6 * rate.in) + (outTok / 1e6 * rate.out);
+  const outcome = t.outcome || {};
+  const pnlPct = outcome.pnl_pct != null ? outcome.pnl_pct.toFixed(1) + '%' : '—';
+  const exitReason = outcome.exit_reason || (t.timestamp_close ? '—' : 'OPEN');
+  const tsOpen = (t.timestamp_open || '').slice(11, 19);
+  const tsClose = t.timestamp_close ? t.timestamp_close.slice(11, 19) : '—';
+
+  return `<tr data-trade-id="${escapeHTML(t.trade_id)}">
+    <td>${tsOpen}</td>
+    <td>${tsClose}</td>
+    <td class="ticker-cell">${escapeHTML(t.ticker || '—')}</td>
+    <td><span class="trade-source-badge trade-source-${source}">${source}</span></td>
+    <td>${escapeHTML(verdict)}</td>
+    <td>${conf}</td>
+    <td>${escapeHTML(path)}</td>
+    <td>${inTok} / ${outTok}</td>
+    <td><span class="trade-cost-badge">$${cost.toFixed(4)}</span></td>
+    <td>${pnlPct}</td>
+    <td>${escapeHTML(exitReason)}</td>
+  </tr>`;
+}
+
+function toggleTradeDetail(tradeId) {
+  if (!tradeId) return;
+  if (_expandedTradeIds.has(tradeId)) {
+    collapseTradeDetail(tradeId);
+  } else {
+    expandTradeDetail(tradeId);
+  }
+}
+
+function expandTradeDetail(tradeId, opts = {}) {
+  const trade = _tradesCache.find(t => t.trade_id === tradeId);
+  if (!trade) return;
+  document.querySelectorAll(`tr[data-trade-id="${CSS.escape(tradeId)}"]`).forEach(row => {
+    // Si ya existe un detail row después, no duplicar
+    const next = row.nextElementSibling;
+    if (next && next.classList.contains('trade-detail-row') &&
+        next.dataset.detailFor === tradeId) return;
+    row.classList.add('expanded');
+    const detailRow = buildDetailRow(trade, row.cells.length);
+    row.parentNode.insertBefore(detailRow, row.nextSibling);
+  });
+  if (!opts.skipStateUpdate) _expandedTradeIds.add(tradeId);
+}
+
+function collapseTradeDetail(tradeId) {
+  document.querySelectorAll(`tr[data-trade-id="${CSS.escape(tradeId)}"]`).forEach(row => {
+    row.classList.remove('expanded');
+  });
+  document.querySelectorAll(`tr.trade-detail-row[data-detail-for="${CSS.escape(tradeId)}"]`).forEach(r => r.remove());
+  _expandedTradeIds.delete(tradeId);
+}
+
+function buildDetailRow(trade, colspan) {
+  const tr = document.createElement('tr');
+  tr.className = 'trade-detail-row';
+  tr.dataset.detailFor = trade.trade_id;
+  const td = document.createElement('td');
+  td.className = 'trade-detail-cell';
+  td.colSpan = colspan;
+  td.innerHTML = renderTradeDetailHTML(trade);
+  tr.appendChild(td);
+  return tr;
+}
+
+function renderTradeDetailHTML(t) {
+  const dm = t.decision_meta || {};
+  const outcome = t.outcome || {};
+  const source = (t.decision_source || 'UNKNOWN').toUpperCase();
+  const verdict = dm.verdict || '—';
+  const confidence = (dm.confidence != null) ? `${dm.confidence}/10` : '—';
+  const layeredPath = dm.layered_path || '—';
+  const model = dm.model || '—';
+  const inputTokens = dm.input_tokens || 0;
+  const outputTokens = dm.output_tokens || 0;
+  const latencyMs = dm.latency_ms || 0;
+  const mainReason = dm.main_reason || '(no reason)';
+  const rules = Array.isArray(dm.tacit_rules_applied) ? dm.tacit_rules_applied : [];
+
+  // Cost estimate per trade (Sprint 21 + PR #28 fix)
+  const RATES = {
+    sonnet: { in: 3.0, out: 15.0 },
+    haiku:  { in: 0.8, out: 4.0 },
+  };
+  const rate = (model || '').toLowerCase().includes('haiku') ? RATES.haiku : RATES.sonnet;
+  const costEstimate = (inputTokens / 1e6 * rate.in) + (outputTokens / 1e6 * rate.out);
+
+  const rulesHTML = rules.length
+    ? rules.map(r => {
+        const upper = String(r).toUpperCase();
+        let cls = 'trade-rule-chip';
+        if (upper.includes('AXIOMA') || /TR-JUAN-04[23]/.test(upper)) cls += ' trade-rule-chip-axioma';
+        else if (upper.includes('MAESTRA')) cls += ' trade-rule-chip-maestra';
+        return `<span class="${cls}">${escapeHTML(r)}</span>`;
+      }).join('')
+    : '<span style="color:var(--muted);font-size:0.78rem">(none)</span>';
+
+  const isOpen = !t.timestamp_close;
+  const outcomeHTML = isOpen
+    ? '<div style="color:var(--muted);font-style:italic;font-size:0.85rem">Position still open</div>'
+    : `
+      <div class="trade-detail-kv"><span class="key">exit_price</span><span class="value">$${outcome.exit_price ?? '—'}</span></div>
+      <div class="trade-detail-kv"><span class="key">pnl_usd</span><span class="value">$${outcome.pnl_usd ?? '—'}</span></div>
+      <div class="trade-detail-kv"><span class="key">pnl_pct</span><span class="value">${outcome.pnl_pct != null ? outcome.pnl_pct.toFixed(1) + '%' : '—'}</span></div>
+      <div class="trade-detail-kv"><span class="key">exit_reason</span><span class="value">${escapeHTML(outcome.exit_reason || '—')}</span></div>
+      <div class="trade-detail-kv"><span class="key">hours_held</span><span class="value">${outcome.hours_held != null ? outcome.hours_held.toFixed(2) : '—'}</span></div>
+    `;
+
+  return `
+    <div class="trade-detail-grid">
+      <div class="trade-detail-card">
+        <h4>Decision <span class="trade-source-badge trade-source-${source}">${source}</span></h4>
+        <div class="trade-detail-kv"><span class="key">verdict</span><span class="value">${escapeHTML(verdict)}</span></div>
+        <div class="trade-detail-kv"><span class="key">confidence</span><span class="value">${confidence}</span></div>
+        <div class="trade-detail-kv"><span class="key">layered_path</span><span class="value">${escapeHTML(layeredPath)}</span></div>
+        <div class="trade-detail-kv"><span class="key">model</span><span class="value">${escapeHTML(model)}</span></div>
+        <div class="trade-detail-kv"><span class="key">latency_ms</span><span class="value">${latencyMs}</span></div>
+        <div class="trade-detail-kv"><span class="key">tokens (in/out)</span><span class="value">${inputTokens} / ${outputTokens}</span></div>
+        <div class="trade-detail-kv"><span class="key">cost estimate</span><span class="value"><span class="trade-cost-badge">$${costEstimate.toFixed(4)}</span></span></div>
+      </div>
+      <div class="trade-detail-card">
+        <h4>Outcome ${isOpen ? '(OPEN)' : ''}</h4>
+        ${outcomeHTML}
+      </div>
+      <div class="trade-detail-card" style="grid-column:1 / -1">
+        <h4>Main Reason</h4>
+        <div class="trade-detail-reason">${escapeHTML(mainReason)}</div>
+      </div>
+      <div class="trade-detail-card" style="grid-column:1 / -1">
+        <h4>Tacit Rules Applied (${rules.length})</h4>
+        <div>${rulesHTML}</div>
+      </div>
+    </div>
+  `;
+}
+
+function escapeHTML(s) {
+  if (s == null) return '';
+  return String(s).replace(/[&<>"']/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  })[c]);
+}
+
+// Polling — más liviano que el principal (30s)
+let _tradesPollIntervalId = null;
+function startTradesPolling() {
+  if (_tradesPollIntervalId) return;
+  fetchTrades();
+  _tradesPollIntervalId = setInterval(() => { fetchTrades(); }, 30000);
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startTradesPolling);
+} else {
+  startTradesPolling();
+}
+
+// Mock helper para testear sin backend deployed.
+// Uso: window._injectMockTrades() desde la consola del browser.
+window._injectMockTrades = function() {
+  _tradesCache = [
+    {
+      trade_id: "550e8400-e29b-41d4-a716-446655440000",
+      timestamp_open: "2026-06-01T09:35:12-04:00",
+      timestamp_close: "2026-06-01T11:42:08-04:00",
+      ticker: "SPY",
+      decision_source: "LLM_SONNET_CONSULT",
+      decision_meta: {
+        verdict: "SELL_PUT", confidence: 8,
+        main_reason: "VIX low (13.4) + uptrend moderate + bottom pattern formed at 10:15 ET. Theta decay optimal in low IV regime.",
+        tacit_rules_applied: ["TR-Juan-043 AXIOMA", "TR-Juan-050", "TR-Juan-025"],
+        layered_path: "haiku_pass", model: "claude-sonnet-4-5",
+        input_tokens: 2100, output_tokens: 320, latency_ms: 1850,
+      },
+      setup: { strikes: { put_strike: 745 }, deltas: { put_delta: 0.18 }, dte: 1, credit_received: 0.42 },
+      outcome: { exit_price: 0.12, pnl_usd: 30, pnl_pct: 71.4, exit_reason: "TAKE_PROFIT_70", hours_held: 2.12 },
+      case_quality: "SILVER",
+    },
+    {
+      trade_id: "660e8400-e29b-41d4-a716-446655440001",
+      timestamp_open: "2026-06-01T10:15:00-04:00",
+      timestamp_close: null,
+      ticker: "SPY",
+      decision_source: "LLM_HAIKU_SKIP",
+      decision_meta: {
+        verdict: "WAIT", confidence: 7,
+        main_reason: "Haiku pre-filter: market in chop, low conviction setup",
+        tacit_rules_applied: ["TR-Juan-022"],
+        layered_path: "haiku_skip", model: "claude-haiku-4-5",
+        input_tokens: 500, output_tokens: 80, latency_ms: 180,
+      },
+      setup: {},
+      outcome: null,
+    },
+  ];
+  renderLLMDetailTab();
+  console.log('[trades] mock data injected. Click a row to expand detail.');
+};
 </script>
 
 </body>
