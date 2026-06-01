@@ -1,6 +1,6 @@
-"""KB Editor CLI (UP-1.2 phase 1, read-only).
+"""KB Editor CLI.
 
-Usage:
+Phase 1 (read-only):
     python tools/kb_editor.py list-rules
     python tools/kb_editor.py next-id
     python tools/kb_editor.py show-rule TR-Juan-043
@@ -8,10 +8,16 @@ Usage:
     python tools/kb_editor.py list-cases
     python tools/kb_editor.py stats
 
-All commands accept `--kb-path PATH` to target a non-default workbook.
+Phase 2 (UP-1.2 fase 2 — write):
+    python tools/kb_editor.py add-rule --tier ... --trigger ... --action ...
+    python tools/kb_editor.py edit-rule TR-Juan-043 --field Notes --value "..."
+    python tools/kb_editor.py delete-rule TR-Juan-018 [--hard --reason "..."]
+    python tools/kb_editor.py merge-rules TR-Juan-022 TR-Juan-031 --into TR-Juan-022 --reason "..."
+    python tools/kb_editor.py bump-version --from v1.2 --to v1.3
 
-Phase 1 is intentionally read-only — phase 2 will add `add-rule` / `edit-rule`,
-Anthropic suggestion integration and git automation.
+All commands accept `--kb-path PATH` to target a non-default workbook.
+Write commands create a timestamped backup in `backups/` and auto-restore
+if post-write validation fails.
 """
 from __future__ import annotations
 
@@ -30,6 +36,7 @@ if str(_HERE.parent) not in sys.path:
 
 from tools import kb_schema as S  # noqa: E402
 from tools import kb_validators as V  # noqa: E402
+from tools import kb_writer as W  # noqa: E402
 
 
 # ── Iterators ─────────────────────────────────────────────────────────────
@@ -263,6 +270,242 @@ def cmd_stats(wb: Workbook) -> int:
     return 0
 
 
+# ── Write commands (UP-1.2 fase 2) ────────────────────────────────────────
+def _confirm(prompt: str, assume_yes: bool = False) -> bool:
+    """Ask yes/no on stdin. Returns True if confirmed."""
+    if assume_yes:
+        return True
+    try:
+        resp = input(f"{prompt} [y/N]: ").strip().lower()
+    except EOFError:
+        return False
+    return resp in {"y", "yes"}
+
+
+def _prompt(prompt: str, default: str | None = None, multiline: bool = False) -> str:
+    """Read a value from stdin, with optional default. multiline=True means
+    accept until empty line."""
+    if multiline:
+        print(f"{prompt} (end with empty line):")
+        lines: list[str] = []
+        try:
+            while True:
+                line = input()
+                if not line:
+                    break
+                lines.append(line)
+        except EOFError:
+            pass
+        result = "\n".join(lines).strip()
+        return result if result else (default or "")
+    suffix = f" [{default}]" if default else ""
+    try:
+        val = input(f"{prompt}{suffix}: ").strip()
+    except EOFError:
+        val = ""
+    return val if val else (default or "")
+
+
+def cmd_add_rule(kb_path: Path, args: argparse.Namespace) -> int:
+    """Append a new rule to Decision_Rules.
+
+    Two modes:
+      - CLI: --tier, --trigger, --action, --confidence all provided.
+      - Interactive: prompts for each field if any required arg missing.
+    """
+    wb_read = V.load_kb(kb_path)
+    proposed_id = args.rule_id or W.compute_next_rule_id(wb_read)
+
+    # Interactive mode if required CLI args missing.
+    if not (args.tier and args.trigger and args.action and args.confidence):
+        print(f"Proposed Rule_ID: {proposed_id}")
+        rule_id = _prompt("Rule_ID", default=proposed_id)
+        tier = args.tier or _prompt(
+            f"Tier (one of: {sorted(S.VALID_TIERS)})", default="TACTICAL_PLUS"
+        )
+        trigger = args.trigger or _prompt("Trigger Conditions", multiline=True)
+        action = args.action or _prompt("Action", multiline=True)
+        confidence = args.confidence or _prompt(
+            "Confidence (HIGH/MEDIUM/LOW/MAXIMA)", default="MEDIUM"
+        )
+        source_cases = args.source_cases or _prompt("Source Cases (optional)")
+        notes = args.notes or _prompt("Notes (optional)")
+        validated_str = _prompt("Validated? (true/false)", default="false")
+        validated = validated_str.lower() == "true"
+    else:
+        rule_id = args.rule_id or proposed_id
+        tier = args.tier
+        trigger = args.trigger
+        action = args.action
+        confidence = args.confidence
+        source_cases = args.source_cases or ""
+        notes = args.notes or ""
+        validated = args.validated
+
+    # Preview + confirm.
+    print()
+    print("─" * 60)
+    print(f"New rule preview:")
+    print(f"  Rule_ID:    {rule_id}")
+    print(f"  tier:       {tier.upper()}")
+    print(f"  Confidence: {confidence.upper()}")
+    print(f"  Trigger:    {trigger[:80]}{'...' if len(trigger) > 80 else ''}")
+    print(f"  Action:     {action[:80]}{'...' if len(action) > 80 else ''}")
+    print(f"  Source:     {source_cases}")
+    print(f"  Notes:      {notes[:80]}{'...' if len(notes) > 80 else ''}")
+    print(f"  Validated?: {validated}")
+    print("─" * 60)
+    if not _confirm("Proceed with add?", assume_yes=args.yes):
+        print("Aborted.")
+        return 1
+
+    try:
+        backup = W.add_rule(
+            kb_path=kb_path,
+            rule_id=rule_id,
+            tier=tier,
+            trigger=trigger,
+            action=action,
+            confidence=confidence,
+            source_cases=source_cases,
+            notes=notes,
+            validated=validated,
+        )
+    except (ValueError, W.KBValidationError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print(f"✅ Added {V.extract_rule_id(rule_id)} to KB. Backup: {backup}")
+    return 0
+
+
+def cmd_edit_rule(kb_path: Path, args: argparse.Namespace) -> int:
+    """Update a single field on an existing rule."""
+    try:
+        wb_read = V.load_kb(kb_path)
+        row_idx, row_tuple = W.find_rule_row(wb_read, args.rule_id)
+    except LookupError as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+
+    col_idx = S.DECISION_RULES_COLS.get(args.field)
+    if col_idx is None:
+        print(
+            f"ERROR: unknown field '{args.field}'. "
+            f"Valid: {S.DECISION_RULES_EXPECTED_HEADERS}",
+            file=sys.stderr,
+        )
+        return 1
+    current = row_tuple[col_idx - 1] if col_idx - 1 < len(row_tuple) else None
+    print(f"Editing {V.extract_rule_id(args.rule_id)} (row {row_idx}), field '{args.field}'")
+    print(f"  Before: {current}")
+    print(f"  After:  {args.value}")
+    if not _confirm("Proceed?", assume_yes=args.yes):
+        print("Aborted.")
+        return 1
+
+    try:
+        backup, before, after = W.edit_rule(
+            kb_path=kb_path,
+            rule_id=args.rule_id,
+            field=args.field,
+            value=args.value,
+        )
+    except (ValueError, LookupError, W.KBValidationError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print(f"✅ Updated. Backup: {backup}")
+    return 0
+
+
+def cmd_delete_rule(kb_path: Path, args: argparse.Namespace) -> int:
+    """Soft (DEPRECATED) or --hard delete a rule."""
+    mode = "HARD" if args.hard else "SOFT"
+    print(f"Delete {V.extract_rule_id(args.rule_id) or args.rule_id} ({mode})")
+    if args.hard:
+        if not args.reason:
+            print("ERROR: --reason required for --hard delete", file=sys.stderr)
+            return 1
+        print(f"  Reason: {args.reason}")
+    if not _confirm("Proceed?", assume_yes=args.yes):
+        print("Aborted.")
+        return 1
+
+    try:
+        if args.hard:
+            backup, ghosts = W.delete_rule_hard(
+                kb_path, args.rule_id, args.reason or ""
+            )
+            print(f"✅ Hard-deleted. Backup: {backup}")
+            if ghosts:
+                print(f"⚠️ Ghost references in Cases:")
+                for g in ghosts:
+                    print(f"   - {g}")
+        else:
+            backup = W.delete_rule_soft(
+                kb_path, args.rule_id, args.reason or ""
+            )
+            print(f"✅ Soft-deleted (DEPRECATED tag). Backup: {backup}")
+    except (ValueError, LookupError, W.KBValidationError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def cmd_merge_rules(kb_path: Path, args: argparse.Namespace) -> int:
+    """Combine 2+ rules into one. Sources marked DEPRECATED."""
+    if len(args.rule_ids) < 2:
+        print("ERROR: merge-rules requires at least 2 rule ids", file=sys.stderr)
+        return 1
+    if not args.reason:
+        print("ERROR: --reason required", file=sys.stderr)
+        return 1
+
+    target_preview = args.into or "lowest"
+    print(f"Merging {args.rule_ids} into {target_preview}")
+    print(f"  Reason: {args.reason}")
+    if not _confirm("Proceed?", assume_yes=args.yes):
+        print("Aborted.")
+        return 1
+
+    try:
+        backup = W.merge_rules(
+            kb_path=kb_path,
+            rule_ids=list(args.rule_ids),
+            into=args.into,
+            reason=args.reason,
+        )
+    except (ValueError, LookupError, W.KBValidationError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print(f"✅ Merged. Backup: {backup}")
+    return 0
+
+
+def cmd_bump_version(kb_path: Path, args: argparse.Namespace) -> int:
+    """Backup + rename KB + update kb_loader.py + kb_schema.py references."""
+    print(f"Bumping KB: {args.from_version} → {args.to_version}")
+    print(f"  Current path: {kb_path}")
+    if not _confirm("Proceed?", assume_yes=args.yes):
+        print("Aborted.")
+        return 1
+
+    try:
+        backup, new_path = W.bump_version(
+            kb_path=kb_path,
+            from_version=args.from_version,
+            to_version=args.to_version,
+        )
+    except (ValueError, FileNotFoundError, FileExistsError, W.KBValidationError) as e:
+        print(f"ERROR: {e}", file=sys.stderr)
+        return 1
+    print(f"✅ Bumped KB to {args.to_version}. Backup: {backup}")
+    print(f"   New KB:  {new_path}")
+    print()
+    print("⚠️ REMINDER: redeploy LLM Engine para que cargue la nueva KB.")
+    print("   gcloud builds submit --config llm_engine_eolo/cloudbuild.yaml .")
+    return 0
+
+
 # ── Entrypoint ────────────────────────────────────────────────────────────
 def build_parser() -> argparse.ArgumentParser:
     """Build the argparse CLI.
@@ -272,7 +515,7 @@ def build_parser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser(
         prog="kb_editor",
-        description="EOLO ThetaHarvest KB editor (UP-1.2 phase 1, read-only)",
+        description="EOLO ThetaHarvest KB editor (phase 1 read + phase 2 write)",
     )
     parser.add_argument(
         "--kb-path",
@@ -282,6 +525,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
 
     sub = parser.add_subparsers(dest="command", required=True)
+    # Phase 1: read-only.
     sub.add_parser("list-rules", help="List Rule_IDs with their tier")
     sub.add_parser("next-id", help="Print the next free TR-Juan-NNN")
     p_show = sub.add_parser("show-rule", help="Show a rule's full row")
@@ -289,6 +533,46 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("validate", help="Run schema and integrity validators")
     sub.add_parser("list-cases", help="List case_ids with their case_quality")
     sub.add_parser("stats", help="Count rules per tier and cases per quality")
+
+    # Phase 2: write commands.
+    p_add = sub.add_parser("add-rule", help="Append a new rule (interactive if args missing)")
+    p_add.add_argument("--rule-id", default=None, help="Override auto-computed id")
+    p_add.add_argument("--tier", default=None, help="One of " + ", ".join(sorted(S.VALID_TIERS)))
+    p_add.add_argument("--trigger", default=None, help="Trigger Conditions")
+    p_add.add_argument("--action", default=None, help="Action")
+    p_add.add_argument("--confidence", default=None, help="HIGH/MEDIUM/LOW/MAXIMA")
+    p_add.add_argument("--source-cases", default=None, help="Cited case_ids")
+    p_add.add_argument("--notes", default=None, help="Free-form notes")
+    p_add.add_argument("--validated", action="store_true", help="Mark as validated")
+    p_add.add_argument("-y", "--yes", action="store_true", help="Skip confirm prompt")
+
+    p_edit = sub.add_parser("edit-rule", help="Update a single field on a rule")
+    p_edit.add_argument("rule_id", help="Rule id (e.g. TR-Juan-043)")
+    p_edit.add_argument(
+        "--field",
+        required=True,
+        help=f"One of: {[h for h in S.DECISION_RULES_EXPECTED_HEADERS if h != 'Rule_ID']}",
+    )
+    p_edit.add_argument("--value", required=True, help="New value")
+    p_edit.add_argument("-y", "--yes", action="store_true", help="Skip confirm prompt")
+
+    p_del = sub.add_parser("delete-rule", help="Soft delete (DEPRECATED) or --hard physical")
+    p_del.add_argument("rule_id", help="Rule id")
+    p_del.add_argument("--hard", action="store_true", help="Physical remove (requires --reason)")
+    p_del.add_argument("--reason", default="", help="Justification (required if --hard)")
+    p_del.add_argument("-y", "--yes", action="store_true", help="Skip confirm prompt")
+
+    p_merge = sub.add_parser("merge-rules", help="Combine 2+ rules; sources DEPRECATED")
+    p_merge.add_argument("rule_ids", nargs="+", help="Rule ids to merge (>=2)")
+    p_merge.add_argument("--into", default=None, help="Target id (default: lowest)")
+    p_merge.add_argument("--reason", required=True, help="Justification")
+    p_merge.add_argument("-y", "--yes", action="store_true", help="Skip confirm prompt")
+
+    p_bump = sub.add_parser("bump-version", help="Backup + rename KB + update refs")
+    p_bump.add_argument("--from", dest="from_version", required=True, help="e.g. v1.2")
+    p_bump.add_argument("--to", dest="to_version", required=True, help="e.g. v1.3")
+    p_bump.add_argument("-y", "--yes", action="store_true", help="Skip confirm prompt")
+
     return parser
 
 
@@ -303,6 +587,22 @@ def main(argv: list[str] | None = None) -> int:
     """
     args = build_parser().parse_args(argv)
 
+    # Write commands handle their own KB loading (open/save cycles).
+    write_handlers = {
+        "add-rule":     lambda: cmd_add_rule(args.kb_path, args),
+        "edit-rule":    lambda: cmd_edit_rule(args.kb_path, args),
+        "delete-rule":  lambda: cmd_delete_rule(args.kb_path, args),
+        "merge-rules":  lambda: cmd_merge_rules(args.kb_path, args),
+        "bump-version": lambda: cmd_bump_version(args.kb_path, args),
+    }
+    if args.command in write_handlers:
+        try:
+            return write_handlers[args.command]()
+        except FileNotFoundError as e:
+            print(f"ERROR: {e}", file=sys.stderr)
+            return 2
+
+    # Read commands load workbook once.
     try:
         wb = V.load_kb(args.kb_path)
     except FileNotFoundError as e:
