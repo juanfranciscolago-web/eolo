@@ -868,30 +868,55 @@ def api_state():
 # ══════════════════════════════════════════════════════════════════════
 #  Sprint OBS-1 — GET /api/version (build/version metadata)
 # ══════════════════════════════════════════════════════════════════════
-def _fetch_engine_health(engine_url: str) -> dict:
-    """Best-effort proxy de /health del LLM Engine.
+# ── Module-level cache para /api/version engine health proxy (fix #90) ──
+_ENGINE_HEALTH_TTL: int = int(os.environ.get("ENGINE_HEALTH_CACHE_TTL", "300"))
+_ENGINE_HEALTH_TIMEOUT: int = int(os.environ.get("ENGINE_HEALTH_TIMEOUT", "5"))
+_engine_health_cache: dict = {}  # {engine_url: {"ts": float, "result": dict}}
 
-    Robusto: si auth o network fallan, devuelve un payload con `status`
-    descriptivo en lugar de propagar la excepción. Caso típico local dev
-    sin metadata server → `auth_unavailable`.
+
+def _fetch_engine_health(engine_url: str) -> dict:
+    """Best-effort proxy de /health del LLM Engine con cache TTL.
+
+    Fix #90: el handler /api/version hacia una llamada fresh cada hit
+    con timeout=3s, lo que producia 'unreachable' frecuente durante
+    cold starts del engine. Ahora:
+      - Cache TTL 5 min (env ENGINE_HEALTH_CACHE_TTL).
+      - Timeout 5s (env ENGINE_HEALTH_TIMEOUT) cuando hay que refetchear.
+      - Si el refetch falla y hay cache stale -> retornar stale con
+        status='stale' + last_check_age_seconds.
     """
+    now = time.time()
+    cached = _engine_health_cache.get(engine_url)
+    if cached and (now - cached["ts"]) < _ENGINE_HEALTH_TTL:
+        return cached["result"]
+
     try:
         from google.auth.transport import requests as _ga_requests
         from google.oauth2 import id_token as _id_token
         token = _id_token.fetch_id_token(_ga_requests.Request(), engine_url)
     except Exception as _e:
         return {"status": "auth_unavailable", "model": "unknown", "error": str(_e)[:200]}
+
     try:
         import urllib.request as _ur
         req = _ur.Request(
             f"{engine_url.rstrip('/')}/health",
             headers={"Authorization": f"Bearer {token}"},
         )
-        with _ur.urlopen(req, timeout=3) as resp:
+        with _ur.urlopen(req, timeout=_ENGINE_HEALTH_TIMEOUT) as resp:
             body = resp.read().decode("utf-8", errors="replace")
-        return json.loads(body)
+        result = json.loads(body)
+        _engine_health_cache[engine_url] = {"ts": now, "result": result}
+        return result
     except Exception as _e:
+        if cached:
+            stale_result = dict(cached["result"])
+            stale_result["status"] = "stale"
+            stale_result["last_check_age_seconds"] = round(now - cached["ts"], 1)
+            stale_result["last_error"] = str(_e)[:200]
+            return stale_result
         return {"status": "unreachable", "error": str(_e)[:200]}
+
 
 
 @app.route("/api/version")
