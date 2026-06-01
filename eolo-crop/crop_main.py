@@ -1344,18 +1344,33 @@ class CropBotTheta:
                             else:
                                 _source = "LLM_UNKNOWN"
                                 _model  = "sonnet"
-                            # tokens: el cliente actual no los expone explícitamente.
-                            # Dejamos 0 hasta que decision.meta los incluya. La
-                            # estimación de costo quedará en 0 por ahora — fix
-                            # cuando el engine devuelva usage stats.
-                            _meta = decision.get("meta") or {}
+                            # Sprint 21 fix: extraer tokens del flow layered.
+                            #   - haiku_skip: solo Haiku se llamó; tokens viven
+                            #     en pre_decision.meta (no en decision.meta).
+                            #   - haiku_pass/haiku_low_conf: Sonnet primario +
+                            #     Haiku pre-filter; agregar Haiku vía haiku_*
+                            #     kwargs para que cost sume ambos modelos.
+                            _meta     = decision.get("meta") or {}
+                            _pre_meta = (decision.get("pre_decision") or {}).get("meta") or {}
+                            if _layered.startswith("haiku_skip"):
+                                _in_tok    = int(_pre_meta.get("input_tokens")  or 0)
+                                _out_tok   = int(_pre_meta.get("output_tokens") or 0)
+                                _haiku_in  = 0
+                                _haiku_out = 0
+                            else:
+                                _in_tok    = int(_meta.get("input_tokens")  or 0)
+                                _out_tok   = int(_meta.get("output_tokens") or 0)
+                                _haiku_in  = int(_pre_meta.get("input_tokens")  or 0)
+                                _haiku_out = int(_pre_meta.get("output_tokens") or 0)
                             self._llm_metrics.record_call(
                                 verdict=decision.get("verdict"),
                                 latency_ms=_llm_latency_ms,
                                 decision_source=_source,
-                                input_tokens=int(_meta.get("input_tokens") or 0),
-                                output_tokens=int(_meta.get("output_tokens") or 0),
+                                input_tokens=_in_tok,
+                                output_tokens=_out_tok,
                                 model=_model,
+                                haiku_input_tokens=_haiku_in,
+                                haiku_output_tokens=_haiku_out,
                             )
                         except Exception as _me:
                             logger.warning(f"[llm] metrics record_call failed: {_me}")
