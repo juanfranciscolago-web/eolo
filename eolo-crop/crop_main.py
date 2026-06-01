@@ -1238,6 +1238,8 @@ class CropBotTheta:
         llm_short_strike_hint: Optional[float] = None
         llm_target_delta_hint: Optional[float] = None
         llm_confidence_hint: int = 0
+        # OPS-3: LLM Risk Arbiter override del NO_TRADE pivot skip
+        llm_override_no_trade_hint: bool = False
 
         # ───── LLM Engine wiring (feature flag) ───────────────────────────
         if self._llm_engine_enabled:
@@ -1403,6 +1405,8 @@ class CropBotTheta:
                         llm_short_strike_hint = llm_params.get("llm_short_strike")
                         llm_target_delta_hint = llm_params.get("llm_target_delta")
                         llm_confidence_hint = confidence
+                        # OPS-3: propagar override flag (force_entry implícito o explícito)
+                        llm_override_no_trade_hint = bool(llm_params.get("llm_override_no_trade", False))
                 except Exception as e:
                     logger.exception(f"[llm] {ticker} wiring exception: {e}")
                     # Continuar con flow normal (rule-based)
@@ -1481,6 +1485,8 @@ class CropBotTheta:
                     llm_short_strike      = llm_short_strike_hint,
                     llm_target_delta      = llm_target_delta_hint,
                     llm_confidence        = llm_confidence_hint,
+                    # OPS-3: LLM Risk Arbiter override NO_TRADE pivot skip
+                    llm_override_no_trade = llm_override_no_trade_hint,
                 )
             except Exception as e:
                 logger.warning(f"[ThetaHarvest] scan error {ticker} DTE={dte}: {e}")
