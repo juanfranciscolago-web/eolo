@@ -19,6 +19,11 @@ _MACRO_EVENT_BLOCK_DAYS = 1
 _ENTRY_WINDOW_START_DEFAULT = time(9, 30)
 _ENTRY_WINDOW_END_DEFAULT = time(12, 0)
 
+# OPS-1 2026-06-01: LLM scope allowlist. TQQQ excluded (3x leverage requires
+# KB additions specific). TODO post-close: hacer config-driven via
+# strategy_params.llm_engine.enabled_tickers.
+LLM_ENABLED_TICKERS = {"SPY", "QQQ", "IWM"}
+
 
 def _parse_hhmm(s: str) -> Optional[time]:
     """Sprint 15: parse "HH:MM" → datetime.time. Returns None si inválido."""
@@ -62,7 +67,7 @@ def should_call_llm(
     Returns (should_call, reason).
 
     Reglas (NO_CALL si alguna aplica):
-    0. Ticker != SPY (4.D HZ-2: LLM scope = SPY only; KB diseñado para SPY/VIX)
+    0. Ticker not in {SPY, QQQ, IWM} — TQQQ excluded (3x leverage, KB additions pending)
     1. Ticker no enabled en tickers_enabled
     2. Hora fuera de ventana 9:30-12:00 ET (para entries) — permitir para
        exits si has_open_positions
@@ -74,11 +79,15 @@ def should_call_llm(
     """
     ticker = snapshot.get("ticker", "?")
 
-    # Rule 0 (4.D HZ-2): LLM scope = SPY only. KB diseñado para SPY/VIX
-    # correlation. QQQ/IWM/TQQQ van rule-based puro (Haiku los rechazaba con
-    # conf=9 anyway, gastando $ inutilmente).
-    if ticker != "SPY":
-        return False, f"non_spy_ticker_llm_scope_spy_only: {ticker}"
+    # Rule 0 (OPS-1 2026-06-01): LLM scope expand a SPY/QQQ/IWM.
+    # TQQQ excluded — 3x leverage requires KB additions specific (sprint follow-up).
+    # TODO post-close: hacer enabled_tickers config-driven via
+    # strategy_params.llm_engine.enabled_tickers.
+    if ticker.upper() not in LLM_ENABLED_TICKERS:
+        return False, (
+            f"ticker_outside_llm_scope: {ticker} "
+            f"(enabled: {sorted(LLM_ENABLED_TICKERS)})"
+        )
 
     # Rule 1: ticker enabled
     if not tickers_enabled.get(ticker, False):
