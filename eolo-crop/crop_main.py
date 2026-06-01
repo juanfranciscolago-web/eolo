@@ -114,6 +114,7 @@ from llm_gate.trade_logger import TradeLogger  # Sprint 9
 from llm_gate.metrics import LLMMetrics  # Sprint 11
 from llm_gate.integration import (
     should_call_llm, llm_decision_to_scan_params, decision_indicates_exit,
+    LLM_ENABLED_TICKERS,  # OPS-1b 2026-06-01: scope expand allowlist
 )
 
 # ── Estrategias Eolo v1 (se importan con lazy-import para no romper
@@ -1240,12 +1241,14 @@ class CropBotTheta:
 
         # ───── LLM Engine wiring (feature flag) ───────────────────────────
         if self._llm_engine_enabled:
-            # Tech debt #24: short-circuit non-SPY ANTES de build_market_snapshot.
-            # `should_call_llm` Rule 0 (llm_gate/integration.py:50) ya rechaza
-            # non-SPY, pero hoy el snapshot se computa primero (RSI/ATR/EMA/MACD/
-            # VWAP en 2 timeframes) y se descarta. Save ~5-10ms/ticker × 3 = ~15-30ms/ciclo.
-            if ticker != "SPY":
-                logger.debug(f"[llm] {ticker} skip: LLM scope = SPY only (rule-based path)")
+            # OPS-1b 2026-06-01: usar misma allowlist que should_call_llm Rule 0
+            # (LLM_ENABLED_TICKERS importada de llm_gate.integration). Short-circuit
+            # antes de build_market_snapshot ahorra ~5-10ms/ticker fuera de scope.
+            if ticker.upper() not in LLM_ENABLED_TICKERS:
+                logger.debug(
+                    f"[llm] {ticker} skip: outside LLM scope "
+                    f"(enabled: {sorted(LLM_ENABLED_TICKERS)}, rule-based path)"
+                )
             # Skip si datos macro o pivot deficientes (snapshot seria engañoso)
             elif pivot_result is None or vix is None:
                 logger.debug(
