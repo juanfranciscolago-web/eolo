@@ -174,10 +174,6 @@ PAPER_TRADING = True
 # candle de 1min igualmente, esto solo afecta la frecuencia de decisiones Claude).
 ANALYSIS_INTERVAL = int(os.environ.get("ANALYSIS_INTERVAL", "180"))
 
-# Hora de auto-close (ET)
-AUTO_CLOSE_HOUR   = 15
-AUTO_CLOSE_MINUTE = 27
-
 # Máximo de posiciones abiertas simultáneas por ticker
 MAX_POSITIONS_PER_TICKER = 2
 
@@ -1771,6 +1767,8 @@ class CropBotTheta:
                     if order_id:
                         self._theta_positions.remove(pos)
                         self._save_theta_positions_to_firestore()
+                        from zoneinfo import ZoneInfo
+                        _et_now_iso = datetime.now(ZoneInfo("America/New_York")).isoformat()
                         try:
                             _nc = pos.get("net_credit") or None
                             _cv = pos.get("current_value") or 0
@@ -1778,7 +1776,7 @@ class CropBotTheta:
                                 "ticker": pos.get("ticker"), "option_type": "put" if "put" in (pos.get("spread_type") or "") else "call",
                                 "strike": pos.get("short_strike"), "expiration": pos.get("expiration"), "qty": pos.get("contracts", 1),
                                 "entry_ts": datetime.utcfromtimestamp(pos.get("opened_at") or 0).isoformat(),
-                                "exit_ts": datetime.utcnow().isoformat(), "entry_price": _nc or 0, "exit_price": _cv,
+                                "exit_ts": _et_now_iso, "entry_price": _nc or 0, "exit_price": _cv,
                                 "pnl": round(pos.get("unrealized_pnl") or 0, 2),
                                 "pnl_pct": round((_nc - _cv) / _nc * 100, 1) if _nc else 0,
                                 "strategy": "theta_harvest", "exit_reason": exit_reason,
@@ -1792,7 +1790,7 @@ class CropBotTheta:
                         if _trade_id_close:
                             try:
                                 _exit_payload = {
-                                    "exit_time_et":       datetime.utcnow().isoformat(),
+                                    "exit_time_et":       _et_now_iso,
                                     "trade_duration_min": round(
                                         (time.time() - (pos.get("opened_at") or time.time())) / 60.0, 1
                                     ),
@@ -3164,9 +3162,10 @@ class CropBotTheta:
         # 1. Firestore (autoritativo — sobrevive redeploys)
         try:
             from google.cloud import firestore as _fs
+            from zoneinfo import ZoneInfo
             project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
             db = _fs.Client(project=project_id)
-            today = datetime.now().strftime("%Y-%m-%d")
+            today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
             doc = db.collection("eolo-crop-trades").document(today).get()
             if doc.exists:
                 for doc_key, t in (doc.to_dict() or {}).items():

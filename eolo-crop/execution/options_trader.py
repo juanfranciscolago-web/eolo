@@ -115,7 +115,7 @@ def _persist_trade_to_firestore(trade: dict) -> None:
         from google.cloud import firestore
         project_id = os.environ.get("GOOGLE_CLOUD_PROJECT", "eolo-schwab-agent")
         db = firestore.Client(project=project_id)
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
         ts     = trade.get("timestamp", "")
         ticker = trade.get("ticker", "")
         action = trade.get("action", "")
