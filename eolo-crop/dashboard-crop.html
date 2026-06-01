@@ -1750,7 +1750,7 @@
   <div class="edit-mode-toolbar" id="edit-mode-toolbar" style="display: none;">
     <button id="edit-mode-discard" class="edit-btn edit-btn-secondary" type="button">↺ Discard</button>
     <button id="edit-mode-export" class="edit-btn edit-btn-primary" type="button">📋 Export JSON</button>
-    <button id="edit-mode-save" class="edit-btn edit-btn-save" type="button" title="Persiste cambios al bot in-memory (perdidos en restart)">💾 Save</button>
+    <button id="edit-mode-save" class="edit-btn edit-btn-save" type="button" title="Persiste cambios a Firestore (sobreviven restart)">💾 Save</button>
   </div>
 </div>
 
@@ -4808,7 +4808,7 @@ function setEditMode(enabled) {
   if (enabled) {
     bar.classList.add('active');
     label.textContent = 'Edit Mode ON';
-    status.textContent = 'editing — changes NOT persisted (Sprint S3)';
+    status.textContent = 'EDITING — changes persist to Firestore on Save';
     toolbar.style.display = 'flex';
   } else {
     bar.classList.remove('active');
@@ -4879,7 +4879,7 @@ async function saveEdits() {
 
     if (r.ok) {
       const applied = res.applied || keys.length;
-      toast(`✅ ${applied} cambio${applied !== 1 ? 's' : ''} guardado${applied !== 1 ? 's' : ''}`, 'success', 3000);
+      toast(`✅ ${applied} cambio${applied !== 1 ? 's' : ''} guardado${applied !== 1 ? 's' : ''} en Firestore`, 'success', 3000);
       // Sprint S2.4: registrar cada edit en audit log (antes de limpiar pendingEdits)
       const _ts = Date.now();
       for (const fid of keys) {
