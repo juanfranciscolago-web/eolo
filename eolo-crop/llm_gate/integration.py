@@ -179,6 +179,30 @@ def llm_decision_to_scan_params(
         params["llm_short_strike"] = strikes.get("put_strike") or strikes.get("call_strike")
         params["llm_target_delta"] = deltas.get("put_delta") or deltas.get("call_delta")
 
+    # ── OPS-3: LLM Risk Arbiter override del NO_TRADE pivot skip ─────────
+    # Explicit flag desde decision.meta.force_entry (cuando KB v1.3 con
+    # TR-Juan-NEW especifica condiciones para override).
+    _meta = decision.get("meta") or {}
+    _force_entry_explicit = bool(_meta.get("force_entry", False))
+
+    # Heurística fallback (sin TR-Juan-NEW en KB v1.2 todavía):
+    # SELL_* con confidence >= 7 → tratamos como implicit force_entry.
+    # Permite override hoy mismo sin esperar KB v1.3.
+    _conf = int(decision.get("confidence", 0) or 0)
+    _implicit_force = (
+        verdict in ("SELL_PUT", "SELL_CALL", "IRON_CONDOR_SEQUENTIAL")
+        and _conf >= 7
+    )
+
+    params["llm_override_no_trade"] = _force_entry_explicit or _implicit_force
+
+    if params["llm_override_no_trade"]:
+        logger.info(
+            f"[llm→scan] {ticker} force_entry=True "
+            f"(explicit={_force_entry_explicit}, "
+            f"implicit_conf={_conf}>=7={_implicit_force})"
+        )
+
     return params
 
 

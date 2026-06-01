@@ -327,6 +327,84 @@ def build_market_snapshot_from_crop(
     snapshot["has_open_positions"] = open_positions_summary is not None
     snapshot["open_positions_summary"] = open_positions_summary
 
+    # ═══════════════════════════════════════════════════════════
+    # OPS-3: Pivot context para LLM Risk Arbiter
+    # El LLM ve el verdict del rule-based + el contexto que lo originó
+    # (PP, distancia, delta target sugerido). Le permite override informed.
+    # ═══════════════════════════════════════════════════════════
+    if pivot_result is not None:
+        try:
+            pp = float(pivot_result.averaged.pp)
+            dist_pct = abs(float(price) - pp) / pp * 100.0 if pp > 0 else 0.0
+            snapshot["pivot_zone_rule_based"] = str(pivot_result.consensus_risk)
+            snapshot["pivot_pp"] = round(pp, 2)
+            snapshot["pivot_dist_pct"] = round(dist_pct, 3)
+            snapshot["pivot_target_delta_min"] = float(getattr(pivot_result, "delta_min", 0.0))
+            snapshot["pivot_target_delta_max"] = float(getattr(pivot_result, "delta_max", 0.0))
+        except Exception as e:
+            logger.warning(f"[snapshot] pivot context enrichment failed: {e}")
+
+    # ═══════════════════════════════════════════════════════════
+    # OPS-3: Quant Data fields (solo SPY/QQQ/IWM, defensive)
+    # Cada fetch es try/except aislado — si uno falla, el resto carga.
+    # ═══════════════════════════════════════════════════════════
+    LLM_ENRICHED_TICKERS = {"SPY", "QQQ", "IWM"}
+    if ticker.upper() in LLM_ENRICHED_TICKERS:
+        try:
+            from llm_gate.external_data_quantdata import (
+                get_max_pain, get_iv_rank, get_gex_regime, get_net_premium_drift,
+            )
+            from datetime import datetime, timedelta
+            from zoneinfo import ZoneInfo
+
+            _et = ZoneInfo("America/New_York")
+            _today = datetime.now(_et).date()
+            # Próximo wed (más relevante para 2-4 DTE Theta Harvest)
+            _days_to_wed = (2 - _today.weekday()) % 7
+            if _days_to_wed == 0:
+                _days_to_wed = 7  # si hoy es wed, usar el próximo
+            _next_wed = _today + timedelta(days=_days_to_wed)
+            _expiry_str = _next_wed.strftime("%Y-%m-%d")
+
+            try:
+                mp = get_max_pain(ticker.upper(), _expiry_str)
+                if mp:
+                    snapshot["max_pain_strike"] = mp.get("max_pain_strike")
+                    snapshot["max_pain_distance_pct"] = mp.get("distance_pct")
+                    snapshot["max_pain_expiry"] = _expiry_str
+            except Exception as e:
+                logger.debug(f"[snapshot] max_pain fetch failed: {e}")
+
+            try:
+                ivr = get_iv_rank(ticker.upper(), look_back_period=30, maturity=7)
+                if ivr:
+                    snapshot["iv_rank_call"] = ivr.get("call_rank_pct")
+                    snapshot["iv_rank_put"] = ivr.get("put_rank_pct")
+            except Exception as e:
+                logger.debug(f"[snapshot] iv_rank fetch failed: {e}")
+
+            try:
+                gex = get_gex_regime(ticker.upper())
+                if gex:
+                    snapshot["gex_regime"] = gex.get("regime")
+                    snapshot["gex_total"] = gex.get("total_gamma")
+                    snapshot["gex_max_call_strike"] = gex.get("max_call_strike")
+                    snapshot["gex_max_put_strike"] = gex.get("max_put_strike")
+            except Exception as e:
+                logger.debug(f"[snapshot] gex fetch failed: {e}")
+
+            try:
+                drift = get_net_premium_drift(ticker.upper())
+                if drift:
+                    snapshot["net_call_premium_drift"] = drift.get("net_call_premium")
+                    snapshot["net_put_premium_drift"] = drift.get("net_put_premium")
+            except Exception as e:
+                logger.debug(f"[snapshot] net_drift fetch failed: {e}")
+        except ImportError as e:
+            logger.warning(f"[snapshot] quantdata module unavailable: {e}")
+        except Exception as e:
+            logger.warning(f"[snapshot] quantdata enrichment failed: {e}")
+
     return snapshot
 
 

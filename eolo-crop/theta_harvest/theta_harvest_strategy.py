@@ -494,6 +494,8 @@ def scan_theta_harvest(
     llm_short_strike:     Optional[float] = None,
     llm_target_delta:     Optional[float] = None,
     llm_confidence:       int = 0,
+    # OPS-3: LLM Risk Arbiter override del NO_TRADE skip cuando pivot bloquea
+    llm_override_no_trade: bool = False,
 ) -> Optional[ThetaHarvestSignal]:
     """
     Escanea el chain de opciones y retorna un ThetaHarvestSignal si las
@@ -558,8 +560,19 @@ def scan_theta_harvest(
         risk_level = "MID"
 
     if pivot_result and pivot_result.consensus_risk == "NO_TRADE":
-        logger.info(f"[ThetaHarvest] {ticker} — pivots indican NO_TRADE, skip")
-        return None
+        if llm_override_no_trade and llm_target_delta:
+            # OPS-3: LLM Risk Arbiter override permitido si hay target delta explícito.
+            # delta_min/max ya fueron seteados al fallback del cfg en el else de
+            # arriba (no son 0.0 del pivot frozen). llm_short_strike — si vino —
+            # toma precedencia en línea 619; sino _find_best_strike usa cfg range.
+            logger.info(
+                f"[ThetaHarvest] {ticker} — pivots NO_TRADE pero LLM override "
+                f"activo (target_delta={llm_target_delta:.3f}, conf={llm_confidence})"
+            )
+            # Continúa al scan — no return.
+        else:
+            logger.info(f"[ThetaHarvest] {ticker} — pivots indican NO_TRADE, skip")
+            return None
 
     # Clampear al rango permitido por el ticker
     delta_min = max(delta_min, cfg["delta_min_abs"])
@@ -1000,6 +1013,8 @@ def scan_theta_harvest_tranches(
     llm_short_strike:     Optional[float] = None,
     llm_target_delta:     Optional[float] = None,
     llm_confidence:       int = 0,
+    # OPS-3: LLM Risk Arbiter override del NO_TRADE skip (propagado a scan interno)
+    llm_override_no_trade: bool = False,
 ) -> list[ThetaHarvestSignal]:
     """
     Crea un set de 3 ThetaHarvestSignal para el mismo spread con distintos
@@ -1056,6 +1071,7 @@ def scan_theta_harvest_tranches(
         llm_short_strike      = llm_short_strike,
         llm_target_delta      = llm_target_delta,
         llm_confidence        = llm_confidence,
+        llm_override_no_trade = llm_override_no_trade,
     )
     if base_signal is None:
         return []
@@ -1088,6 +1104,7 @@ def scan_theta_harvest_tranches(
                 llm_short_strike     = llm_short_strike,
                 llm_target_delta     = llm_target_delta,
                 llm_confidence       = llm_confidence,
+                llm_override_no_trade = llm_override_no_trade,
             )
         if sig is not None:
             signals.append(sig)
