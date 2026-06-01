@@ -354,8 +354,12 @@ def build_market_snapshot_from_crop(
             from llm_gate.external_data_quantdata import (
                 get_max_pain, get_iv_rank, get_gex_regime, get_net_premium_drift,
             )
-            from datetime import datetime, timedelta
-            from zoneinfo import ZoneInfo
+            # hotfix OPS-3: NO re-importar datetime / ZoneInfo aquí — ya están
+            # top-level (línea 25-26). `from datetime import datetime` dentro
+            # de la función convierte `datetime` en local var de TODA la función
+            # (binding-time analysis de Python) y rompe el uso preexistente en
+            # línea 195 con UnboundLocalError. Solo `timedelta` falta top-level.
+            from datetime import timedelta
 
             _et = ZoneInfo("America/New_York")
             _today = datetime.now(_et).date()
