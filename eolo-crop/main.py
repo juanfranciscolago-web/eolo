@@ -1236,6 +1236,170 @@ def api_state_edit():
     }), 200
 
 
+# ===========================================================================
+# Sprint T3 (Master Plan v2.1 sec 9.2): Manual close endpoints
+# ===========================================================================
+import time as _t3_time
+import asyncio as _t3_asyncio
+from backup.firestore_writer import log_system_event as _t3_log_event
+
+_pending_close_all_tokens: dict[str, float] = {}  # token → expiry_ts
+
+
+def _t3_validate_confirm_token(token: str) -> bool:
+    """One-shot validator: token must exist and not be expired (TTL set at issue)."""
+    expiry = _pending_close_all_tokens.pop(token, None)
+    if expiry is None:
+        return False
+    if _t3_time.time() > expiry:
+        return False
+    return True
+
+
+def _t3_position_id(pos: dict) -> str:
+    """Stable identifier for a position dict (uses 'symbol' which is the OCC code)."""
+    return str(pos.get("symbol") or pos.get("id") or "")
+
+
+def _t3_dte_for(pos: dict) -> int:
+    """DTE for a position from its expiration string (best-effort, returns 999 if N/A)."""
+    exp = pos.get("expiration")
+    if not exp:
+        return 999
+    try:
+        from datetime import datetime as _dt, timezone as _tz
+        exp_dt = _dt.strptime(str(exp)[:10], "%Y-%m-%d").replace(tzinfo=_tz.utc)
+        return max(0, (exp_dt - _dt.now(_tz.utc)).days)
+    except Exception:
+        return 999
+
+
+def _t3_close_position_sync(bot, pos: dict, reason: str) -> dict:
+    """Close one position via bot._loop. Returns dict status."""
+    try:
+        pos_with_reason = {**pos, "reason": reason}
+        loop = getattr(bot, "_loop", None)
+        if not (loop and loop.is_running()):
+            return {"ok": False, "error": "bot loop not running"}
+        future = _t3_asyncio.run_coroutine_threadsafe(
+            bot._close_position(pos_with_reason), loop
+        )
+        future.result(timeout=30)
+        return {"ok": True, "symbol": _t3_position_id(pos)}
+    except TimeoutError:
+        return {"ok": False, "error": "timeout 30s — coroutine sigue en background"}
+    except Exception as e:
+        return {"ok": False, "error": repr(e)}
+
+
+@app.route("/positions/close_one", methods=["POST"])
+def positions_close_one():
+    """Close single position by position_id (OCC symbol). Requires reason."""
+    body = request.get_json(force=True, silent=True) or {}
+    position_id = (body.get("position_id") or "").strip()
+    reason = (body.get("reason") or "").strip()
+    force = bool(body.get("force", False))
+    if not position_id or not reason:
+        return jsonify({"error": "position_id and reason required"}), 400
+
+    bot = getattr(crop_main, "bot_instance", None)
+    if bot is None:
+        return jsonify({"error": "bot_instance not initialized"}), 503
+
+    positions = list(getattr(bot, "_open_positions", []) or [])
+    target = next((p for p in positions if _t3_position_id(p) == position_id), None)
+    if target is None:
+        return jsonify({"error": f"position_id {position_id} not found", "open_count": len(positions)}), 404
+
+    result = _t3_close_position_sync(bot, target, reason)
+    _t3_log_event("MANUAL_CLOSE_ONE", {
+        "position_id": position_id,
+        "reason": reason,
+        "force": force,
+        "result": result,
+    })
+    status_code = 200 if result.get("ok") else 500
+    return jsonify({"closed": result.get("ok", False), "position_id": position_id, "result": result}), status_code
+
+
+@app.route("/positions/close_all/request", methods=["POST"])
+def positions_close_all_request():
+    """Step 1 of close_all: request a confirm_token valid for 30s."""
+    body = request.get_json(force=True, silent=True) or {}
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"error": "reason required"}), 400
+    token = f"CLOSE_ALL_{int(_t3_time.time() * 1000)}"
+    _pending_close_all_tokens[token] = _t3_time.time() + 30
+    return jsonify({"confirm_token": token, "expires_in_sec": 30}), 200
+
+
+@app.route("/positions/close_all", methods=["POST"])
+def positions_close_all():
+    """Step 2 of close_all: requires confirm_token + reason. Closes ALL open positions."""
+    body = request.get_json(force=True, silent=True) or {}
+    token = body.get("confirm_token") or ""
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"error": "reason required"}), 400
+    if not token or not _t3_validate_confirm_token(token):
+        return jsonify({"error": "invalid or expired confirm_token"}), 403
+
+    bot = getattr(crop_main, "bot_instance", None)
+    if bot is None:
+        return jsonify({"error": "bot_instance not initialized"}), 503
+
+    positions = list(getattr(bot, "_open_positions", []) or [])
+    results = []
+    for pos in positions:
+        res = _t3_close_position_sync(bot, pos, f"close_all: {reason}")
+        results.append({"position_id": _t3_position_id(pos), "result": res})
+    _t3_log_event("MANUAL_CLOSE_ALL", {
+        "reason": reason,
+        "positions_closed": len(results),
+        "results": results,
+    })
+    return jsonify({"closed_count": len(results), "results": results}), 200
+
+
+@app.route("/positions/close_filter", methods=["POST"])
+def positions_close_filter():
+    """Close positions matching filter (ticker, dte_max). Requires reason."""
+    body = request.get_json(force=True, silent=True) or {}
+    flt = body.get("filter") or {}
+    reason = (body.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"error": "reason required"}), 400
+
+    bot = getattr(crop_main, "bot_instance", None)
+    if bot is None:
+        return jsonify({"error": "bot_instance not initialized"}), 503
+
+    positions = list(getattr(bot, "_open_positions", []) or [])
+    ticker_f = flt.get("ticker")
+    dte_max = flt.get("dte_max")
+
+    matched = []
+    for pos in positions:
+        if ticker_f and pos.get("ticker") != ticker_f:
+            continue
+        if dte_max is not None and _t3_dte_for(pos) > int(dte_max):
+            continue
+        matched.append(pos)
+
+    results = []
+    for pos in matched:
+        res = _t3_close_position_sync(bot, pos, f"close_filter: {reason}")
+        results.append({"position_id": _t3_position_id(pos), "result": res})
+    _t3_log_event("MANUAL_CLOSE_FILTER", {
+        "filter": flt,
+        "reason": reason,
+        "matched_count": len(matched),
+        "results": results,
+    })
+    return jsonify({"matched_count": len(matched), "results": results}), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
