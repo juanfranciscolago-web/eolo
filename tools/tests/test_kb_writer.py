@@ -276,6 +276,41 @@ class TestBumpVersion(KBWriterTestBase):
         self.assertIn("v1.3", loader_content)
         self.assertNotIn("v1.2", loader_content)
 
+    def test_bump_version_skips_code_refs_when_disabled(self):
+        # Stub files that should NOT be modified when update_code_refs=False.
+        eng_dir = self.tmpdir / "llm_engine_eolo" / "llm_engine"
+        eng_dir.mkdir(parents=True, exist_ok=True)
+        loader_path = eng_dir / "kb_loader.py"
+        loader_path.write_text('KB_VERSION = "v1.2"\n', encoding="utf-8")
+        tools_dir = self.tmpdir / "tools"
+        tools_dir.mkdir(exist_ok=True)
+        schema_path = tools_dir / "kb_schema.py"
+        schema_path.write_text(
+            'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_v1.2.xlsx"\n', encoding="utf-8"
+        )
+
+        backup, new_path = W.bump_version(
+            kb_path=self.kb_path,
+            from_version="v1.2",
+            to_version="v1.3",
+            update_code_refs=False,
+        )
+
+        # KB rename + backup still happen.
+        self.assertTrue(backup.exists())
+        self.assertTrue(new_path.exists())
+        self.assertIn("v1.3", new_path.name)
+        self.assertFalse(self.kb_path.exists())
+
+        # But code refs are untouched.
+        self.assertEqual(
+            loader_path.read_text(encoding="utf-8"), 'KB_VERSION = "v1.2"\n'
+        )
+        self.assertEqual(
+            schema_path.read_text(encoding="utf-8"),
+            'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_v1.2.xlsx"\n',
+        )
+
 
 class TestBackupAtomic(KBWriterTestBase):
     def test_backup_creates_valid_file(self):

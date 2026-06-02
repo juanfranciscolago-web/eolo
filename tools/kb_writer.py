@@ -619,8 +619,18 @@ def bump_version(
     kb_path: Path,
     from_version: str,
     to_version: str,
+    update_code_refs: bool = True,
 ) -> tuple[Path, Path]:
-    """Backup + rename KB file + update kb_loader.py and kb_schema.py references.
+    """Backup + rename KB file + (optionally) update kb_loader.py / kb_schema.py refs.
+
+    Args:
+        kb_path: KB file to bump.
+        from_version: Current version tag (e.g. "v1.2").
+        to_version: Target version tag (e.g. "v1.3").
+        update_code_refs: If True, patch kb_loader.py and kb_schema.py to point at
+            the new filename. Default True (canonical KB workflow). Pass False when
+            bumping a non-default KB (e.g. --kb-path /tmp/foo.xlsx) to avoid leaving
+            the editor's schema source pointing at a non-existent path in the worktree.
 
     Returns:
         (backup_path, new_kb_path).
@@ -656,7 +666,6 @@ def bump_version(
 
     # Backup with FINAL tag.
     backup_path = backup_kb(kb_path, f"{from_version}_FINAL")
-
     # New filename.
     new_name = kb_path.name.replace(from_version, to_version)
     new_path = kb_path.parent / new_name
@@ -666,17 +675,23 @@ def bump_version(
     # Rename atomically.
     os.replace(kb_path, new_path)
 
-    # Update references in code.
-    _replace_in_file(
-        S.REPO_ROOT / "llm_engine_eolo" / "llm_engine" / "kb_loader.py",
-        from_version,
-        to_version,
-    )
-    _replace_in_file(
-        S.REPO_ROOT / "tools" / "kb_schema.py",
-        from_version,
-        to_version,
-    )
+    # Update references in code (only for canonical KB workflow).
+    if update_code_refs:
+        _replace_in_file(
+            S.REPO_ROOT / "llm_engine_eolo" / "llm_engine" / "kb_loader.py",
+            from_version,
+            to_version,
+        )
+        _replace_in_file(
+            S.REPO_ROOT / "tools" / "kb_schema.py",
+            from_version,
+            to_version,
+        )
+    else:
+        print(
+            f"  ⚠️  update_code_refs=False: kb_loader.py and tools/kb_schema.py "
+            f"NOT patched. Edit manually if you want the editor to track {new_path.name}."
+        )
 
     return backup_path, new_path
 

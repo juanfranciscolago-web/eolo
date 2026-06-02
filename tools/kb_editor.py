@@ -482,9 +482,14 @@ def cmd_merge_rules(kb_path: Path, args: argparse.Namespace) -> int:
 
 
 def cmd_bump_version(kb_path: Path, args: argparse.Namespace) -> int:
-    """Backup + rename KB + update kb_loader.py + kb_schema.py references."""
+    """Backup + rename KB + (optionally) update kb_loader.py + kb_schema.py references."""
+    is_default = kb_path.resolve() == S.DEFAULT_KB_PATH.resolve()
     print(f"Bumping KB: {args.from_version} → {args.to_version}")
     print(f"  Current path: {kb_path}")
+    if is_default:
+        print(f"  Update code refs: True (canonical KB)")
+    else:
+        print(f"  Update code refs: False (override path → skip patching kb_schema.py / kb_loader.py)")
     if not _confirm("Proceed?", assume_yes=args.yes):
         print("Aborted.")
         return 1
@@ -494,6 +499,7 @@ def cmd_bump_version(kb_path: Path, args: argparse.Namespace) -> int:
             kb_path=kb_path,
             from_version=args.from_version,
             to_version=args.to_version,
+            update_code_refs=is_default,
         )
     except (ValueError, FileNotFoundError, FileExistsError, W.KBValidationError) as e:
         print(f"ERROR: {e}", file=sys.stderr)
@@ -501,8 +507,11 @@ def cmd_bump_version(kb_path: Path, args: argparse.Namespace) -> int:
     print(f"✅ Bumped KB to {args.to_version}. Backup: {backup}")
     print(f"   New KB:  {new_path}")
     print()
-    print("⚠️ REMINDER: redeploy LLM Engine para que cargue la nueva KB.")
-    print("   gcloud builds submit --config llm_engine_eolo/cloudbuild.yaml .")
+    if is_default:
+        print("⚠️ REMINDER: redeploy LLM Engine para que cargue la nueva KB.")
+        print("   gcloud builds submit --config llm_engine_eolo/cloudbuild.yaml .")
+    else:
+        print("ℹ️  Override path: no redeploy needed. tools/kb_schema.py NOT touched.")
     return 0
 
 
