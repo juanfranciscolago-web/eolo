@@ -13,6 +13,7 @@ import time
 import json
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
+from pydantic import BaseModel, Field
 from anthropic import Anthropic, APIError, APITimeoutError
 from llm_engine.kb_loader import KBLoader
 from llm_engine.market_snapshot import MarketSnapshot
@@ -295,6 +296,144 @@ async def pre_decide(snapshot: MarketSnapshot, request: Request) -> dict:
         "output_tokens": output_tokens,
     }
     return result
+
+
+# ===========================================================================
+# Sprint T11/F5.B (Master Plan v2.1 sec 9.3): /juan/suggest endpoint
+# ===========================================================================
+class JuanSuggestionRequest(BaseModel):
+    snapshot: MarketSnapshot
+    suggestion_type: str = Field(pattern="^(ENTRY|EXIT|SIZE_DEBATE|MANUAL_TRADE_LOG)$")
+    proposal: dict
+    reasoning: str
+
+
+@app.post("/juan/suggest")
+async def juan_suggest(req: JuanSuggestionRequest) -> dict:
+    """Evaluate Juan's proposal with dedicated LLM call.
+
+    Sprint T11/F5.B. Devuelve JuanSuggestionResponse per Master Plan sec 9.3.
+    """
+    if not kb_loader:
+        raise HTTPException(503, "KB not loaded")
+
+    request_id = f"sugg_{int(time.time() * 1000)}"
+
+    try:
+        from llm_engine.prompt_builder import build_juan_suggestion_prompt
+        similar_cases = kb_loader.balanced_get_similar_cases(req.snapshot, top_k=3)
+        system_prompt, user_prompt = build_juan_suggestion_prompt(
+            req.snapshot, req.suggestion_type, req.proposal, req.reasoning,
+            similar_cases=similar_cases,
+        )
+
+        response = anthropic_client.messages.create(
+            model=CONFIG["LLM_MODEL"],
+            max_tokens=CONFIG["LLM_MAX_TOKENS"],
+            temperature=CONFIG["LLM_TEMPERATURE"],
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        raw_output = response.content[0].text
+
+        try:
+            cleaned = raw_output.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("```")[1]
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:]
+                cleaned = cleaned.strip()
+            parsed = json.loads(cleaned)
+        except Exception as e:
+            logger.warning(f"[{request_id}] failed to parse suggestion output: {e}")
+            parsed = {
+                "llm_verdict": "PARTIAL_AGREE",
+                "confidence_in_juans_call": 5,
+                "rules_supporting_juan": [],
+                "rules_questioning_juan": [],
+                "alternative_proposal": None,
+                "final_recommendation": "DEFER",
+                "reasoning": f"Output parse failed: {str(e)[:200]}",
+            }
+
+        return {
+            **parsed,
+            "_meta": {
+                "request_id": request_id,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "model": CONFIG["LLM_MODEL"],
+            },
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[{request_id}] juan_suggest failed: {e}")
+        raise HTTPException(500, f"juan_suggest failed: {e}")
+
+
+# ===========================================================================
+# Sprint T11/Sprint 10 (Master Plan v2.1 sec 11.4): /feedback/chat endpoint
+# ===========================================================================
+class FeedbackChatRequest(BaseModel):
+    snapshot_context: dict = Field(default_factory=dict)
+    session_messages: list = Field(default_factory=list)
+    journal: dict = Field(default_factory=dict)
+
+
+@app.post("/feedback/chat")
+async def feedback_chat(req: FeedbackChatRequest) -> dict:
+    """Process feedback chat turn with dedicated LLM call.
+
+    Sprint T11/Sprint 10. Returns response_text + artifacts_proposed.
+    """
+    request_id = f"fb_{int(time.time() * 1000)}"
+
+    try:
+        from llm_engine.prompt_builder import build_feedback_chat_prompt
+        system_prompt, user_prompt = build_feedback_chat_prompt(
+            req.snapshot_context, req.session_messages, req.journal,
+        )
+
+        response = anthropic_client.messages.create(
+            model=CONFIG["LLM_MODEL"],
+            max_tokens=CONFIG["LLM_MAX_TOKENS"],
+            temperature=0.4,
+            system=system_prompt,
+            messages=[{"role": "user", "content": user_prompt}],
+        )
+
+        raw_output = response.content[0].text
+
+        try:
+            cleaned = raw_output.strip()
+            if cleaned.startswith("```"):
+                cleaned = cleaned.split("```")[1]
+                if cleaned.startswith("json"):
+                    cleaned = cleaned[4:]
+                cleaned = cleaned.strip()
+            parsed = json.loads(cleaned)
+        except Exception as e:
+            logger.warning(f"[{request_id}] feedback output parse failed: {e}")
+            parsed = {
+                "response_text": raw_output[:2000],
+                "artifacts_proposed": [],
+                "session_should_close": False,
+            }
+
+        return {
+            **parsed,
+            "_meta": {
+                "request_id": request_id,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "model": CONFIG["LLM_MODEL"],
+            },
+        }
+    except Exception as e:
+        logger.error(f"[{request_id}] feedback_chat failed: {e}")
+        raise HTTPException(500, f"feedback_chat failed: {e}")
 
 
 def _fallback_wait_decision(reason: str, request_id: str, start_time: float) -> dict:

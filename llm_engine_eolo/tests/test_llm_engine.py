@@ -524,6 +524,30 @@ def test_compute_vrp_score():
     assert compute_vrp_score(None) is None
 
 
+def test_build_juan_suggestion_prompt():
+    """T11.A: prompt builder for /juan/suggest."""
+    from llm_engine.prompt_builder import build_juan_suggestion_prompt, JUAN_SUGGESTION_SYSTEM_PROMPT
+    snapshot = make_test_snapshot()
+    snapshot_obj = MarketSnapshot(**snapshot.model_dump())
+    system, user = build_juan_suggestion_prompt(
+        snapshot_obj, "ENTRY", {"action": "SELL_PUT", "strike": 750}, "Setup A+",
+    )
+    assert "evaluador honesto" in system
+    assert "JUAN PROPOSAL" in user
+    assert "SELL_PUT" in user
+
+
+def test_build_feedback_chat_prompt():
+    """T11.A: prompt builder for /feedback/chat."""
+    from llm_engine.prompt_builder import build_feedback_chat_prompt
+    journal = {"date": "2026-06-02", "trades_count": 3, "total_pnl_dollars": 150, "win_rate": 0.67}
+    messages = [{"role": "user", "content": "El trade de SPY..."}]
+    system, user = build_feedback_chat_prompt({}, messages, journal)
+    assert "feedback nocturno" in system
+    assert "2026-06-02" in user
+    assert "El trade de SPY" in user
+
+
 if __name__ == "__main__":
     test_kb_loads()
     test_no_ghost_rules()
@@ -536,4 +560,6 @@ if __name__ == "__main__":
     test_haiku_prompts_build()
     test_pre_decision_parser_ok()
     test_pre_decision_parser_fallback()
+    test_build_juan_suggestion_prompt()
+    test_build_feedback_chat_prompt()
     print("\n🎉 All tests passed!")

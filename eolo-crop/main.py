@@ -1405,18 +1405,9 @@ def positions_close_filter():
 # ===========================================================================
 @app.route("/juan/suggest", methods=["POST"])
 def juan_suggest():
-    """Juan ↔ LLM bidirectional channel.
+    """Forward Juan suggestion to engine for real LLM evaluation.
 
-    Body:
-    {
-      "suggestion_type": "ENTRY" | "EXIT" | "SIZE_DEBATE" | "MANUAL_TRADE_LOG",
-      "ticker": "SPY",
-      "your_proposal": {...},
-      "your_reasoning": "...",
-      "request_llm_opinion": true
-    }
-
-    Response per Master Plan sec 9.3 schema.
+    Sprint T11/F5.B Master Plan v2.1 sec 9.3.
     """
     body = request.get_json(force=True, silent=True) or {}
 
@@ -1432,33 +1423,61 @@ def juan_suggest():
     proposal = body.get("your_proposal") or {}
     reasoning = body.get("your_reasoning", "")
 
-    # Log antes de cualquier llamada al LLM (audit trail).
-    # Reusa el alias _t3_log_event ya importado arriba (línea ~1244) en lugar
-    # de re-importar; un nuevo alias _t5_log_event sería redundante.
+    bot = getattr(crop_main, "bot_instance", None)
+    if bot is None:
+        return jsonify({"error": "bot_instance not initialized"}), 503
+
+    snapshot_dict = (getattr(bot, "_last_snapshots", {}) or {}).get(ticker)
+    if not snapshot_dict:
+        return jsonify({"error": f"no snapshot cached for {ticker}, wait for next cycle"}), 503
+
+    import urllib.request
+    import json as _json
+    try:
+        engine_url = os.getenv("LLM_ENGINE_URL", "https://llm-engine-service-nmjz4iwcea-uc.a.run.app")
+        import google.auth.transport.requests
+        from google.oauth2 import id_token as _id_token
+        auth_req = google.auth.transport.requests.Request()
+        engine_token = _id_token.fetch_id_token(auth_req, engine_url)
+
+        body_to_engine = {
+            "snapshot": snapshot_dict,
+            "suggestion_type": suggestion_type,
+            "proposal": proposal,
+            "reasoning": reasoning,
+        }
+        req_engine = urllib.request.Request(
+            f"{engine_url}/juan/suggest",
+            data=_json.dumps(body_to_engine).encode(),
+            headers={
+                "Authorization": f"Bearer {engine_token}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req_engine, timeout=60) as resp:
+            engine_response = _json.load(resp)
+    except Exception as e:
+        logger.error(f"[/juan/suggest] engine call failed: {e}")
+        _t3_log_event("JUAN_SUGGEST_ENGINE_FAILED", {
+            "ticker": ticker, "error": str(e)[:300],
+        })
+        return jsonify({
+            "error": f"engine unreachable: {e}",
+            "fallback": True,
+        }), 503
+
     _t3_log_event("JUAN_SUGGEST", {
         "suggestion_type": suggestion_type,
         "ticker": ticker,
-        "proposal": proposal,
-        "reasoning": reasoning[:500],
+        "llm_verdict": engine_response.get("llm_verdict"),
+        "final_recommendation": engine_response.get("final_recommendation"),
     })
 
-    # Phase 1: skeleton response — full LLM integration en F5 follow-up
-    # (deferred: requires prompt_builder.build_juan_suggestion_prompt() — F5.B).
     return jsonify({
         "suggestion_id": f"SUG_{int(time.time() * 1000)}",
-        "received": {
-            "suggestion_type": suggestion_type,
-            "ticker": ticker,
-            "proposal": proposal,
-        },
-        "llm_verdict": "PENDING_F5B_INTEGRATION",
-        "confidence_in_juans_call": 0,
-        "rules_supporting_juan": [],
-        "rules_questioning_juan": [],
-        "alternative_proposal": None,
-        "final_recommendation": "PENDING_INTEGRATION",
-        "would_lead_to_case": None,
-        "note": "Phase 1 stub. Full LLM evaluation in F5.B with build_juan_suggestion_prompt().",
+        "received": {"suggestion_type": suggestion_type, "ticker": ticker, "proposal": proposal},
+        **engine_response,
     }), 200
 
 
@@ -1580,16 +1599,86 @@ def journal_chat_start():
 
 @app.route("/journal/chat/message", methods=["POST"])
 def journal_chat_message():
-    """Append message turn to feedback session."""
+    """Process feedback chat message: persist user msg + forward to engine + persist LLM response.
+
+    Sprint T11/Sprint 10.
+    """
     from learning.feedback_chat.session_manager import add_message_to_session
+    from learning.nightly_journal import run_nightly_journal
+    from backup.firestore_writer import _get_client
+
     body = request.get_json(force=True, silent=True) or {}
     date_str = body.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
     role = (body.get("role") or "user").lower()
     content = (body.get("content") or "").strip()
     if not content:
         return jsonify({"error": "content required"}), 400
-    ok = add_message_to_session(date_str, role, content)
-    return jsonify({"appended": ok, "date": date_str}), 200 if ok else 500
+
+    add_message_to_session(date_str, role, content)
+
+    all_rule_ids = []  # bot container no tiene llm_engine package
+    journal = run_nightly_journal(all_rule_ids)
+
+    session_messages = []
+    try:
+        client = _get_client()
+        msgs_ref = client.collection("feedback_sessions").document(date_str).collection("messages")
+        for doc in msgs_ref.stream():
+            session_messages.append(doc.to_dict())
+    except Exception as e:
+        logger.debug(f"[chat] read session messages failed: {e}")
+
+    import urllib.request
+    import json as _json
+    try:
+        engine_url = os.getenv("LLM_ENGINE_URL", "https://llm-engine-service-nmjz4iwcea-uc.a.run.app")
+        import google.auth.transport.requests
+        from google.oauth2 import id_token as _id_token
+        auth_req = google.auth.transport.requests.Request()
+        engine_token = _id_token.fetch_id_token(auth_req, engine_url)
+
+        body_engine = {
+            "snapshot_context": {},
+            "session_messages": session_messages,
+            "journal": journal,
+        }
+        req_engine = urllib.request.Request(
+            f"{engine_url}/feedback/chat",
+            data=_json.dumps(body_engine).encode(),
+            headers={"Authorization": f"Bearer {engine_token}", "Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req_engine, timeout=60) as resp:
+            engine_response = _json.load(resp)
+    except Exception as e:
+        logger.error(f"[chat] engine call failed: {e}")
+        return jsonify({"appended": True, "error": f"engine failed: {e}"}), 503
+
+    response_text = engine_response.get("response_text", "")
+    if response_text:
+        add_message_to_session(date_str, "assistant", response_text)
+
+    from learning.feedback_chat.artifact_writer import (
+        write_rule_proposal, write_case_upgrade, write_lesson_learned, write_qa_ticket,
+    )
+    for artifact in engine_response.get("artifacts_proposed", []):
+        atype = artifact.get("type")
+        if atype == "rule_proposal":
+            write_rule_proposal(date_str, artifact.get("rule_id", "?"), artifact.get("change", ""), artifact.get("justification", ""))
+        elif atype == "case_upgrade":
+            write_case_upgrade(date_str, artifact.get("case_id", "?"), artifact.get("from_quality", "SILVER"), artifact.get("to_quality", "GOLD"), artifact.get("reason", ""))
+        elif atype == "lesson_learned":
+            write_lesson_learned(date_str, artifact.get("lesson", ""), artifact.get("supporting_trade_ids", []))
+        elif atype == "qa_ticket":
+            write_qa_ticket(date_str, artifact.get("summary", ""), artifact.get("severity", "MEDIUM"))
+
+    return jsonify({
+        "appended": True,
+        "date": date_str,
+        "response_text": response_text,
+        "artifacts_count": len(engine_response.get("artifacts_proposed", [])),
+        "session_should_close": engine_response.get("session_should_close", False),
+    }), 200
 
 
 @app.route("/journal/chat/close", methods=["POST"])

@@ -6,6 +6,7 @@ Estrategia:
 - User prompt dinámico con MarketSnapshot + similar cases
 - Output esperado: JSON estructurado
 """
+import json
 from typing import List
 from llm_engine.kb_loader import KBLoader, TacitRule, Case
 from llm_engine.market_snapshot import MarketSnapshot
@@ -261,3 +262,121 @@ def build_prompts(kb: KBLoader, snapshot: MarketSnapshot) -> tuple:
     system = build_system_prompt(kb, similar_cases)
     user = build_user_prompt(snapshot)
     return system, user
+
+
+# ===========================================================================
+# Sprint T11/F5.B (Master Plan v2.1 sec 9.3): /juan/suggest prompt
+# ===========================================================================
+JUAN_SUGGESTION_SYSTEM_PROMPT = """Sos el LLM evaluador de propuestas de Juan
+para Eolo Crop. Tono: evaluador honesto, NO complaciente.
+
+Juan te manda un setup propuesto. Vos analizás:
+1. ¿Está fundado en alguna regla del KB?
+2. ¿Hay reglas que LO CONTRADICEN?
+3. ¿El sizing tiene sentido para el régimen actual?
+4. ¿Hay timing issues (eventos próximos: FOMC/CPI/NFP/earnings)?
+
+Output JSON con schema:
+{
+  "llm_verdict": "AGREE" | "DISAGREE" | "PARTIAL_AGREE" | "BLOCK_HARD",
+  "confidence_in_juans_call": 1-10,
+  "rules_supporting_juan": ["TR-Juan-XXX", ...],
+  "rules_questioning_juan": ["TR-Juan-YYY", ...],
+  "alternative_proposal": {strike, dte, action, rationale} | null,
+  "final_recommendation": "ACCEPT_AS_IS" | "ACCEPT_WITH_ADJUSTMENT" | "REJECT" | "DEFER",
+  "reasoning": "<2-3 oraciones explicando el verdict>"
+}
+
+Reglas operativas:
+- Si Juan propone algo que contradice una regla PROHIBITIVA o AXIOMA del KB:
+  BLOCK_HARD obligatorio.
+- Si Juan tiene buen setup pero strikes/DTE están subóptimos: PARTIAL_AGREE
+  con alternative_proposal.
+- AGREE solo si el setup está alineado con KB + decision matrix.
+- NO ES TU ROL elogiar a Juan. Sé directo.
+"""
+
+
+def build_juan_suggestion_prompt(
+    snapshot: MarketSnapshot,
+    suggestion_type: str,
+    proposal: dict,
+    reasoning: str,
+    similar_cases=None,
+) -> tuple[str, str]:
+    """Build system + user prompt para Juan suggestion evaluation.
+
+    Sprint T11/F5.B. Tono evaluador honesto per Master Plan sec 9.3.
+    """
+    system = JUAN_SUGGESTION_SYSTEM_PROMPT
+
+    user_parts = [
+        f"=== JUAN PROPOSAL — type: {suggestion_type} ===",
+        "",
+        f"Ticker: {snapshot.ticker}",
+        f"Proposal: {json.dumps(proposal, indent=2)}",
+        "",
+        f"Juan reasoning: {reasoning[:1000]}",
+        "",
+        "=== MARKET SNAPSHOT ===",
+        snapshot.to_llm_format(),
+    ]
+
+    if similar_cases:
+        user_parts.append("\n=== SIMILAR HISTORICAL CASES ===")
+        for case in similar_cases[:3]:
+            user_parts.append(format_case(case))
+
+    user_parts.append("\nEvaluá la propuesta. Output JSON only.")
+
+    return system, "\n".join(user_parts)
+
+
+# ===========================================================================
+# Sprint T11/F4 Sprint 10 (Master Plan v2.1 sec 11.4): Feedback chat prompt
+# ===========================================================================
+def build_feedback_chat_prompt(
+    snapshot_context: dict,
+    session_messages: list,
+    journal: dict,
+) -> tuple[str, str]:
+    """Build system + user prompt para sesión feedback nocturno.
+
+    Sprint T11/Sprint 10 full integration. System prompt está en bot side
+    (eolo-crop/learning/feedback_chat/prompt_builder.py FEEDBACK_SYSTEM_PROMPT).
+    Engine recibe history + agrega context del KB.
+    """
+    # System: copy del bot's FEEDBACK_SYSTEM_PROMPT (DRY mantenida en bot)
+    system = """Sos el LLM de feedback nocturno de Eolo Crop. Tu rol es
+distinto al LLM de decisión.
+
+Reglas operativas:
+1. PRIORIDAD: overrides manuales > Juan disagreed > high P/L > rules first-time > régimen poco visto
+2. NO HACÉS: celebrar wins, disculpas por losses, preguntas retóricas
+3. OUTPUT al cierre: rule_proposal | case_upgrade | lesson_learned | qa_ticket
+
+Devolvé JSON al cierre:
+{
+  "response_text": "<tu mensaje al usuario>",
+  "artifacts_proposed": [{"type": "rule_proposal|case_upgrade|lesson_learned", ...}],
+  "session_should_close": true|false
+}
+"""
+
+    # User: journal + history
+    win_rate = journal.get('win_rate')
+    win_rate_str = f"{win_rate:.0%}" if isinstance(win_rate, (int, float)) else str(win_rate)
+    user_parts = [
+        f"=== DAILY JOURNAL ===",
+        f"Date: {journal.get('date')}",
+        f"Trades: {journal.get('trades_count')}",
+        f"P/L: ${journal.get('total_pnl_dollars')}",
+        f"Win rate: {win_rate_str}",
+        f"Rules cited today: {journal.get('rules_cited_today', [])}",
+        "",
+        "=== SESSION HISTORY ===",
+    ]
+    for msg in session_messages[-20:]:  # last 20 turns
+        user_parts.append(f"[{msg.get('role')}] {msg.get('content', '')[:500]}")
+
+    return system, "\n".join(user_parts)
