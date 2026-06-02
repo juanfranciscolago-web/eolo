@@ -93,6 +93,23 @@ class MarketSnapshot(BaseModel):
     iv_rank_spy: Optional[float] = None
     iv_30d: Optional[float] = None
 
+    # === QUANT DATA — Hotfix #95 (2026-06-01): close wire boundary ===
+    # Bot CROP (snapshot.py:355-406) writes these from get_max_pain /
+    # get_iv_rank / get_gex_regime / get_net_premium_drift; without these
+    # declarations they were silently dropped at Pydantic boundary
+    # (extra="ignore" default).
+    max_pain_strike: Optional[float] = None
+    max_pain_distance_pct: Optional[float] = None
+    max_pain_expiry: Optional[str] = None
+    iv_rank_call: Optional[float] = None
+    iv_rank_put: Optional[float] = None
+    gex_regime: Optional[str] = None
+    gex_total: Optional[float] = None
+    gex_max_call_strike: Optional[float] = None
+    gex_max_put_strike: Optional[float] = None
+    net_call_premium_drift: Optional[float] = None
+    net_put_premium_drift: Optional[float] = None
+
     # Macro context
     days_to_next_fomc: Optional[int] = None
     days_to_next_cpi: Optional[int] = None
@@ -155,6 +172,19 @@ VOLUME PRESSURE (2m)
 OPTIONS CONTEXT
 - IV Rank SPY: {self.iv_rank_spy if self.iv_rank_spy is not None else 'N/A'}
 - IV 30d: {self.iv_30d if self.iv_30d is not None else 'N/A'}
+
+OPTIONS POSITIONING (Quant Data)
+- Max Pain Strike: {self.max_pain_strike if self.max_pain_strike is not None else 'N/A'}
+- Max Pain Distance: {self.max_pain_distance_pct if self.max_pain_distance_pct is not None else 'N/A'}%
+- Max Pain Expiry: {self.max_pain_expiry if self.max_pain_expiry else 'N/A'}
+- IV Rank Call: {self.iv_rank_call if self.iv_rank_call is not None else 'N/A'}
+- IV Rank Put: {self.iv_rank_put if self.iv_rank_put is not None else 'N/A'}
+- GEX Regime: {self.gex_regime if self.gex_regime else 'N/A'}
+- GEX Total: {self.gex_total if self.gex_total is not None else 'N/A'}
+- GEX Max Call Strike: {self.gex_max_call_strike if self.gex_max_call_strike is not None else 'N/A'}
+- GEX Max Put Strike: {self.gex_max_put_strike if self.gex_max_put_strike is not None else 'N/A'}
+- Net Premium Drift Call: {self.net_call_premium_drift if self.net_call_premium_drift is not None else 'N/A'}
+- Net Premium Drift Put: {self.net_put_premium_drift if self.net_put_premium_drift is not None else 'N/A'}
 
 MACRO CONTEXT
 - Days to FOMC: {self.days_to_next_fomc or 'N/A'}

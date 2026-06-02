@@ -285,6 +285,69 @@ def test_pre_decision_parser_fallback():
     print(f"OK PreDecision parser fallback (should_call_full=True)")
 
 
+def test_market_snapshot_accepts_quantdata_fields():
+    """Hotfix #95: schema accepts QD fields posted by bot CROP."""
+    base = make_test_snapshot()
+    qd_dict = base.model_dump()
+    qd_dict.update({
+        "max_pain_strike": 595.0,
+        "max_pain_distance_pct": 0.42,
+        "max_pain_expiry": "2026-06-02",
+        "iv_rank_call": 28.5,
+        "iv_rank_put": 32.1,
+        "gex_regime": "negative",
+        "gex_total": -1.2e9,
+        "gex_max_call_strike": 600.0,
+        "gex_max_put_strike": 590.0,
+        "net_call_premium_drift": -125000.0,
+        "net_put_premium_drift": 85000.0,
+    })
+    snap = MarketSnapshot(**qd_dict)
+    assert snap.max_pain_strike == 595.0
+    assert snap.max_pain_expiry == "2026-06-02"
+    assert snap.iv_rank_call == 28.5
+    assert snap.iv_rank_put == 32.1
+    assert snap.gex_regime == "negative"
+    assert snap.gex_total == -1.2e9
+    assert snap.net_call_premium_drift == -125000.0
+    assert snap.net_put_premium_drift == 85000.0
+
+
+def test_to_llm_format_renders_options_positioning():
+    """Hotfix #95: to_llm_format() renders OPTIONS POSITIONING section with QD values."""
+    base = make_test_snapshot()
+    qd_dict = base.model_dump()
+    qd_dict.update({
+        "max_pain_strike": 595.0,
+        "max_pain_distance_pct": 0.42,
+        "max_pain_expiry": "2026-06-02",
+        "iv_rank_call": 28.5,
+        "iv_rank_put": 32.1,
+        "gex_regime": "extreme_negative",
+        "gex_total": -1.2e9,
+        "gex_max_call_strike": 600.0,
+        "gex_max_put_strike": 590.0,
+        "net_call_premium_drift": -125000.0,
+        "net_put_premium_drift": 85000.0,
+    })
+    snap = MarketSnapshot(**qd_dict)
+    prompt = snap.to_llm_format()
+
+    # Section header present
+    assert "OPTIONS POSITIONING" in prompt
+    # Max pain rendered
+    assert "595" in prompt
+    assert "2026-06-02" in prompt
+    # IV rank rendered (ticker-specific, not broken iv_rank_spy)
+    assert "28.5" in prompt
+    assert "32.1" in prompt
+    # GEX regime rendered
+    assert "extreme_negative" in prompt
+    # Net premium drift rendered
+    assert "-125000" in prompt or "125000" in prompt
+    assert "85000" in prompt
+
+
 if __name__ == "__main__":
     test_kb_loads()
     test_no_ghost_rules()
