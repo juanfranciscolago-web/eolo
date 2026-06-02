@@ -1565,6 +1565,69 @@ def trading_mode_revert():
     }), 200
 
 
+# ===========================================================================
+# Sprint T9 (Master Plan v2.1 sec 11.4): Chat feedback nocturno endpoints
+# ===========================================================================
+@app.route("/journal/chat/start", methods=["POST"])
+def journal_chat_start():
+    """Open new feedback session. Returns session_id."""
+    from learning.feedback_chat.session_manager import open_feedback_session
+    body = request.get_json(force=True, silent=True) or {}
+    date_str = body.get("date")
+    session_id = open_feedback_session(date_str)
+    return jsonify({"session_id": session_id, "status": "OPEN"}), 200
+
+
+@app.route("/journal/chat/message", methods=["POST"])
+def journal_chat_message():
+    """Append message turn to feedback session."""
+    from learning.feedback_chat.session_manager import add_message_to_session
+    body = request.get_json(force=True, silent=True) or {}
+    date_str = body.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
+    role = (body.get("role") or "user").lower()
+    content = (body.get("content") or "").strip()
+    if not content:
+        return jsonify({"error": "content required"}), 400
+    ok = add_message_to_session(date_str, role, content)
+    return jsonify({"appended": ok, "date": date_str}), 200 if ok else 500
+
+
+@app.route("/journal/chat/close", methods=["POST"])
+def journal_chat_close():
+    """Close feedback session."""
+    from learning.feedback_chat.session_manager import close_session
+    body = request.get_json(force=True, silent=True) or {}
+    date_str = body.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
+    summary = close_session(date_str)
+    return jsonify(summary), 200
+
+
+@app.route("/journal/today", methods=["GET"])
+def journal_today():
+    """Generate nightly journal for today on-demand."""
+    from learning.nightly_journal import run_nightly_journal
+    import glob
+    # Reusa el alias _sys (top-level import en línea 26) en lugar de
+    # re-importar sys — convención del módulo.
+    sys_path_added = False
+    try:
+        _sys.path.insert(0, "llm_engine_eolo")
+        sys_path_added = True
+        from llm_engine.kb_loader import KBLoader
+        kbs = sorted(glob.glob("llm_engine_eolo/kb/EOLO_ThetaHarvest_v*.xlsx"))
+        kb = KBLoader(kbs[-1])
+        all_rule_ids = [r.rule_id for r in kb.rules]
+    finally:
+        if sys_path_added:
+            try:
+                _sys.path.remove("llm_engine_eolo")
+            except ValueError:
+                pass
+
+    journal = run_nightly_journal(all_rule_ids)
+    return jsonify(journal), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
