@@ -1604,25 +1604,34 @@ def journal_chat_close():
 
 @app.route("/journal/today", methods=["GET"])
 def journal_today():
-    """Generate nightly journal for today on-demand."""
+    """Generate nightly journal for today on-demand.
+
+    Bot CROP container NO incluye el package llm_engine (deploys separados:
+    eolo-crop vs llm-engine-service). Para obtener la lista de rule_ids:
+      1. Si el package está disponible localmente (dev/test), úsalo
+      2. Si no, intentá fetch al engine HTTP /kb_stats — pero ese endpoint
+         devuelve solo counts, no ids. Por ahora, fallback a empty list:
+         el journal pierde la lista de "unused_rules_30d" pero el resto
+         (trades, P/L, win_rate) sigue funcionando.
+    """
     from learning.nightly_journal import run_nightly_journal
-    import glob
-    # Reusa el alias _sys (top-level import en línea 26) en lugar de
-    # re-importar sys — convención del módulo.
-    sys_path_added = False
+    all_rule_ids = []
     try:
+        import glob
         _sys.path.insert(0, "llm_engine_eolo")
-        sys_path_added = True
-        from llm_engine.kb_loader import KBLoader
-        kbs = sorted(glob.glob("llm_engine_eolo/kb/EOLO_ThetaHarvest_v*.xlsx"))
-        kb = KBLoader(kbs[-1])
-        all_rule_ids = [r.rule_id for r in kb.rules]
-    finally:
-        if sys_path_added:
+        try:
+            from llm_engine.kb_loader import KBLoader
+            kbs = sorted(glob.glob("llm_engine_eolo/kb/EOLO_ThetaHarvest_v*.xlsx"))
+            if kbs:
+                kb = KBLoader(kbs[-1])
+                all_rule_ids = [r.rule_id for r in kb.rules]
+        finally:
             try:
                 _sys.path.remove("llm_engine_eolo")
             except ValueError:
                 pass
+    except ImportError:
+        logger.debug("[journal_today] llm_engine package no disponible en container, rule_ids=[]")
 
     journal = run_nightly_journal(all_rule_ids)
     return jsonify(journal), 200
