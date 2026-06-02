@@ -6,7 +6,7 @@ Tier 1 endpoints (validados con SPY real 2026-06-01):
     /v1/options/tool/exposure-by-strike (requires greekMode + representationMode)
 
 Tier 1 endpoint pendiente de verificar shape:
-    /v1/options/tool/net-drift         (TODO: validar response antes de wire a snapshot)
+    /v1/options/tool/net-drift         (wire LIVE post-hotfix #95, commit 0f77177)
 
 Diseño:
 - API key vía Secret Manager con fallback a env var QUANTDATA_API_KEY.
@@ -16,8 +16,10 @@ Diseño:
   Si el shape no matchea ningún variante conocido, loguea los keys reales y
   retorna None (NO inventa fields).
 
-No se modifica `snapshot.py` ni `crop_main.py` desde este módulo — el wire
-queda para sprint siguiente cuando Sprint 11 (LLM metrics backend) esté live.
+Wire al snapshot.py implementado en OPS-3 (PR #34, 1-jun-2026): snapshot.py:355-406
+importa y llama get_max_pain / get_iv_rank / get_gex_regime / get_net_premium_drift.
+Wire al prompt LLM cerrado en hotfix #95 (commit 0f77177, 2-jun-2026): MarketSnapshot
+Pydantic schema declara los 11 fields QD.
 """
 from __future__ import annotations
 

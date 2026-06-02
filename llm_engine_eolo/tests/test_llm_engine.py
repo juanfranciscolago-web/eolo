@@ -18,8 +18,14 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
-# KB path relativo - funciona desde cualquier directorio
-KB_PATH = str(PROJECT_ROOT / "kb" / "EOLO_ThetaHarvest_v1.2.xlsx")
+# Finding G fix (2026-06-01 noche): auto-discover KB Excel by glob so future
+# bump-version (v1.3+) doesn't break tests with FileNotFoundError. NOTE: assertions
+# below (61 rules, 6 cases) STAY version-specific — bump them when KB v1.3 lands
+# in Sprint UP-1.4.
+import re as _re
+_kb_files = list((PROJECT_ROOT / "kb").glob("EOLO_ThetaHarvest_v*.xlsx"))
+assert _kb_files, f"No KB Excel found in {PROJECT_ROOT / 'kb'}"
+KB_PATH = str(sorted(_kb_files, key=lambda p: tuple(int(g) for g in _re.search(r"v(\d+)\.(\d+)", p.stem).groups()))[-1])
 
 from llm_engine.kb_loader import KBLoader
 from llm_engine.market_snapshot import MarketSnapshot
