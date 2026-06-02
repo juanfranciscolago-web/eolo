@@ -262,6 +262,46 @@ class KBLoader:
         scored.sort(key=lambda x: x[0], reverse=True)
         return [case for _, case in scored[:top_k]]
 
+    def balanced_get_similar_cases(self, snapshot, top_k: int = 3) -> List[Case]:
+        """Sprint 8 (T7): balanced sampling por régimen para evitar RAG bias.
+
+        Devuelve al menos 1 case del MISMO régimen + 1 de DIFERENTE + 1 best overall.
+        Legacy get_similar_cases sigue disponible sin cambios.
+        """
+        keywords = snapshot.get_setup_keywords() if hasattr(snapshot, "get_setup_keywords") else []
+        current_regime = getattr(snapshot, "gamma_regime_v2", "unknown")
+
+        all_matches = []
+        for case in self.cases:
+            text = f"{case.setup_type} {case.juan_action} {case.rag_tags}".lower()
+            score = sum(1 for kw in keywords if kw.lower() in text)
+            if score > 0:
+                all_matches.append((score, case))
+
+        by_regime: dict = {}
+        for score, case in all_matches:
+            regime = getattr(case, "regime", "unknown")
+            by_regime.setdefault(regime, []).append((score, case))
+
+        selected: List[Case] = []
+        same = by_regime.get(current_regime, [])
+        if same:
+            selected.append(sorted(same, key=lambda x: -x[0])[0][1])
+
+        diff_candidates = []
+        for regime, matches in by_regime.items():
+            if regime != current_regime:
+                diff_candidates.extend(matches)
+        if diff_candidates:
+            selected.append(sorted(diff_candidates, key=lambda x: -x[0])[0][1])
+
+        selected_ids = {getattr(c, "case_id", id(c)) for c in selected}
+        remaining = [c for s, c in sorted(all_matches, key=lambda x: -x[0])
+                     if getattr(c, "case_id", id(c)) not in selected_ids]
+        selected.extend(remaining[:max(0, top_k - len(selected))])
+
+        return selected[:top_k]
+
     def stats(self) -> dict:
         return {
             "total_rules": len(self.rules),
