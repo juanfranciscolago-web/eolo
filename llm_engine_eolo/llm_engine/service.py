@@ -41,10 +41,12 @@ async def lifespan(app: FastAPI):
     global kb_loader, anthropic_client, CONFIG
 
     # KB_PATH: auto-discover by glob (Finding G pattern del test) — sobrevive
-    # futuros bump-version sin re-edit. Si KB_PATH env var está seteado, gana.
-    # NOTA: el default v1.2 hardcoded reventó deploy T1-T9 cuando T2 bumpeó
-    # a v1.3 (la rev 00005-6hr falló con FileNotFoundError).
+    # futuros bump-version sin re-edit. Defensa adicional: si KB_PATH env var
+    # está seteado pero apunta a archivo que NO existe (caso real deploy 00005
+    # 00006 cuando deploy.sh tenía v1.2 hardcoded post-T2 bump a v1.3),
+    # fallback al glob también.
     import glob as _glob
+    import os.path as _osp
     import re as _re
 
     def _kb_version_key(path: str) -> tuple:
@@ -53,6 +55,10 @@ async def lifespan(app: FastAPI):
 
     _kbs = sorted(_glob.glob("/app/kb/EOLO_ThetaHarvest_v*.xlsx"), key=_kb_version_key)
     _default_kb = _kbs[-1] if _kbs else "/app/kb/EOLO_ThetaHarvest_v1.3.xlsx"
+    _env_kb = os.getenv("KB_PATH")
+    if _env_kb and not _osp.exists(_env_kb):
+        logger.warning(f"KB_PATH env var={_env_kb} no existe, fallback a {_default_kb}")
+        _env_kb = None
 
     CONFIG = {
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
@@ -60,7 +66,7 @@ async def lifespan(app: FastAPI):
         "HAIKU_MODEL": os.getenv("HAIKU_MODEL", "claude-haiku-4-5-20251001"),
         "LLM_MAX_TOKENS": int(os.getenv("LLM_MAX_TOKENS", "4096")),
         "LLM_TEMPERATURE": float(os.getenv("LLM_TEMPERATURE", "0.3")),
-        "KB_PATH": os.getenv("KB_PATH", _default_kb),
+        "KB_PATH": _env_kb or _default_kb,
         "PAPER_TRADING_ONLY": os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true",
     }
 
