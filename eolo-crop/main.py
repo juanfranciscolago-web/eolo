@@ -1400,6 +1400,68 @@ def positions_close_filter():
     return jsonify({"matched_count": len(matched), "results": results}), 200
 
 
+# ===========================================================================
+# Sprint T5/F5 (Master Plan v2.1 sec 9.3): /juan/suggest endpoint
+# ===========================================================================
+@app.route("/juan/suggest", methods=["POST"])
+def juan_suggest():
+    """Juan ↔ LLM bidirectional channel.
+
+    Body:
+    {
+      "suggestion_type": "ENTRY" | "EXIT" | "SIZE_DEBATE" | "MANUAL_TRADE_LOG",
+      "ticker": "SPY",
+      "your_proposal": {...},
+      "your_reasoning": "...",
+      "request_llm_opinion": true
+    }
+
+    Response per Master Plan sec 9.3 schema.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+
+    suggestion_type = (body.get("suggestion_type") or "").upper()
+    valid_types = {"ENTRY", "EXIT", "SIZE_DEBATE", "MANUAL_TRADE_LOG"}
+    if suggestion_type not in valid_types:
+        return jsonify({"error": f"suggestion_type must be one of {sorted(valid_types)}"}), 400
+
+    ticker = (body.get("ticker") or "").upper()
+    if not ticker:
+        return jsonify({"error": "ticker required"}), 400
+
+    proposal = body.get("your_proposal") or {}
+    reasoning = body.get("your_reasoning", "")
+
+    # Log antes de cualquier llamada al LLM (audit trail).
+    # Reusa el alias _t3_log_event ya importado arriba (línea ~1244) en lugar
+    # de re-importar; un nuevo alias _t5_log_event sería redundante.
+    _t3_log_event("JUAN_SUGGEST", {
+        "suggestion_type": suggestion_type,
+        "ticker": ticker,
+        "proposal": proposal,
+        "reasoning": reasoning[:500],
+    })
+
+    # Phase 1: skeleton response — full LLM integration en F5 follow-up
+    # (deferred: requires prompt_builder.build_juan_suggestion_prompt() — F5.B).
+    return jsonify({
+        "suggestion_id": f"SUG_{int(time.time() * 1000)}",
+        "received": {
+            "suggestion_type": suggestion_type,
+            "ticker": ticker,
+            "proposal": proposal,
+        },
+        "llm_verdict": "PENDING_F5B_INTEGRATION",
+        "confidence_in_juans_call": 0,
+        "rules_supporting_juan": [],
+        "rules_questioning_juan": [],
+        "alternative_proposal": None,
+        "final_recommendation": "PENDING_INTEGRATION",
+        "would_lead_to_case": None,
+        "note": "Phase 1 stub. Full LLM evaluation in F5.B with build_juan_suggestion_prompt().",
+    }), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
