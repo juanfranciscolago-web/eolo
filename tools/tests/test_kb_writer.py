@@ -247,68 +247,85 @@ class TestMergeRules(KBWriterTestBase):
 
 
 class TestBumpVersion(KBWriterTestBase):
+    @staticmethod
+    def _versions_from_kb_name(kb_name: str) -> tuple[str, str]:
+        """Derive (from_version, to_version) from a KB filename like
+        EOLO_ThetaHarvest_v1.3.xlsx → ('v1.3', 'v1.4').
+
+        Keeps the bump tests version-agnostic so they survive future bumps
+        without manual edits.
+        """
+        import re
+        m = re.search(r"v(\d+)\.(\d+)", kb_name)
+        if not m:
+            raise ValueError(f"Cannot extract version from {kb_name}")
+        major, minor = int(m.group(1)), int(m.group(2))
+        return f"v{major}.{minor}", f"v{major}.{minor + 1}"
+
     def test_bump_version_renames_and_creates_backup(self):
+        from_v, to_v = self._versions_from_kb_name(self.kb_path.name)
         # Build a self-contained test: copy the kb_loader.py and kb_schema.py
         # into the temp REPO_ROOT so _replace_in_file can act on them.
         eng_dir = self.tmpdir / "llm_engine_eolo" / "llm_engine"
         eng_dir.mkdir(parents=True, exist_ok=True)
         (eng_dir / "kb_loader.py").write_text(
-            'KB_VERSION = "v1.2"\n', encoding="utf-8"
+            f'KB_VERSION = "{from_v}"\n', encoding="utf-8"
         )
         tools_dir = self.tmpdir / "tools"
         tools_dir.mkdir(exist_ok=True)
         (tools_dir / "kb_schema.py").write_text(
-            'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_v1.2.xlsx"\n', encoding="utf-8"
+            f'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_{from_v}.xlsx"\n', encoding="utf-8"
         )
 
         backup, new_path = W.bump_version(
             kb_path=self.kb_path,
-            from_version="v1.2",
-            to_version="v1.3",
+            from_version=from_v,
+            to_version=to_v,
         )
         self.assertTrue(backup.exists())
         self.assertTrue(new_path.exists())
-        self.assertIn("v1.3", new_path.name)
+        self.assertIn(to_v, new_path.name)
         self.assertFalse(self.kb_path.exists())  # old name gone
 
         # Refs updated in stub files.
         loader_content = (eng_dir / "kb_loader.py").read_text(encoding="utf-8")
-        self.assertIn("v1.3", loader_content)
-        self.assertNotIn("v1.2", loader_content)
+        self.assertIn(to_v, loader_content)
+        self.assertNotIn(from_v, loader_content)
 
     def test_bump_version_skips_code_refs_when_disabled(self):
+        from_v, to_v = self._versions_from_kb_name(self.kb_path.name)
         # Stub files that should NOT be modified when update_code_refs=False.
         eng_dir = self.tmpdir / "llm_engine_eolo" / "llm_engine"
         eng_dir.mkdir(parents=True, exist_ok=True)
         loader_path = eng_dir / "kb_loader.py"
-        loader_path.write_text('KB_VERSION = "v1.2"\n', encoding="utf-8")
+        loader_path.write_text(f'KB_VERSION = "{from_v}"\n', encoding="utf-8")
         tools_dir = self.tmpdir / "tools"
         tools_dir.mkdir(exist_ok=True)
         schema_path = tools_dir / "kb_schema.py"
         schema_path.write_text(
-            'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_v1.2.xlsx"\n', encoding="utf-8"
+            f'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_{from_v}.xlsx"\n', encoding="utf-8"
         )
 
         backup, new_path = W.bump_version(
             kb_path=self.kb_path,
-            from_version="v1.2",
-            to_version="v1.3",
+            from_version=from_v,
+            to_version=to_v,
             update_code_refs=False,
         )
 
         # KB rename + backup still happen.
         self.assertTrue(backup.exists())
         self.assertTrue(new_path.exists())
-        self.assertIn("v1.3", new_path.name)
+        self.assertIn(to_v, new_path.name)
         self.assertFalse(self.kb_path.exists())
 
         # But code refs are untouched.
         self.assertEqual(
-            loader_path.read_text(encoding="utf-8"), 'KB_VERSION = "v1.2"\n'
+            loader_path.read_text(encoding="utf-8"), f'KB_VERSION = "{from_v}"\n'
         )
         self.assertEqual(
             schema_path.read_text(encoding="utf-8"),
-            'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_v1.2.xlsx"\n',
+            f'DEFAULT_KB_PATH = "EOLO_ThetaHarvest_{from_v}.xlsx"\n',
         )
 
 

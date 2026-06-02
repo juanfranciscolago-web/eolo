@@ -93,6 +93,29 @@ def parse_llm_output(raw_output: str) -> dict:
         raise
 
 
+def _sanitize_llm_trace_entries(decision_dict: dict) -> None:
+    """Sprint 3 A.2: drop malformed rule_evaluation_trace entries pre-validation.
+
+    Mutates decision_dict in place. Invalid entries are logged + skipped so
+    one bad LLM entry does not poison the whole Decision (would otherwise
+    cascade to WAIT fallback).
+    """
+    raw = decision_dict.get("rule_evaluation_trace")
+    if not raw or not isinstance(raw, list):
+        return
+    cleaned: list = []
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            RuleEvaluation(**entry)
+        except Exception as e:
+            logger.warning(f"Dropping invalid LLM trace entry pre-validation: {entry} — {e}")
+            continue
+        cleaned.append(entry)
+    decision_dict["rule_evaluation_trace"] = cleaned
+
+
 def apply_safety_rails(decision_dict: dict, snapshot: MarketSnapshot) -> Decision:
     """
     Aplica safety rails sobre la decisión del LLM.
@@ -102,6 +125,8 @@ def apply_safety_rails(decision_dict: dict, snapshot: MarketSnapshot) -> Decisio
     son necesarios viendo los logs.
     """
     overrides = []
+
+    _sanitize_llm_trace_entries(decision_dict)
 
     # Crear Decision con safe defaults si parsing falla
     try:
@@ -230,26 +255,51 @@ def build_rule_evaluation_trace(
     decision_dict: dict,
     kb_loader=None,
 ) -> List[RuleEvaluation]:
-    """Sprint 3 A.1: derive trace from existing tacit_rules_applied + safety_overrides.
+    """Sprint 3 A.2: accept LLM-emitted trace + merge derived + safety rails.
 
-    No LLM prompt changes; pure decoration of existing data.
+    Layering:
+      1. LLM-authored entries (source="LLM" with evidence) pass through if valid.
+      2. tacit_rules_applied not already in LLM trace are appended as source="DERIVED".
+      3. Safety rails (source="SAFETY_RAIL") always appended by parser.
     """
     trace: List[RuleEvaluation] = []
+    seen_rule_ids = set()
 
-    # LLM-affirmed rules (tier looked up from KB when available)
+    # 1. LLM-emitted entries (A.2): pass through if valid.
+    llm_emitted = decision_dict.get("rule_evaluation_trace", [])
+    for entry in llm_emitted:
+        if not isinstance(entry, dict):
+            continue
+        # Accept entries where LLM did not explicitly tag source, defaulting to "LLM".
+        entry_dict = dict(entry)
+        entry_dict.setdefault("source", "LLM")
+        if entry_dict.get("source") != "LLM":
+            continue
+        try:
+            re_obj = RuleEvaluation(**entry_dict)
+        except Exception as e:
+            logger.warning(f"LLM emitted invalid trace entry: {entry} — {e}")
+            continue
+        trace.append(re_obj)
+        seen_rule_ids.add(re_obj.rule_id)
+
+    # 2. Fallback A.1 derivation for tacit_rules_applied not yet in LLM trace.
     rules_by_id = {}
     if kb_loader is not None and hasattr(kb_loader, "tacit_rules"):
         rules_by_id = {r.rule_id: r for r in kb_loader.tacit_rules}
     for rule_id in decision_dict.get("tacit_rules_applied", []):
+        if rule_id in seen_rule_ids:
+            continue
         rule_meta = rules_by_id.get(rule_id)
         trace.append(RuleEvaluation(
             rule_id=rule_id,
             tier=getattr(rule_meta, "tier", None) if rule_meta else None,
             verdict="AFFIRMED",
-            source="LLM",
+            source="DERIVED",
         ))
+        seen_rule_ids.add(rule_id)
 
-    # Safety rail entries (prefix-based mapping to real apply_safety_rails codes).
+    # 3. Safety rail entries (prefix-based mapping to real apply_safety_rails codes).
     # BLOCKED = forced verdict change or clamp. NEUTRAL = warning only.
     for code in decision_dict.get("safety_overrides", []):
         rule_id = next(

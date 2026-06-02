@@ -39,6 +39,92 @@ REGLAS TÁCTICAS (contextuales)
 {tacticas}
 
 ═══════════════════════════════════════════════════════
+DECISION MATRIX (Master Plan v2.1 sec 7)
+═══════════════════════════════════════════════════════
+
+Usá esta matriz como GUÍA estructural. Tus decisiones pueden desviarse si
+las reglas del KB (especialmente Prohibitivas o Axiomas) lo justifican.
+
+7.1 Matriz principal — régimen × IVR × Flow
+
+| Régimen + IVR | Flow Bullish | Flow Neutral | Flow Bearish |
+|---|---|---|---|
+| Long γ · IVR > 50 | SELL_PUT Δ 0.20 · 30-45 DTE · OI wall inferior | IRON_CONDOR_SEQUENTIAL Δ 0.15 ambos · 30-45 DTE | SELL_CALL Δ 0.18 · 30-45 DTE · sobre call wall |
+| Long γ · IVR < 50 | WAIT (esperar VRP rico) | WAIT (no edge) | WAIT (no edge) |
+| Transición · IVR > 50 | SELL_PUT lejos Δ 0.12 · DTE 14-21 | WAIT 12-24h (esperar resolución) | SELL_CALL lejos Δ 0.12 · DTE 14-21 |
+| Neg γ · IVR > 70 | SELL_CALL muy lejos Δ 0.10 · 14 DTE | Solo cobertura — no agregar shorts | SELL_PUT muy lejos Δ 0.10 · 14 DTE |
+| Neg γ · IVR < 70 | NO operar (WAIT) | NO operar (WAIT) | NO operar (WAIT) |
+
+Usá:
+- gamma_regime_v2 ∈ {{long, negative, transition}}
+- iv_rank_call / iv_rank_put / vrp_score
+- smart_money_bias (cuando disponible) o aproximación: net_call_premium_drift > net_put → bullish flow
+
+7.2 Side selection (PUT vs CALL)
+
+IF put_skew_25d > call_skew_25d + 2% AND net_call_premium_drift > 0:
+    → preferir SELL_PUT (puts caras, flow bullish)
+IF call_skew_25d > put_skew_25d + 2% AND net_put_premium_drift > 0:
+    → preferir SELL_CALL (calls caras, flow bearish)
+IF skews balanceados (|put_skew - call_skew| < 2%):
+    → seguir net_drift bias (call - put premium)
+
+7.3 DTE selection con term_slope_60d_7d
+
+IF term_slope_60d_7d > 0 (contango fuerte, +2% típico):
+    → DTE corto 14-21 mejor risk/reward (IV expensive far out)
+IF term_slope_60d_7d < 0 (backwardation):
+    → DTE largo 45-60 (IV se va a comprimir)
+IF |term_slope| < 1% (flat):
+    → DTE estándar 30-45
+
+7.4 Strike selection multi-fuente (scoring heurístico)
+
+Para strikes candidatos con 0.10 ≤ delta ≤ 0.25:
+- +3 si abs(strike - oi_max_call_strike o oi_max_put_strike) < ATR
+- +2 si mismo lado de gamma_zero_strike que la posición
+- +1 si abs(strike - max_pain_strike) > 1.5 * ATR
+- +2 si skew_premium > median histórico
+- -infinito si OI < 1000 (gate duro per TR-Juan-071)
+
+Pick strike con mayor score.
+
+7.5 Sizing dinámico
+
+base_size = portfolio_premium_target / expected_credit
+- ×0.5 si max_pain dentro de ±0.3% de spot (alerta pin proximity)
+- ×0.5 si gamma_regime_v2 = "negative" AND vrp_score != "rich"
+- ×0 si news_alert activo en ticker
+
+final_size = min(base_size, max_position_size_rules)
+
+═══════════════════════════════════════════════════════
+RULE EVALUATION TRACE (Sprint 3 A.2)
+═══════════════════════════════════════════════════════
+
+En tu JSON Decision output, DEBÉS incluir "rule_evaluation_trace" como una
+lista de las 5-10 reglas más decisivas que guían esta decisión.
+
+Schema por entry:
+{{
+  "rule_id": "TR-Juan-XXX",
+  "tier": "AXIOMA|PROHIBITIVA|MAESTRA|PROTOCOLO|TACTICAL_PLUS|TACTICAL",
+  "verdict": "AFFIRMED|BLOCKED|NEUTRAL|NOT_APPLICABLE",
+  "confidence_impact": <int 0-10>,
+  "source": "LLM",
+  "evidence": "<1-2 oraciones citando snapshot fields específicos>"
+}}
+
+Constraints:
+- LIMITÁ a 5-10 entries (compact mode). Solo las más decisivas.
+- rule_id DEBE referenciar regla real del KB (TR-Juan-001 a TR-Juan-071), NO inventar.
+- evidence DEBE citar snapshot fields específicos (ej. "vix_velocity_30m_pct=+6.2% triggers SR-002").
+- Safety rails (SR-XXX) son agregados por el parser; NO los emitas.
+- source SIEMPRE "LLM" (parser marcará DERIVED/SAFETY_RAIL según corresponda).
+
+También incluí "decision_path": narrative summary 1-2 oraciones del flujo de razonamiento.
+
+═══════════════════════════════════════════════════════
 TESIS CENTRAL DE JUAN
 ═══════════════════════════════════════════════════════
 Profit = (Prima vendida − Prima recomprada) + Theta decay

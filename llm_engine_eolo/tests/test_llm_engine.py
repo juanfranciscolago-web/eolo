@@ -20,8 +20,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 # Finding G fix (2026-06-01 noche): auto-discover KB Excel by glob so future
 # bump-version (v1.3+) doesn't break tests with FileNotFoundError. NOTE: assertions
-# below (61 rules, 6 cases) STAY version-specific — bump them when KB v1.3 lands
-# in Sprint UP-1.4.
+# below are version-specific — bump them on each KB version bump.
 import re as _re
 _kb_files = list((PROJECT_ROOT / "kb").glob("EOLO_ThetaHarvest_v*.xlsx"))
 assert _kb_files, f"No KB Excel found in {PROJECT_ROOT / 'kb'}"
@@ -77,21 +76,27 @@ def make_test_snapshot(**overrides) -> MarketSnapshot:
 
 
 def test_kb_loads():
-    """KB Excel v1.1 se carga correctamente con TODAS las reglas."""
+    """KB Excel v1.3 se carga correctamente con TODAS las reglas."""
     kb = KBLoader(KB_PATH)
     stats = kb.stats()
 
-    # v1.1 debe tener 61 reglas (47 + 14 migradas de R001-R014)
-    assert stats["total_rules"] == 61, f"Expected 61 rules, got {stats['total_rules']}"
+    # v1.3 (Sprint UP-1.4-A T2): 71 reglas (61 v1.2 + 10 QD-aware TR-Juan-062..071)
+    assert stats["total_rules"] == 71, f"Expected 71 rules, got {stats['total_rules']}"
     assert stats["total_cases"] >= 5, f"Expected >=5 cases, got {stats['total_cases']}"
 
-    # Tier counts esperados en v1.1
+    # Tier counts esperados en v1.3
     tiers = stats["rules_by_tier"]
-    assert tiers.get("AXIOMA", 0) == 2, f"AXIOMA count wrong: {tiers}"
-    assert tiers.get("PROHIBITIVA", 0) == 5, f"PROHIBITIVA count wrong: {tiers}"  # 1 + 4 migradas
-    assert tiers.get("MAESTRA", 0) == 11, f"MAESTRA count wrong: {tiers}"  # 6 + 5 migradas
+    # TR-Juan-042 moved AXIOMA → MAESTRA (Finding R4 scope=SPY)
+    assert tiers.get("AXIOMA", 0) == 1, f"AXIOMA count wrong: {tiers}"
+    # +1 TR-Juan-071 (OI<1000 gate)
+    assert tiers.get("PROHIBITIVA", 0) == 6, f"PROHIBITIVA count wrong: {tiers}"
+    # +1 TR-042 moved in, +1 TR-Juan-063 (VRP cheap)
+    assert tiers.get("MAESTRA", 0) == 13, f"MAESTRA count wrong: {tiers}"
     assert tiers.get("PROTOCOLO", 0) == 6, f"PROTOCOLO count wrong: {tiers}"
-    assert tiers.get("TACTICAL_PLUS", 0) == 13, f"TACTICAL_PLUS count wrong: {tiers}"  # 8 + 5 migradas
+    # +7 TACTICAL_PLUS new: 062, 064, 065, 067, 068, 069, 070
+    assert tiers.get("TACTICAL_PLUS", 0) == 20, f"TACTICAL_PLUS count wrong: {tiers}"
+    # +1 TR-Juan-066 (smart_money_bias)
+    assert tiers.get("TACTICAL", 0) == 25, f"TACTICAL count wrong: {tiers}"
 
     # Verificar que TR-019 a TR-022 existen (fix v1.0)
     for rule_num in [19, 20, 21, 22]:
@@ -103,7 +108,17 @@ def test_kb_loads():
         rule = kb.get_rule_by_id(f"TR-Juan-{rule_num:03d}")
         assert rule is not None, f"TR-Juan-{rule_num:03d} (migrated from R) missing"
 
-    print(f"✅ KB v1.1 loaded: {stats}")
+    # v1.3: 10 nuevas reglas QD-aware
+    for rule_num in range(62, 72):
+        rule = kb.get_rule_by_id(f"TR-Juan-{rule_num:03d}")
+        assert rule is not None, f"TR-Juan-{rule_num:03d} (v1.3 QD-aware) missing"
+
+    # TR-Juan-042 ahora es MAESTRA (no AXIOMA)
+    rule_042 = kb.get_rule_by_id("TR-Juan-042")
+    assert rule_042 is not None
+    assert rule_042.tier == "MAESTRA", f"TR-042 should be MAESTRA in v1.3, got {rule_042.tier}"
+
+    print(f"✅ KB v1.3 loaded: {stats}")
 
 
 def test_no_ghost_rules():
@@ -388,6 +403,125 @@ def test_decision_path_narrative_summary():
     assert decision.decision_path is not None
     assert "WAIT" in decision.decision_path
     assert "2 KB rule" in decision.decision_path
+
+
+def test_llm_emitted_trace_passes_through():
+    """Sprint 3 A.2: LLM emits structured trace with evidence; parser accepts."""
+    from llm_engine.decision_parser import safe_decision_pipeline
+    raw = (
+        '{"verdict": "SELL_PUT", "confidence": 8, "main_reason": "test A.2 trace", '
+        '"tacit_rules_applied": [], '
+        '"strikes": {"put_strike": 500.0}, "deltas": {"put_delta": 0.20}, '
+        '"dte_target": 1, "profit_target_pct": 55, '
+        '"rule_evaluation_trace": [{'
+        '"rule_id": "TR-Juan-012", "tier": "TACTICAL_PLUS", "verdict": "AFFIRMED", '
+        '"confidence_impact": 2, "source": "LLM", '
+        '"evidence": "vix_level=17.05 within stable band per snapshot"}]}'
+    )
+    snapshot = make_test_snapshot()
+    decision = safe_decision_pipeline(raw, snapshot, kb_loader=kb)
+    llm_entries = [e for e in decision.rule_evaluation_trace if e.source == "LLM"]
+    assert any(e.rule_id == "TR-Juan-012" for e in llm_entries), (
+        f"TR-Juan-012 LLM entry missing: {[(e.rule_id, e.source) for e in decision.rule_evaluation_trace]}"
+    )
+    tr012 = next(e for e in llm_entries if e.rule_id == "TR-Juan-012")
+    assert tr012.evidence and "vix_level" in tr012.evidence
+    assert tr012.confidence_impact == 2
+
+
+def test_llm_trace_merged_with_safety_rails():
+    """Sprint 3 A.2: low confidence still triggers SR-001 even with LLM trace present."""
+    from llm_engine.decision_parser import safe_decision_pipeline
+    raw = (
+        '{"verdict": "SELL_PUT", "confidence": 3, "main_reason": "low conf with LLM trace", '
+        '"tacit_rules_applied": [], '
+        '"strikes": {"put_strike": 500.0}, "deltas": {"put_delta": 0.20}, '
+        '"dte_target": 1, "profit_target_pct": 55, '
+        '"rule_evaluation_trace": [{'
+        '"rule_id": "TR-Juan-012", "tier": "TACTICAL_PLUS", "verdict": "NEUTRAL", '
+        '"confidence_impact": 1, "source": "LLM", '
+        '"evidence": "weak setup, low conviction"}]}'
+    )
+    snapshot = make_test_snapshot()
+    decision = safe_decision_pipeline(raw, snapshot, kb_loader=kb)
+    rule_ids = [e.rule_id for e in decision.rule_evaluation_trace]
+    assert "TR-Juan-012" in rule_ids, f"LLM entry dropped: {rule_ids}"
+    assert "SR-001" in rule_ids, f"SR-001 missing despite low confidence: {rule_ids}"
+    sr_entry = next(e for e in decision.rule_evaluation_trace if e.rule_id == "SR-001")
+    assert sr_entry.verdict == "BLOCKED"
+
+
+def test_llm_trace_takes_precedence_over_derived():
+    """Sprint 3 A.2: if LLM emits TR-Juan-X, derived A.1 fallback skips that rule."""
+    from llm_engine.decision_parser import safe_decision_pipeline
+    raw = (
+        '{"verdict": "SELL_PUT", "confidence": 8, "main_reason": "precedence test", '
+        '"tacit_rules_applied": ["TR-Juan-012"], '
+        '"strikes": {"put_strike": 500.0}, "deltas": {"put_delta": 0.20}, '
+        '"dte_target": 1, "profit_target_pct": 55, '
+        '"rule_evaluation_trace": [{'
+        '"rule_id": "TR-Juan-012", "tier": "TACTICAL_PLUS", "verdict": "AFFIRMED", '
+        '"confidence_impact": 3, "source": "LLM", '
+        '"evidence": "explicit LLM-authored entry should win over derived"}]}'
+    )
+    snapshot = make_test_snapshot()
+    decision = safe_decision_pipeline(raw, snapshot, kb_loader=kb)
+    tr012_entries = [e for e in decision.rule_evaluation_trace if e.rule_id == "TR-Juan-012"]
+    assert len(tr012_entries) == 1, (
+        f"Expected exactly 1 TR-Juan-012 entry, got {len(tr012_entries)}: "
+        f"{[(e.source, e.evidence) for e in tr012_entries]}"
+    )
+    assert tr012_entries[0].source == "LLM"
+    assert tr012_entries[0].evidence is not None
+
+
+def test_market_snapshot_accepts_tier_s_extension_fields():
+    """T1.A: schema accepts new Tier S fields without errors."""
+    base = make_test_snapshot()
+    qd_dict = base.model_dump()
+    qd_dict.update({
+        "vrp_value": 0.08,
+        "vrp_score": "fair",
+        "put_skew_25d": 0.045,
+        "call_skew_25d": 0.025,
+        "atm_iv": 0.18,
+        "ts_iv_7d": 0.16,
+        "ts_iv_30d": 0.18,
+        "ts_iv_60d": 0.20,
+        "term_slope_60d_7d": 0.04,
+        "oi_max_call_strike": 760.0,
+        "oi_max_put_strike": 750.0,
+        "max_pain_trend_7d": 1.5,
+        "gamma_regime_v2": "long",
+        "gamma_zero_strike": 755.0,
+    })
+    snap = MarketSnapshot(**qd_dict)
+    assert snap.vrp_value == 0.08
+    assert snap.vrp_score == "fair"
+    assert snap.gamma_regime_v2 == "long"
+    prompt = snap.to_llm_format()
+    assert "OPTIONS POSITIONING ADVANCED" in prompt
+    assert "VRP: fair" in prompt
+    assert "Gamma Regime: long" in prompt
+
+
+def test_classify_gamma_regime():
+    """T1.A: compute layer classifier."""
+    from llm_engine.quantdata_features import classify_gamma_regime
+    assert classify_gamma_regime(760.0, 750.0) == "long"  # 1.3% above
+    assert classify_gamma_regime(745.0, 750.0) == "negative"  # 0.7% below
+    assert classify_gamma_regime(751.0, 750.0) == "transition"  # within 0.5%
+    assert classify_gamma_regime(None, 750.0) is None
+    assert classify_gamma_regime(750.0, None) is None
+
+
+def test_compute_vrp_score():
+    """T1.A: compute layer VRP scoring."""
+    from llm_engine.quantdata_features import compute_vrp_score
+    assert compute_vrp_score(80.0) == "rich"
+    assert compute_vrp_score(50.0) == "fair"
+    assert compute_vrp_score(20.0) == "cheap"
+    assert compute_vrp_score(None) is None
 
 
 if __name__ == "__main__":
