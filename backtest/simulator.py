@@ -17,6 +17,8 @@ import sys
 sys.path.insert(0, "llm_engine_eolo")
 from llm_engine.kb_loader import KBLoader
 
+from backtest.snapshot_builder import build_snapshot_dict_from_cache
+
 logger = logging.getLogger(__name__)
 
 
@@ -28,7 +30,7 @@ def evaluate_rules_against_snapshot(kb: KBLoader, snap_dict: dict) -> list[dict]
     Real implementation extiende esto con rule-specific predicates (T4 follow-up).
     """
     evaluations = []
-    for rule in kb.tacit_rules:
+    for rule in kb.rules:
         trigger = (rule.trigger or "").lower()
         triggered = False
         confidence = 0
@@ -100,7 +102,9 @@ def run_backtest(
             if not snap_path.exists():
                 continue
             try:
-                snap_dict = json.loads(snap_path.read_text())
+                snap_dict = build_snapshot_dict_from_cache(snap_path)
+                if snap_dict is None:
+                    continue
             except Exception:
                 continue
 

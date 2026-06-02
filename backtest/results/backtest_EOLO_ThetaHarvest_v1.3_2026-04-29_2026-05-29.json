@@ -1,0 +1,21 @@
+{
+  "kb": "EOLO_ThetaHarvest_v1.3.xlsx",
+  "start": "2026-04-29",
+  "end": "2026-05-29",
+  "tickers": [
+    "SPY"
+  ],
+  "summary": {
+    "total_outcomes": 23,
+    "rules_with_outcomes": 1
+  },
+  "metrics_per_rule": {
+    "TR-Juan-065": {
+      "n_trades": 23,
+      "win_rate": 0.8260869565217391,
+      "avg_pnl": 46.69565217391305,
+      "max_dd": 49,
+      "sharpe": 14.58054205695086
+    }
+  }
+}

@@ -8,6 +8,7 @@ Cache en backtest/data/{ticker}_{date}.json.
 """
 import argparse
 import json
+import ssl
 import subprocess
 import time
 import urllib.request
@@ -16,6 +17,14 @@ from pathlib import Path
 
 OUT_DIR = Path("backtest/data")
 OUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# SSL context con certifi CA bundle — evita CERTIFICATE_VERIFY_FAILED en macOS
+# Python. Mismo pattern que external_data_quantdata._build_ssl_context().
+try:
+    import certifi  # type: ignore
+    _SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except Exception:
+    _SSL_CTX = ssl.create_default_context()
 
 
 def fetch_one(ticker: str, date: str, api_key: str) -> dict:
@@ -26,10 +35,13 @@ def fetch_one(ticker: str, date: str, api_key: str) -> dict:
         "_session_date": date,
     }
 
+    # Body shapes alineadas con external_data_quantdata.py (validadas live):
+    # - iv-rank: lookBackPeriod + maturity son TOP-LEVEL, no en filter (HTTP 400 si filter)
+    # - exposure-by-strike: greekMode/representationMode UPPERCASE (HTTP 400 si lowercase)
     endpoints = [
         ("max-pain", {"sessionDate": date, "filter": {"ticker": ticker, "expirationDate": date}}),
-        ("iv-rank", {"sessionDate": date, "filter": {"ticker": ticker, "lookBackPeriod": 252}}),
-        ("exposure-by-strike", {"sessionDate": date, "filter": {"ticker": ticker}, "greekMode": "gamma", "representationMode": "total"}),
+        ("iv-rank", {"sessionDate": date, "filter": {"ticker": ticker}, "lookBackPeriod": 30, "maturity": 7}),
+        ("exposure-by-strike", {"sessionDate": date, "filter": {"ticker": ticker}, "greekMode": "GAMMA", "representationMode": "RAW"}),
         ("net-drift", {"sessionDate": date, "filter": {"ticker": ticker}}),
         ("volatility-drift", {"sessionDate": date, "filter": {"ticker": ticker}}),
         ("volatility-skew", {"sessionDate": date, "filter": {"ticker": ticker, "expirationDate": date}}),
@@ -46,7 +58,7 @@ def fetch_one(ticker: str, date: str, api_key: str) -> dict:
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10) as resp:
+            with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as resp:
                 raw = json.load(resp)
             snap[f"_qd_{endpoint}"] = raw
         except Exception as e:
