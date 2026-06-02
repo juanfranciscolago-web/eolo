@@ -435,3 +435,60 @@ Agregar 5-8 reglas al Excel via tools/kb_editor.py (cuando UP-1.2 fase 2 esté l
 **Generado:** 2026-05-31
 **Decisión:** TRIAL 1 mes recomendado. $150 low-risk para validar antes de annual $1500.
 **Próximo paso:** Juan signup esta semana + integration próxima semana post deploy estabilizado.
+
+
+## ADDENDUM 2026-06-01 noche — Sprint 5 backtest 365d UNBLOCKED
+
+Verificación directa contra Quant Data API docs (https://quantdata.us/api/docs)
+confirma que TODOS los 30 endpoints aceptan parámetro `sessionDate` para
+historical replay dentro del lookback 365+ días. Ejemplo del doc oficial:
+
+```bash
+curl -X POST https://api.quantdata.us/v1/options/tool/net-drift \
+  -H "Authorization: Bearer <KEY>" \
+  -d '{"sessionDate": "2026-05-13", "filter": {"ticker": "AAPL"}}'
+```
+
+### Implicaciones Sprint 5 (backtest 365d KB v1.3)
+
+| Calc | Valor |
+|---|---|
+| Tickers | 3 (SPY, QQQ, IWM) |
+| Días | 365 |
+| Endpoints relevantes | 4 (max_pain, iv_rank, gex_regime, net_drift) |
+| Total calls | 4,380 |
+| Wall-clock (240 req/min) | ~18 min |
+
+Granularidad: nivel sesión (1 sesión = 1 día). Dentro de cada sesión, response
+devuelve buckets time-keyed milisegundo (intraday detail dentro de la sesión).
+Sufficient para Theta Harvest backtest (opera entradas en apertura + monitoring
+cada 5 min — no necesita tick-level).
+
+### Comparación con FlashAlpha (alternativa evaluada esta noche)
+
+FlashAlpha Alpha tier ($1,499/mo) ofrecería 8 años (desde Apr-2018) + minute-level
+granularity. Overkill para Sprint 5; lookback Quant Data de 1 año alcanza. Reserve
+FlashAlpha para futuro si Sprint 18+ revela necesidad de backtest profundo (ej:
+training ML model sobre patterns multi-año).
+
+### Otros providers descartados
+
+- **ORATS**: 25 años EOD depth, sin intraday → no sirve para Theta Harvest 0-3 DTE.
+- **Polygon / ThetaData**: raw ticks pero analytics layer self-built (~6 meses pipeline).
+- **FlashAlpha free**: 5 calls/día, insufficient.
+
+### Acciones pendientes próxima sesión
+
+1. **Smoke test**: query con sessionDate de hace 30 días → confirmar que trial cubre historical (probable, no verificado todavía).
+2. **Pricing API tier real**: v3.quantdata.us/pricing no renderizó vía web-fetch (client-side). Necesita login para ver billing real post-trial.
+3. **Decision 7.1 reconsiderada**: con backtest unblocked, considera extender Sprint 1 a 5-6 endpoints más (charm, vanna, dealer_positioning) ANTES de Sprint 5 — así el backtest los prueba juntos con los 4 actuales en una sola pasada.
+
+### Tech debt detectado esta noche en cliente
+
+- `external_data_quantdata.py` línea 22 docstring stale: afirma "No se modifica snapshot.py ni crop_main.py desde este módulo" pero el wire se ejecutó en OPS-3 (snapshot.py:355-406 importa y llama get_max_pain / get_iv_rank / get_gex_regime / get_net_premium_drift). Cosmético, no funcional. Candidato cleanup oportunista próxima sesión.
+- Línea 9 docstring marca "net-drift TODO: validar response antes de wire a snapshot" — el wire se hizo igual, y resultaba ser parte del bug Pydantic boundary cerrado por hotfix #95. TODO obsoleto, remover.
+
+### Conexión con tasks pendientes
+
+- **Sprint UP-1.4** (próximo KB v1.3 unificado en roadmap v2.2): incorpora Fase D original del memo (5-8 reglas KB que usen GEX/max_pain/iv_rank/drift). Fase D nunca se ejecutó al cierre 31-may; la deuda persiste pero el wire ya está LIVE post-#95.
+- **Task #94** (GEX thresholds vs SpotGamma calibración): conecta con riesgo explícito documentado en este memo ("GEX cálculo varía por provider"). Mantener post-7-días-data.
