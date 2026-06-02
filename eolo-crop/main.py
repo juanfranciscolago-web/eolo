@@ -766,6 +766,22 @@ def api_state():
                     state["strategy_params"] = _strategy_params()
                     if bot is not None:
                         state["pnl"] = _pnl_from_bot(bot)
+                        # === R1.A hotfix (2026-06-02): Sprint 8.B + Sprint 11 inject ===
+                        # Fallback 3 tiene los mismos 2 try/except. Sin esto,
+                        # llm_cache + llm_metrics quedaban ausentes cuando
+                        # crop_state.json existía. Ver docs/FINDING_R1_LLM_METRICS_REGRESSION.md
+                        try:
+                            llm_cache = getattr(bot, "_llm_cache", None)
+                            if llm_cache is not None and hasattr(llm_cache, "stats"):
+                                state.setdefault("stats", {})["llm_cache"] = llm_cache.stats()
+                        except Exception as ce:
+                            logger.debug(f"[API /state] Could not read llm_cache stats (fallback 1): {ce}")
+                        try:
+                            llm_metrics = getattr(bot, "_llm_metrics", None)
+                            if llm_metrics is not None and hasattr(llm_metrics, "stats"):
+                                state.setdefault("stats", {})["llm_metrics"] = llm_metrics.stats()
+                        except Exception as me:
+                            logger.debug(f"[API /state] Could not read llm_metrics stats (fallback 1): {me}")
                     return jsonify(state), 200
             except Exception as e:
                 logger.debug(f"[API /state] Could not read state file: {e}")
