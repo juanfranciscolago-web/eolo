@@ -1462,6 +1462,109 @@ def juan_suggest():
     }), 200
 
 
+# ===========================================================================
+# Sprint T8/F6 (Master Plan v2.1 sec 12.12): Mode toggle PAPER↔LIVE doble auth
+# ===========================================================================
+import secrets as _t8_secrets
+
+
+_pending_mode_requests: dict = {}  # request_id → {target_mode, reason, expires_ts, confirmation_code}
+
+
+def _t8_generate_confirmation_code() -> str:
+    """Generate 6-digit confirmation code (would be emailed in real impl)."""
+    return f"{_t8_secrets.randbelow(1000000):06d}"
+
+
+@app.route("/system/trading_mode/request", methods=["POST"])
+def trading_mode_request():
+    """Step 1: request mode change. Returns request_id valid 5 min."""
+    body = request.get_json(force=True, silent=True) or {}
+    target = (body.get("target_mode") or "").upper()
+    reason = (body.get("reason") or "").strip()
+    if target not in {"PAPER", "LIVE"}:
+        return jsonify({"error": "target_mode must be PAPER or LIVE"}), 400
+    if not reason:
+        return jsonify({"error": "reason required"}), 400
+
+    req_id = f"REQ_{int(_t3_time.time() * 1000)}_{_t8_secrets.token_hex(4)}"
+    code = _t8_generate_confirmation_code()
+    _pending_mode_requests[req_id] = {
+        "target_mode": target,
+        "reason": reason,
+        "expires_ts": _t3_time.time() + 300,  # 5 min
+        "confirmation_code": code,
+    }
+    _t3_log_event("MODE_REQUEST", {
+        "request_id": req_id,
+        "target_mode": target,
+        "reason": reason,
+        "code_sent_via": "stub_logged_only",
+    })
+
+    # Phase 1: code returned in response (in real impl, email-only)
+    return jsonify({
+        "request_id": req_id,
+        "expires_in_seconds": 300,
+        "confirmation_code_preview": code,  # STUB: remove in real deploy
+        "note": "Phase 1 stub: code returned. F-follow-up sends via email only.",
+    }), 200
+
+
+@app.route("/system/trading_mode/confirm", methods=["POST"])
+def trading_mode_confirm():
+    """Step 2: confirm with request_id + code (received separately)."""
+    body = request.get_json(force=True, silent=True) or {}
+    req_id = body.get("request_id")
+    code = body.get("confirmation_code")
+
+    if not req_id or not code:
+        return jsonify({"error": "request_id and confirmation_code required"}), 400
+
+    pending = _pending_mode_requests.get(req_id)
+    if pending is None:
+        return jsonify({"error": "request_id not found or expired"}), 404
+
+    if _t3_time.time() > pending["expires_ts"]:
+        _pending_mode_requests.pop(req_id, None)
+        return jsonify({"error": "request expired (>5 min)"}), 410
+
+    if pending["confirmation_code"] != code:
+        return jsonify({"error": "invalid confirmation_code"}), 403
+
+    # One-shot
+    _pending_mode_requests.pop(req_id, None)
+    target = pending["target_mode"]
+
+    _t3_log_event("MODE_SWITCHED", {
+        "request_id": req_id,
+        "target_mode": target,
+        "switched_by": "juan",  # in real impl: extract from auth
+    })
+
+    # Real impl: persist target_mode to Firestore + signal bot to reload config
+    return jsonify({
+        "mode": target,
+        "switched_at": datetime.utcnow().isoformat() + "Z",
+        "switched_by": "juan",
+        "note": "Phase 1 stub: mode not actually switched. F-follow-up persists + reloads bot.",
+    }), 200
+
+
+@app.route("/system/trading_mode/revert_to_paper", methods=["POST"])
+def trading_mode_revert():
+    """Emergency revert to PAPER — one-click, no confirmation needed."""
+    _t3_log_event("MODE_REVERTED_TO_PAPER", {
+        "at": datetime.utcnow().isoformat() + "Z",
+        "by": "juan",
+    })
+    return jsonify({
+        "mode": "PAPER",
+        "switched_at": datetime.utcnow().isoformat() + "Z",
+        "note": "One-click revert. Always available.",
+    }), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
