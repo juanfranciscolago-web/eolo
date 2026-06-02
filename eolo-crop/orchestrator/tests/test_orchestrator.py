@@ -53,6 +53,32 @@ def test_watchlist_builder_basic():
     assert "QQQ" in wl["rejected"]
 
 
+def test_watchlist_uses_bot_cache_when_no_lookup():
+    """T10.B: build_watchlist reads iv_rank from bot._last_snapshots."""
+    class MockBot:
+        _last_snapshots = {
+            "SPY": {"iv_rank_call": 60},
+            "QQQ": {"iv_rank_call": 25},  # below threshold
+            "IWM": {"iv_rank_call": 45},
+        }
+
+    wl = build_watchlist(bot_instance=MockBot(), iv_rank_threshold=30)
+    assert "SPY" in wl["selected"]
+    assert "IWM" in wl["selected"]
+    assert "QQQ" in wl["rejected"]
+
+
+def test_watchlist_handles_missing_bot_cache():
+    """T10.B: graceful when bot has no _last_snapshots."""
+    class MockBot:
+        pass  # no _last_snapshots attr
+
+    wl = build_watchlist(bot_instance=MockBot(), iv_rank_threshold=30)
+    assert len(wl["selected"]) == 0
+    for ticker in wl["universe"]:
+        assert "iv_rank_unavailable" in wl["rejected"].get(ticker, "")
+
+
 def test_position_monitor_at_50_target():
     positions = [
         {"symbol": "SPY_240614_750P", "pct_capture": 55},

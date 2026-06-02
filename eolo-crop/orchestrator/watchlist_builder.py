@@ -23,14 +23,30 @@ def build_watchlist(
     universe: Optional[List[str]] = None,
     iv_rank_threshold: float = 30.0,
     iv_rank_lookup: Optional[dict] = None,  # ticker → iv_rank, mock for tests
+    bot_instance=None,  # CropBotTheta para acceder al cache snapshot
 ) -> dict:
-    """Return watchlist con candidatos del día.
+    """Phase 1 pre-market: build watchlist con IV rank screen.
+
+    Sprint 6 Phase 1 (T10.B): integrado con bot snapshot cache.
+    Si bot_instance presente y iv_rank_lookup ausente, deriva IV rank
+    desde último snapshot cached por ticker.
 
     Returns:
         {"selected": [tickers], "rejected": {ticker: reason}, "universe": [...]}
     """
     universe = universe or DEFAULT_UNIVERSE
     iv_rank_lookup = iv_rank_lookup or {}
+
+    if not iv_rank_lookup and bot_instance is not None:
+        try:
+            cached = getattr(bot_instance, "_last_snapshots", {}) or {}
+            for ticker in universe:
+                snap = cached.get(ticker, {})
+                iv = snap.get("iv_rank_call")
+                if iv is not None:
+                    iv_rank_lookup[ticker] = iv
+        except Exception as e:
+            logger.warning(f"[watchlist] failed to read bot snapshot cache: {e}")
 
     selected = []
     rejected = {}

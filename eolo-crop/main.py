@@ -1637,6 +1637,39 @@ def journal_today():
     return jsonify(journal), 200
 
 
+# ===========================================================================
+# Sprint T10 (Master Plan v2.1 sec 8.1): Watchlist endpoint
+# ===========================================================================
+@app.route("/orchestrator/watchlist", methods=["GET"])
+def orchestrator_watchlist():
+    """Trigger Phase 1 watchlist build on-demand.
+
+    Cloud Scheduler triggerea esto a las 8:00 ET (Phase 1 pre-market).
+    """
+    from orchestrator.watchlist_builder import build_watchlist
+    bot = getattr(crop_main, "bot_instance", None)
+
+    iv_rank_threshold = float(request.args.get("iv_rank_threshold", 30.0))
+    universe_arg = request.args.get("universe")
+    universe = universe_arg.split(",") if universe_arg else None
+
+    result = build_watchlist(
+        universe=universe,
+        iv_rank_threshold=iv_rank_threshold,
+        bot_instance=bot,
+    )
+    return jsonify(result), 200
+
+
+@app.route("/orchestrator/current_phase", methods=["GET"])
+def orchestrator_current_phase():
+    """Return which phase of the playbook is currently active (ET wallclock)."""
+    from orchestrator.daily_scheduler import DailyScheduler
+    sched = DailyScheduler()
+    phase = sched._current_phase()
+    return jsonify({"current_phase": phase, "phases": [p[0] for p in sched.PHASES]}), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
