@@ -40,13 +40,27 @@ async def lifespan(app: FastAPI):
     """Startup: cargar KB y validar config."""
     global kb_loader, anthropic_client, CONFIG
 
+    # KB_PATH: auto-discover by glob (Finding G pattern del test) — sobrevive
+    # futuros bump-version sin re-edit. Si KB_PATH env var está seteado, gana.
+    # NOTA: el default v1.2 hardcoded reventó deploy T1-T9 cuando T2 bumpeó
+    # a v1.3 (la rev 00005-6hr falló con FileNotFoundError).
+    import glob as _glob
+    import re as _re
+
+    def _kb_version_key(path: str) -> tuple:
+        m = _re.search(r"v(\d+)\.(\d+)", path)
+        return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+
+    _kbs = sorted(_glob.glob("/app/kb/EOLO_ThetaHarvest_v*.xlsx"), key=_kb_version_key)
+    _default_kb = _kbs[-1] if _kbs else "/app/kb/EOLO_ThetaHarvest_v1.3.xlsx"
+
     CONFIG = {
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "LLM_MODEL": os.getenv("LLM_MODEL", "claude-sonnet-4-5-20250929"),
         "HAIKU_MODEL": os.getenv("HAIKU_MODEL", "claude-haiku-4-5-20251001"),
         "LLM_MAX_TOKENS": int(os.getenv("LLM_MAX_TOKENS", "4096")),
         "LLM_TEMPERATURE": float(os.getenv("LLM_TEMPERATURE", "0.3")),
-        "KB_PATH": os.getenv("KB_PATH", "/app/kb/EOLO_ThetaHarvest_v1.2.xlsx"),
+        "KB_PATH": os.getenv("KB_PATH", _default_kb),
         "PAPER_TRADING_ONLY": os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true",
     }
 
