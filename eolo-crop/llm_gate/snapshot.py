@@ -353,6 +353,9 @@ def build_market_snapshot_from_crop(
         try:
             from llm_gate.external_data_quantdata import (
                 get_max_pain, get_iv_rank, get_gex_regime, get_net_premium_drift,
+                # Sprint T1.A: Tier S endpoints
+                get_volatility_drift, get_volatility_skew, get_term_structure,
+                get_oi_by_strike, get_max_pain_over_time,
             )
             # hotfix OPS-3: NO re-importar datetime / ZoneInfo aquí — ya están
             # top-level (línea 25-26). `from datetime import datetime` dentro
@@ -404,6 +407,78 @@ def build_market_snapshot_from_crop(
                     snapshot["net_put_premium_drift"] = drift.get("net_put_premium")
             except Exception as e:
                 logger.debug(f"[snapshot] net_drift fetch failed: {e}")
+
+            # ── Sprint T1.A: Tier S endpoints ────────────────────────
+            try:
+                vd = get_volatility_drift(ticker.upper())
+                if vd:
+                    snapshot["vrp_iv_30d"] = vd.get("iv_30d")
+                    snapshot["vrp_arv_20d"] = vd.get("arv_20d")
+                    snapshot["vrp_value"] = vd.get("vrp_value")
+                    snapshot["vrp_percentile_252d"] = vd.get("vrp_percentile_252d")
+            except Exception as e:
+                logger.debug(f"[snapshot] vol_drift fetch failed: {e}")
+
+            try:
+                # Skew requires expirationDate — reuse _expiry_str (next wed).
+                vs = get_volatility_skew(ticker.upper(), _expiry_str)
+                if vs:
+                    snapshot["put_skew_25d"] = vs.get("put_skew_25d")
+                    snapshot["call_skew_25d"] = vs.get("call_skew_25d")
+                    snapshot["atm_iv"] = vs.get("atm_iv")
+            except Exception as e:
+                logger.debug(f"[snapshot] vol_skew fetch failed: {e}")
+
+            try:
+                ts = get_term_structure(ticker.upper())
+                if ts:
+                    snapshot["ts_iv_7d"] = ts.get("ts_iv_7d")
+                    snapshot["ts_iv_30d"] = ts.get("ts_iv_30d")
+                    snapshot["ts_iv_60d"] = ts.get("ts_iv_60d")
+                    snapshot["term_slope_60d_7d"] = ts.get("term_slope_60d_7d")
+            except Exception as e:
+                logger.debug(f"[snapshot] term_struct fetch failed: {e}")
+
+            try:
+                oi = get_oi_by_strike(ticker.upper(), _expiry_str)
+                if oi:
+                    snapshot["oi_max_call_strike"] = oi.get("oi_max_call_strike")
+                    snapshot["oi_max_put_strike"] = oi.get("oi_max_put_strike")
+            except Exception as e:
+                logger.debug(f"[snapshot] oi_by_strike fetch failed: {e}")
+
+            try:
+                mpot = get_max_pain_over_time(ticker.upper())
+                if mpot:
+                    snapshot["max_pain_trend_7d"] = mpot.get("max_pain_trend_7d")
+            except Exception as e:
+                logger.debug(f"[snapshot] max_pain_over_time fetch failed: {e}")
+
+            # Compute layer (Master Plan sec 6.1 - 6.2).
+            # gamma_zero_strike approximation: midpoint of GEX max call/put strikes.
+            try:
+                _max_call = snapshot.get("gex_max_call_strike")
+                _max_put = snapshot.get("gex_max_put_strike")
+                if _max_call is not None and _max_put is not None:
+                    snapshot["gamma_zero_strike"] = (
+                        float(_max_call) + float(_max_put)
+                    ) / 2.0
+            except Exception as e:
+                logger.debug(f"[snapshot] gamma_zero approx failed: {e}")
+
+            try:
+                from llm_engine.quantdata_features import (
+                    classify_gamma_regime, compute_vrp_score,
+                )
+                snapshot["gamma_regime_v2"] = classify_gamma_regime(
+                    snapshot.get("current_price") or snapshot.get("price"),
+                    snapshot.get("gamma_zero_strike"),
+                )
+                snapshot["vrp_score"] = compute_vrp_score(
+                    snapshot.get("vrp_percentile_252d")
+                )
+            except Exception as e:
+                logger.debug(f"[snapshot] compute layer failed: {e}")
         except ImportError as e:
             logger.warning(f"[snapshot] quantdata module unavailable: {e}")
         except Exception as e:

@@ -7,7 +7,7 @@ de chart que Juan le pasa manualmente durante el design del KB.
 Eolo Crop debe llenar este snapshot con datos de Schwab API + calculos.
 """
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Literal, Optional
 from datetime import datetime
 
 
@@ -110,6 +110,36 @@ class MarketSnapshot(BaseModel):
     net_call_premium_drift: Optional[float] = None
     net_put_premium_drift: Optional[float] = None
 
+    # === Sprint T1.A (2026-06-02): Tier S endpoints expansion ===
+    # Volatility Drift (sec 5 Tier S #2, sec 6.2 VRP)
+    vrp_value: Optional[float] = None
+    vrp_iv_30d: Optional[float] = None
+    vrp_arv_20d: Optional[float] = None
+    vrp_percentile_252d: Optional[float] = None
+    vrp_score: Optional[Literal["rich", "fair", "cheap"]] = None  # computed
+
+    # Volatility Skew (sec 5 Tier S #4)
+    put_skew_25d: Optional[float] = None
+    call_skew_25d: Optional[float] = None
+    atm_iv: Optional[float] = None
+
+    # Term Structure (sec 5 Tier S #5)
+    ts_iv_7d: Optional[float] = None
+    ts_iv_30d: Optional[float] = None
+    ts_iv_60d: Optional[float] = None
+    term_slope_60d_7d: Optional[float] = None
+
+    # Open Interest (sec 5 Tier S #6)
+    oi_max_call_strike: Optional[float] = None
+    oi_max_put_strike: Optional[float] = None
+
+    # Max Pain trend (sec 5 Tier S #7 extension)
+    max_pain_trend_7d: Optional[float] = None
+
+    # Compute layer outputs (sec 6.1 - 6.2)
+    gamma_regime_v2: Optional[Literal["long", "negative", "transition"]] = None
+    gamma_zero_strike: Optional[float] = None
+
     # Macro context
     days_to_next_fomc: Optional[int] = None
     days_to_next_cpi: Optional[int] = None
@@ -185,6 +215,17 @@ OPTIONS POSITIONING (Quant Data)
 - GEX Max Put Strike: {self.gex_max_put_strike if self.gex_max_put_strike is not None else 'N/A'}
 - Net Premium Drift Call: {self.net_call_premium_drift if self.net_call_premium_drift is not None else 'N/A'}
 - Net Premium Drift Put: {self.net_put_premium_drift if self.net_put_premium_drift is not None else 'N/A'}
+
+OPTIONS POSITIONING ADVANCED (Quant Data Tier S)
+- Gamma Regime: {self.gamma_regime_v2 if self.gamma_regime_v2 else 'N/A'} (gamma_zero strike: {self.gamma_zero_strike if self.gamma_zero_strike is not None else 'N/A'})
+- VRP: {self.vrp_score if self.vrp_score else 'N/A'} (value: {self.vrp_value if self.vrp_value is not None else 'N/A'}, percentile 252d: {self.vrp_percentile_252d if self.vrp_percentile_252d is not None else 'N/A'})
+- Put Skew 25Δ: {self.put_skew_25d if self.put_skew_25d is not None else 'N/A'}
+- Call Skew 25Δ: {self.call_skew_25d if self.call_skew_25d is not None else 'N/A'}
+- ATM IV: {self.atm_iv if self.atm_iv is not None else 'N/A'}
+- Term Structure: 7d={self.ts_iv_7d if self.ts_iv_7d is not None else 'N/A'}, 30d={self.ts_iv_30d if self.ts_iv_30d is not None else 'N/A'}, 60d={self.ts_iv_60d if self.ts_iv_60d is not None else 'N/A'} (slope 60-7={self.term_slope_60d_7d if self.term_slope_60d_7d is not None else 'N/A'})
+- OI Max Call Strike: {self.oi_max_call_strike if self.oi_max_call_strike is not None else 'N/A'}
+- OI Max Put Strike: {self.oi_max_put_strike if self.oi_max_put_strike is not None else 'N/A'}
+- Max Pain trend 7d: {self.max_pain_trend_7d if self.max_pain_trend_7d is not None else 'N/A'}
 
 MACRO CONTEXT
 - Days to FOMC: {self.days_to_next_fomc or 'N/A'}

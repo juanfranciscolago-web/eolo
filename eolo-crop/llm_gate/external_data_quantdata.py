@@ -8,6 +8,13 @@ Tier 1 endpoints (validados con SPY real 2026-06-01):
 Tier 1 endpoint pendiente de verificar shape:
     /v1/options/tool/net-drift         (wire LIVE post-hotfix #95, commit 0f77177)
 
+Tier S endpoints (Sprint T1.A 2026-06-02, Master Plan v2.1 sec 5):
+    /v1/options/tool/volatility-drift      (IV30/ARV20 → VRP + percentile 252d)
+    /v1/options/tool/volatility-skew       (put/call 25Δ skew + ATM IV)
+    /v1/options/tool/term-structure        (IV 7d/30d/60d + slope 60-7)
+    /v1/options/tool/open-interest-by-strike (max OI call/put strikes)
+    /v1/options/tool/max-pain-over-time    (max_pain trend 7d slope)
+
 Diseño:
 - API key vía Secret Manager con fallback a env var QUANTDATA_API_KEY.
 - Cache in-memory por (endpoint, params) con TTL configurable.
@@ -62,6 +69,12 @@ _TTL_MAX_PAIN: int = 300   # 5 min — max pain shifts lento intraday
 _TTL_IV_RANK: int = 1800   # 30 min — rolling window stable
 _TTL_GEX: int = 300        # 5 min — GEX intraday moves
 _TTL_DRIFT: int = 120      # 2 min — net drift cambia rápido
+# Sprint T1.A — Tier S TTLs
+_TTL_VOL_DRIFT: int = 300       # 5 min — VRP shifts moderado
+_TTL_VOL_SKEW: int = 900        # 15 min — skew estable intraday
+_TTL_TERM_STRUCT: int = 3600    # 60 min — term structure muy estable
+_TTL_OI_BY_STRIKE: int = 3600   # 60 min — OI refresh diario
+_TTL_MAX_PAIN_OVER_TIME: int = 86400  # diario — trend 7d slope
 
 # ── State ─────────────────────────────────────────────────────────────
 _API_KEY: Optional[str] = None
@@ -492,10 +505,368 @@ def get_net_premium_drift(ticker: str) -> Optional[dict]:
     }
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  Tier S endpoints (Sprint T1.A 2026-06-02)
+#  Shapes asumidas del provider — parsers tolerantes (log + None si difiere).
+# ══════════════════════════════════════════════════════════════════════
+def get_volatility_drift(ticker: str) -> Optional[dict]:
+    """Volatility drift: IV implícita vs realizada (VRP) + percentile 252d.
+
+    Master Plan v2.1 sec 5 Tier S #2 + sec 6.2 (VRP scoring).
+
+    VRP = IV(30d) - ARV(20d). Percentile 252d permite scoring rich/fair/cheap.
+
+    Args:
+        ticker: e.g. "SPY".
+
+    Returns:
+        {"iv_30d": float, "arv_20d": float, "vrp_value": float,
+         "vrp_percentile_252d": float} o None si fetch/parse falla.
+    """
+    body = {"filter": {"ticker": ticker}}
+    cache_key = f"voldrift:{ticker}"
+    raw = _post(
+        "/options/tool/volatility-drift",
+        body,
+        cache_key=cache_key,
+        ttl=_TTL_VOL_DRIFT,
+    )
+    if not raw:
+        return None
+
+    iv_30d = _as_float(
+        _pick(raw, "iv_30d", "iv30d", "implied_volatility_30d",
+              "data.iv_30d", "data.iv30d")
+    )
+    arv_20d = _as_float(
+        _pick(raw, "arv_20d", "arv20d", "realized_volatility_20d",
+              "data.arv_20d", "data.arv20d")
+    )
+    vrp_value = _as_float(
+        _pick(raw, "vrp_value", "vrp", "vrpValue",
+              "data.vrp_value", "data.vrp")
+    )
+    if vrp_value is None and iv_30d is not None and arv_20d is not None:
+        vrp_value = iv_30d - arv_20d
+    vrp_pct = _as_float(
+        _pick(raw, "vrp_percentile_252d", "vrpPercentile252d",
+              "percentile_252d", "data.vrp_percentile_252d",
+              "data.percentile_252d")
+    )
+
+    if iv_30d is None and arv_20d is None and vrp_value is None and vrp_pct is None:
+        _log_shape_mismatch(
+            "volatility-drift",
+            ["iv_30d", "arv_20d", "vrp_value", "vrp_percentile_252d"],
+            list(raw.keys()) if isinstance(raw, dict) else [type(raw).__name__],
+        )
+        return None
+
+    return {
+        "iv_30d":              iv_30d,
+        "arv_20d":             arv_20d,
+        "vrp_value":           vrp_value,
+        "vrp_percentile_252d": vrp_pct,
+    }
+
+
+def get_volatility_skew(ticker: str, expiration_date: str) -> Optional[dict]:
+    """Volatility skew: IV(25Δ put), IV(25Δ call), ATM IV.
+
+    Master Plan v2.1 sec 5 Tier S #4. Skew = IV(wing) - IV(ATM).
+
+    Args:
+        ticker: e.g. "SPY".
+        expiration_date: ISO "YYYY-MM-DD".
+
+    Returns:
+        {"put_skew_25d": float, "call_skew_25d": float, "atm_iv": float}
+        o None si fetch/parse falla.
+    """
+    body = {"filter": {"ticker": ticker, "expirationDate": expiration_date}}
+    cache_key = f"volskew:{ticker}:{expiration_date}"
+    raw = _post(
+        "/options/tool/volatility-skew",
+        body,
+        cache_key=cache_key,
+        ttl=_TTL_VOL_SKEW,
+    )
+    if not raw:
+        return None
+
+    put_skew = _as_float(
+        _pick(raw, "put_skew_25d", "putSkew25d", "skew_put_25d",
+              "data.put_skew_25d", "data.putSkew25d")
+    )
+    call_skew = _as_float(
+        _pick(raw, "call_skew_25d", "callSkew25d", "skew_call_25d",
+              "data.call_skew_25d", "data.callSkew25d")
+    )
+    atm_iv = _as_float(
+        _pick(raw, "atm_iv", "atmIv", "atm_implied_volatility",
+              "data.atm_iv", "data.atmIv")
+    )
+
+    if put_skew is None and call_skew is None and atm_iv is None:
+        _log_shape_mismatch(
+            "volatility-skew",
+            ["put_skew_25d", "call_skew_25d", "atm_iv"],
+            list(raw.keys()) if isinstance(raw, dict) else [type(raw).__name__],
+        )
+        return None
+
+    return {
+        "put_skew_25d":  put_skew,
+        "call_skew_25d": call_skew,
+        "atm_iv":        atm_iv,
+    }
+
+
+def get_term_structure(ticker: str) -> Optional[dict]:
+    """Term structure: IV across maturities (7d/30d/60d) + slope.
+
+    Master Plan v2.1 sec 5 Tier S #5. slope = iv_60d - iv_7d (contango/backw.).
+
+    Args:
+        ticker: e.g. "SPY".
+
+    Returns:
+        {"ts_iv_7d": float, "ts_iv_30d": float, "ts_iv_60d": float,
+         "term_slope_60d_7d": float} o None.
+    """
+    body = {"filter": {"ticker": ticker}}
+    cache_key = f"termstruct:{ticker}"
+    raw = _post(
+        "/options/tool/term-structure",
+        body,
+        cache_key=cache_key,
+        ttl=_TTL_TERM_STRUCT,
+    )
+    if not raw:
+        return None
+
+    iv_7d = _as_float(
+        _pick(raw, "ts_iv_7d", "iv_7d", "tsIv7d",
+              "data.iv_7d", "data.ts_iv_7d")
+    )
+    iv_30d = _as_float(
+        _pick(raw, "ts_iv_30d", "iv_30d", "tsIv30d",
+              "data.iv_30d", "data.ts_iv_30d")
+    )
+    iv_60d = _as_float(
+        _pick(raw, "ts_iv_60d", "iv_60d", "tsIv60d",
+              "data.iv_60d", "data.ts_iv_60d")
+    )
+    slope = _as_float(
+        _pick(raw, "term_slope_60d_7d", "slope_60d_7d", "termSlope60d7d",
+              "data.term_slope_60d_7d")
+    )
+    if slope is None and iv_60d is not None and iv_7d is not None:
+        slope = iv_60d - iv_7d
+
+    if iv_7d is None and iv_30d is None and iv_60d is None:
+        _log_shape_mismatch(
+            "term-structure",
+            ["ts_iv_7d", "ts_iv_30d", "ts_iv_60d"],
+            list(raw.keys()) if isinstance(raw, dict) else [type(raw).__name__],
+        )
+        return None
+
+    return {
+        "ts_iv_7d":          iv_7d,
+        "ts_iv_30d":         iv_30d,
+        "ts_iv_60d":         iv_60d,
+        "term_slope_60d_7d": slope,
+    }
+
+
+def get_oi_by_strike(ticker: str, expiration_date: str) -> Optional[dict]:
+    """Open Interest distribution por strike. Extrae strike de max OI call/put.
+
+    Master Plan v2.1 sec 5 Tier S #6. Refresh diario.
+
+    Args:
+        ticker: e.g. "SPY".
+        expiration_date: ISO "YYYY-MM-DD".
+
+    Returns:
+        {"oi_max_call_strike": float, "oi_max_put_strike": float,
+         "oi_total_call": float, "oi_total_put": float} o None.
+    """
+    body = {"filter": {"ticker": ticker, "expirationDate": expiration_date}}
+    cache_key = f"oibystrike:{ticker}:{expiration_date}"
+    raw = _post(
+        "/options/tool/open-interest-by-strike",
+        body,
+        cache_key=cache_key,
+        ttl=_TTL_OI_BY_STRIKE,
+    )
+    if not raw:
+        return None
+
+    # Si vienen pre-agregados, úsalos directos.
+    max_call_strike = _as_float(
+        _pick(raw, "oi_max_call_strike", "maxCallOiStrike",
+              "data.oi_max_call_strike", "data.maxCallOiStrike")
+    )
+    max_put_strike = _as_float(
+        _pick(raw, "oi_max_put_strike", "maxPutOiStrike",
+              "data.oi_max_put_strike", "data.maxPutOiStrike")
+    )
+    total_call = _as_float(
+        _pick(raw, "oi_total_call", "totalCallOi",
+              "data.oi_total_call", "data.totalCallOi")
+    )
+    total_put = _as_float(
+        _pick(raw, "oi_total_put", "totalPutOi",
+              "data.oi_total_put", "data.totalPutOi")
+    )
+
+    # Fallback: si vienen por strike, agregar.
+    if max_call_strike is None or max_put_strike is None:
+        ticker_upper = ticker.upper()
+        data = raw.get("data") if isinstance(raw, dict) else None
+        strikes_map: Any = None
+        if isinstance(data, dict):
+            ticker_block = data.get(ticker_upper) or data.get(ticker)
+            if isinstance(ticker_block, dict):
+                strikes_map = (
+                    ticker_block.get("oiByStrike")
+                    or ticker_block.get("strikes")
+                    or ticker_block
+                )
+            else:
+                strikes_map = data
+
+        if isinstance(strikes_map, dict):
+            sum_call = 0.0
+            sum_put = 0.0
+            best_call_strike: Optional[float] = None
+            best_call_oi = -1.0
+            best_put_strike: Optional[float] = None
+            best_put_oi = -1.0
+            for strike_key, vals in strikes_map.items():
+                try:
+                    strike = float(strike_key)
+                except (TypeError, ValueError):
+                    continue
+                if not isinstance(vals, dict):
+                    continue
+                call_oi = _as_float(
+                    vals.get("callOi") or vals.get("call_oi")
+                    or vals.get("openInterestCall")
+                ) or 0.0
+                put_oi = _as_float(
+                    vals.get("putOi") or vals.get("put_oi")
+                    or vals.get("openInterestPut")
+                ) or 0.0
+                sum_call += call_oi
+                sum_put += put_oi
+                if call_oi > best_call_oi:
+                    best_call_oi = call_oi
+                    best_call_strike = strike
+                if put_oi > best_put_oi:
+                    best_put_oi = put_oi
+                    best_put_strike = strike
+            if max_call_strike is None:
+                max_call_strike = best_call_strike
+            if max_put_strike is None:
+                max_put_strike = best_put_strike
+            if total_call is None:
+                total_call = sum_call
+            if total_put is None:
+                total_put = sum_put
+
+    if max_call_strike is None and max_put_strike is None:
+        _log_shape_mismatch(
+            "open-interest-by-strike",
+            ["oi_max_call_strike", "oi_max_put_strike"],
+            list(raw.keys()) if isinstance(raw, dict) else [type(raw).__name__],
+        )
+        return None
+
+    return {
+        "oi_max_call_strike": max_call_strike,
+        "oi_max_put_strike":  max_put_strike,
+        "oi_total_call":      total_call,
+        "oi_total_put":       total_put,
+    }
+
+
+def get_max_pain_over_time(ticker: str) -> Optional[dict]:
+    """Max pain trend (slope) últimos 7 días.
+
+    Master Plan v2.1 sec 5 Tier S #7. Refresh diario.
+
+    Args:
+        ticker: e.g. "SPY".
+
+    Returns:
+        {"max_pain_trend_7d": float} (slope o delta), o None.
+    """
+    body = {"filter": {"ticker": ticker}}
+    cache_key = f"maxpain_ot:{ticker}"
+    raw = _post(
+        "/options/tool/max-pain-over-time",
+        body,
+        cache_key=cache_key,
+        ttl=_TTL_MAX_PAIN_OVER_TIME,
+    )
+    if not raw:
+        return None
+
+    # Primero, valor pre-agregado si viene.
+    trend = _as_float(
+        _pick(raw, "max_pain_trend_7d", "trend_7d", "slope_7d",
+              "data.max_pain_trend_7d", "data.trend_7d", "data.slope_7d")
+    )
+
+    if trend is None:
+        # Fallback: derivar de serie temporal {date: max_pain_strike}.
+        data = raw.get("data") if isinstance(raw, dict) else None
+        if isinstance(data, dict) and data:
+            try:
+                sorted_keys = sorted(data.keys())
+            except TypeError:
+                sorted_keys = []
+            # Tomar últimos hasta 7 puntos
+            tail_keys = sorted_keys[-7:] if sorted_keys else []
+            values: list[float] = []
+            for k in tail_keys:
+                v = data.get(k)
+                if isinstance(v, dict):
+                    mp = _as_float(
+                        v.get("maxPainStrikePrice") or v.get("max_pain_strike")
+                        or v.get("maxPain")
+                    )
+                else:
+                    mp = _as_float(v)
+                if mp is not None:
+                    values.append(mp)
+            if len(values) >= 2:
+                trend = values[-1] - values[0]
+
+    if trend is None:
+        _log_shape_mismatch(
+            "max-pain-over-time",
+            ["max_pain_trend_7d"],
+            list(raw.keys()) if isinstance(raw, dict) else [type(raw).__name__],
+        )
+        return None
+
+    return {"max_pain_trend_7d": trend}
+
+
 # Public re-exports (explicit para auditoría de wire).
 __all__ = [
     "get_max_pain",
     "get_iv_rank",
     "get_gex_regime",
     "get_net_premium_drift",
+    # Sprint T1.A — Tier S
+    "get_volatility_drift",
+    "get_volatility_skew",
+    "get_term_structure",
+    "get_oi_by_strike",
+    "get_max_pain_over_time",
 ]
