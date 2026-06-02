@@ -27,6 +27,22 @@ class DeltasModel(BaseModel):
     call_delta: Optional[float] = None
 
 
+class RuleEvaluation(BaseModel):
+    """Structured trace entry per rule evaluated in a Decision.
+
+    Sprint 3 A.1 (2026-06-02): schema-only. Trace populated by
+    build_rule_evaluation_trace() from existing tacit_rules_applied +
+    safety_overrides — no LLM prompt change yet.
+    Sprint 3 A.2 (later): LLM emits enriched trace with evidence per rule directly.
+    """
+    rule_id: str
+    tier: Optional[str] = None
+    verdict: Literal["AFFIRMED", "BLOCKED", "NEUTRAL", "NOT_APPLICABLE"]
+    confidence_impact: Optional[int] = Field(default=None, ge=0, le=10)
+    source: Literal["LLM", "SAFETY_RAIL", "DERIVED"]
+    evidence: Optional[str] = None
+
+
 class Decision(BaseModel):
     """Decisión parseada y validada del LLM."""
     verdict: Literal["SELL_PUT", "SELL_CALL", "IRON_CONDOR_SEQUENTIAL",
@@ -43,6 +59,10 @@ class Decision(BaseModel):
     similar_case_used: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
     safety_overrides: List[str] = Field(default_factory=list)
+
+    # === Sprint 3 (W1 A.1, 2026-06-02): structured rule trace ===
+    rule_evaluation_trace: List[RuleEvaluation] = Field(default_factory=list)
+    decision_path: Optional[str] = None
 
 
 def parse_llm_output(raw_output: str) -> dict:
@@ -180,7 +200,88 @@ def apply_safety_rails(decision_dict: dict, snapshot: MarketSnapshot) -> Decisio
     return decision
 
 
-def safe_decision_pipeline(raw_llm_output: str, snapshot: MarketSnapshot) -> Decision:
+# Sprint 3 A.1: prefix-based mapping. Los códigos reales emitidos por
+# apply_safety_rails son UPPER_CASE con data appended (ej. LOW_CONFIDENCE_3,
+# VIX_SPIKE_+5.5%, PUT_TOO_FAR_OTM_5.5%). Matcheo por prefix para visibilizar
+# los rails en el trace estructurado.
+_SAFETY_RAIL_PREFIX_TO_RULE_ID = [
+    ("LOW_CONFIDENCE", "SR-001"),
+    ("VIX_SPIKE", "SR-002"),
+    ("IC_DIRECTO_PROHIBIDO", "SR-003"),
+    ("PUT_TOO_FAR_OTM", "SR-004"),
+    ("CALL_TOO_FAR_OTM", "SR-004"),
+    ("DTE_TOO_HIGH", "SR-005"),
+    ("PROFIT_TARGET_CLAMPED", "SR-006"),
+    ("MISSING_PUT_STRIKE", "SR-007"),
+    ("MISSING_CALL_STRIKE", "SR-007"),
+    ("IC_MISSING_STRIKES", "SR-007"),
+    ("PARSING_FAILED", "SR-PARSE-FAIL"),
+    ("INVALID_LLM_OUTPUT", "SR-VALIDATION-FAIL"),
+]
+
+# NEUTRAL = solo warning (no override hard ni clamp). BLOCKED = forced verdict
+# change o clamp. NOTE: clamps (DTE / PROFIT_TARGET) técnicamente MODIFICAN
+# pero el enum actual no tiene "MODIFIED" — BLOCKED es el label más cercano.
+# Tech debt menor para Sprint 3 A.2: considerar agregar "MODIFIED" al Literal.
+_SR_NEUTRAL_PREFIXES = ("PUT_TOO_FAR_OTM", "CALL_TOO_FAR_OTM")
+
+
+def build_rule_evaluation_trace(
+    decision_dict: dict,
+    kb_loader=None,
+) -> List[RuleEvaluation]:
+    """Sprint 3 A.1: derive trace from existing tacit_rules_applied + safety_overrides.
+
+    No LLM prompt changes; pure decoration of existing data.
+    """
+    trace: List[RuleEvaluation] = []
+
+    # LLM-affirmed rules (tier looked up from KB when available)
+    rules_by_id = {}
+    if kb_loader is not None and hasattr(kb_loader, "tacit_rules"):
+        rules_by_id = {r.rule_id: r for r in kb_loader.tacit_rules}
+    for rule_id in decision_dict.get("tacit_rules_applied", []):
+        rule_meta = rules_by_id.get(rule_id)
+        trace.append(RuleEvaluation(
+            rule_id=rule_id,
+            tier=getattr(rule_meta, "tier", None) if rule_meta else None,
+            verdict="AFFIRMED",
+            source="LLM",
+        ))
+
+    # Safety rail entries (prefix-based mapping to real apply_safety_rails codes).
+    # BLOCKED = forced verdict change or clamp. NEUTRAL = warning only.
+    for code in decision_dict.get("safety_overrides", []):
+        rule_id = next(
+            (rid for prefix, rid in _SAFETY_RAIL_PREFIX_TO_RULE_ID if code.startswith(prefix)),
+            f"SR-UNKNOWN-{code}",
+        )
+        verdict = "NEUTRAL" if any(code.startswith(p) for p in _SR_NEUTRAL_PREFIXES) else "BLOCKED"
+        trace.append(RuleEvaluation(
+            rule_id=rule_id,
+            tier="AXIOMA",
+            verdict=verdict,
+            source="SAFETY_RAIL",
+        ))
+
+    return trace
+
+
+def build_decision_path(decision_dict: dict) -> str:
+    """Sprint 3 A.1: minimal narrative summary of decision flow."""
+    verdict = decision_dict.get("verdict", "UNKNOWN")
+    confidence = decision_dict.get("confidence", 0)
+    n_rules = len(decision_dict.get("tacit_rules_applied", []))
+    n_safety = len(decision_dict.get("safety_overrides", []))
+    parts = [f"Verdict {verdict} (confidence {confidence}/10)"]
+    if n_rules:
+        parts.append(f"based on {n_rules} KB rule(s) applied")
+    if n_safety:
+        parts.append(f"with {n_safety} safety rail(s) triggered")
+    return ", ".join(parts)
+
+
+def safe_decision_pipeline(raw_llm_output: str, snapshot: MarketSnapshot, kb_loader=None) -> Decision:
     """
     Pipeline completo: parse + validate + safety rails.
     Si algo falla, retorna WAIT seguro con razón explícita.
@@ -189,11 +290,24 @@ def safe_decision_pipeline(raw_llm_output: str, snapshot: MarketSnapshot) -> Dec
         parsed = parse_llm_output(raw_llm_output)
     except (ValueError, json.JSONDecodeError) as e:
         logger.error(f"Failed to parse LLM output: {e}")
-        return Decision(
-            verdict="WAIT",
-            confidence=0,
-            main_reason=f"LLM output parsing failed: {str(e)[:150]}",
-            safety_overrides=["PARSING_FAILED"]
-        )
+        fail_dict = {
+            "verdict": "WAIT",
+            "confidence": 0,
+            "main_reason": f"LLM output parsing failed: {str(e)[:150]}",
+            "safety_overrides": ["PARSING_FAILED"],
+        }
+        fail_dict["rule_evaluation_trace"] = [
+            r.model_dump() for r in build_rule_evaluation_trace(fail_dict, kb_loader)
+        ]
+        fail_dict["decision_path"] = build_decision_path(fail_dict)
+        return Decision(**fail_dict)
 
-    return apply_safety_rails(parsed, snapshot)
+    decision = apply_safety_rails(parsed, snapshot)
+
+    # Sprint 3 A.1: populate trace + decision_path post-rails (additive).
+    decision_dict = decision.model_dump()
+    decision_dict["rule_evaluation_trace"] = [
+        r.model_dump() for r in build_rule_evaluation_trace(decision_dict, kb_loader)
+    ]
+    decision_dict["decision_path"] = build_decision_path(decision_dict)
+    return Decision(**decision_dict)

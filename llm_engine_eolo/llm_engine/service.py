@@ -156,7 +156,7 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
         return _fallback_wait_decision(f"LLM error: {str(e)[:100]}", request_id, start_time)
 
     # Parse + safety rails
-    decision = safe_decision_pipeline(raw_output, snapshot)
+    decision = safe_decision_pipeline(raw_output, snapshot, kb_loader=kb_loader)
 
     # Log full decision
     total_latency_ms = int((time.time() - start_time) * 1000)

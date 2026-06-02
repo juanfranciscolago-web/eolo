@@ -29,6 +29,9 @@ KB_PATH = str(sorted(_kb_files, key=lambda p: tuple(int(g) for g in _re.search(r
 
 from llm_engine.kb_loader import KBLoader
 from llm_engine.market_snapshot import MarketSnapshot
+
+# Sprint 3 A.1: module-level KB instance so trace tests can pass kb_loader=kb.
+kb = KBLoader(KB_PATH)
 from llm_engine.decision_parser import parse_llm_output, apply_safety_rails, Decision
 from llm_engine.prompt_builder import build_prompts
 
@@ -352,6 +355,39 @@ def test_to_llm_format_renders_options_positioning():
     # Net premium drift rendered
     assert "-125000" in prompt or "125000" in prompt
     assert "85000" in prompt
+
+
+def test_rule_evaluation_trace_populated_from_tacit_rules():
+    """Sprint 3 A.1: trace decorates tacit_rules_applied with tier lookup + verdict AFFIRMED."""
+    from llm_engine.decision_parser import safe_decision_pipeline, RuleEvaluation
+    raw = '{"verdict": "SELL_PUT", "confidence": 8, "main_reason": "test", "tacit_rules_applied": ["TR-Juan-001"], "strikes": {"put_strike": 500.0}, "deltas": {"put_delta": 0.20}, "dte_target": 1, "profit_target_pct": 50}'
+    snapshot = make_test_snapshot()
+    decision = safe_decision_pipeline(raw, snapshot, kb_loader=kb)
+    assert decision.rule_evaluation_trace, "trace should be populated"
+    affirmed = [e for e in decision.rule_evaluation_trace if e.verdict == "AFFIRMED"]
+    assert any(e.rule_id == "TR-Juan-001" for e in affirmed), f"TR-Juan-001 not in affirmed trace: {[e.rule_id for e in affirmed]}"
+
+
+def test_rule_evaluation_trace_includes_safety_rails():
+    """Sprint 3 A.1: low confidence triggers safety rail entry in trace with verdict BLOCKED."""
+    from llm_engine.decision_parser import safe_decision_pipeline
+    raw = '{"verdict": "SELL_PUT", "confidence": 3, "main_reason": "test low confidence", "tacit_rules_applied": [], "strikes": {"put_strike": 500.0}, "deltas": {"put_delta": 0.20}, "dte_target": 1, "profit_target_pct": 50}'
+    snapshot = make_test_snapshot()
+    decision = safe_decision_pipeline(raw, snapshot, kb_loader=kb)
+    sr_entries = [e for e in decision.rule_evaluation_trace if e.source == "SAFETY_RAIL"]
+    assert sr_entries, f"should have at least 1 safety rail entry, got: {decision.rule_evaluation_trace}"
+    assert any(e.verdict == "BLOCKED" for e in sr_entries), "at least 1 safety rail should be BLOCKED"
+
+
+def test_decision_path_narrative_summary():
+    """Sprint 3 A.1: decision_path is human-readable string with verdict + rule counts."""
+    from llm_engine.decision_parser import safe_decision_pipeline
+    raw = '{"verdict": "WAIT", "confidence": 8, "main_reason": "test", "tacit_rules_applied": ["TR-Juan-001", "TR-Juan-002"], "strikes": {}, "deltas": {}, "dte_target": 0, "profit_target_pct": 50}'
+    snapshot = make_test_snapshot()
+    decision = safe_decision_pipeline(raw, snapshot, kb_loader=kb)
+    assert decision.decision_path is not None
+    assert "WAIT" in decision.decision_path
+    assert "2 KB rule" in decision.decision_path
 
 
 if __name__ == "__main__":
