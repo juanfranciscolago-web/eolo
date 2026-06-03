@@ -2042,6 +2042,12 @@
           <option value="NO_TRADE">NO_TRADE</option>
         </select>
         <span class="pos-count" id="pos-count">— positions</span>
+
+        <!-- Sub-E MEGATERMINATOR: Manual close UI -->
+        <span style="margin-left:auto;display:flex;gap:6px">
+          <button onclick="megaCloseAllRequest()" style="background:#21262d;border:1px solid var(--red);color:var(--red);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.78rem">🚨 Close All (2-step)</button>
+          <button onclick="megaCloseFilter()" style="background:#21262d;border:1px solid var(--border);color:var(--text);padding:4px 10px;border-radius:4px;cursor:pointer;font-size:0.78rem">🔎 Close Filter…</button>
+        </span>
       </div>
 
       <table class="trade-table pos-table" id="pos-table">
@@ -2057,12 +2063,64 @@
             <th data-sort="pnl">PnL <span class="sort-arrow">↕</span></th>
             <th data-sort="eod">EOD <span class="sort-arrow active">↑</span></th>
             <th>Risk</th>
+            <th>Action</th>
           </tr>
         </thead>
         <tbody id="pos-tbody">
-          <tr><td colspan="10" class="empty-row">Sin posiciones — esperando primer scan</td></tr>
+          <tr><td colspan="11" class="empty-row">Sin posiciones — esperando primer scan</td></tr>
         </tbody>
       </table>
+
+      <!-- Sub-E MEGATERMINATOR: close handlers (minimal JS, no toast lib) -->
+      <script>
+      async function megaCloseOne(positionId) {
+        const reason = prompt(`Reason to close ${positionId}?`, 'manual close from dashboard');
+        if (!reason) return;
+        try {
+          const r = await fetch('/positions/close_one', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({position_id: positionId, reason: reason})
+          });
+          const j = await r.json();
+          alert(r.ok ? `Closed ${positionId}: ${JSON.stringify(j.result || j)}` : `Failed: ${JSON.stringify(j)}`);
+        } catch (e) { alert('Error: ' + e); }
+      }
+      async function megaCloseAllRequest() {
+        const reason = prompt('Reason to close ALL positions?', '');
+        if (!reason) return;
+        const r1 = await fetch('/positions/close_all/request', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({reason: reason})
+        });
+        const j1 = await r1.json();
+        if (!r1.ok) { alert('Request failed: ' + JSON.stringify(j1)); return; }
+        const token = j1.confirm_token;
+        const confirmed = confirm(`Step 2: CONFIRM close ALL. Token=${token}. Expires in 30s.\n\nProceed?`);
+        if (!confirmed) return;
+        const r2 = await fetch('/positions/close_all', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({confirm_token: token, reason: reason})
+        });
+        const j2 = await r2.json();
+        alert(r2.ok ? `Closed ${j2.closed_count || 0} positions.` : `Failed: ${JSON.stringify(j2)}`);
+      }
+      async function megaCloseFilter() {
+        const tickerPrefix = prompt('Ticker prefix (e.g. SPY) — empty for any:', '');
+        const dteMax = prompt('Max DTE (number) — empty for any:', '');
+        const reason = prompt('Reason:', 'filter close from dashboard');
+        if (!reason) return;
+        const filter = {};
+        if (tickerPrefix) filter.ticker_prefix = tickerPrefix;
+        if (dteMax) filter.dte_max = parseInt(dteMax);
+        const r = await fetch('/positions/close_filter', {
+          method: 'POST', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({filter: filter, reason: reason})
+        });
+        const j = await r.json();
+        alert(r.ok ? `Closed: ${JSON.stringify(j)}` : `Failed: ${JSON.stringify(j)}`);
+      }
+      </script>
     </div>
 
 
@@ -5192,7 +5250,7 @@ function updateActivePositions() {
   }
 
   if (filtered.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty-row">Sin posiciones que mostrar</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="11" class="empty-row">Sin posiciones que mostrar</td></tr>';
     return;
   }
 
@@ -5210,6 +5268,7 @@ function updateActivePositions() {
     const isPut = (p.spread_type || '').includes('put');
     const spreadStr = `${isPut ? '▼PUT' : '▲CALL'} K${p.short_strike}/${p.long_strike}`;
 
+    const posId = p.position_id || p.symbol || `${p.ticker}_${p.short_strike}_${p.long_strike}_${p.dte || 0}`;
     return `<tr>
       <td class="ticker-cell"><strong>${p.ticker || '—'}</strong></td>
       <td class="pos-spread">${spreadStr}</td>
@@ -5221,6 +5280,7 @@ function updateActivePositions() {
       <td class="${pnlClass}">${pnlStr}</td>
       <td class="pos-credit">${_fmtMins(minsEod)}</td>
       <td>${_riskBadges(p, state)}</td>
+      <td><button onclick="megaCloseOne('${posId}')" style="background:#21262d;border:1px solid var(--red);color:var(--red);padding:2px 8px;border-radius:3px;cursor:pointer;font-size:0.75rem">Close</button></td>
     </tr>`;
   }).join('');
 }
