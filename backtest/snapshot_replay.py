@@ -4,12 +4,12 @@ Builds on existing T4/T6 modules:
 - backtest.historical_fetcher.fetch_one        (online QD fetch, optional)
 - backtest.snapshot_builder.build_snapshot_dict_from_cache (parse cached → fields)
 
-This module extends with:
-- Fundamentals fallbacks: price/OHLC/VIX/RSI/ATR sane defaults so /decide accepts.
-- iter_historical_snapshots: weekend-aware day iterator with sampling.
+Sub-A MEGATERMINATOR adds quality from Schwab pricehistory:
+- schwab_historical.get_window_for_date: real daily OHLC.
+- indicators: ema/rsi/atr/vwap_from_candles/fibonacci_levels pure-Python.
 
-Sub-A.5 hallazgo: sessionDate param soportado por los 30 endpoints QD → backtest
-365d UNBLOCKED.
+Sub-A.5 hallazgo (TERMINATOR): sessionDate param soportado por los 30
+endpoints QD → backtest 365d UNBLOCKED.
 """
 from __future__ import annotations
 from datetime import date, timedelta
@@ -18,6 +18,8 @@ from typing import Optional, Iterator
 import json
 
 from backtest.snapshot_builder import build_snapshot_dict_from_cache
+from backtest.indicators import ema, rsi, atr, vwap_from_candles, fibonacci_levels
+from backtest.schwab_historical import get_window_for_date
 
 
 # Sane VIX defaults para regímenes históricos. Para replay fino, override por
@@ -65,30 +67,109 @@ def reconstruct_snapshot(
 
     timestamp_iso = f"{target_date.isoformat()}T{target_hour:02d}:{target_minute:02d}:00"
 
-    atr = max(0.01, spot * DEFAULT_ATR_PCT / 100)
+    # Sub-A: real indicators from Schwab pricehistory cuando disponible.
+    window = get_window_for_date(ticker, target_date, lookback_days=50, cache_dir=cache_dir)
+    fund = _fundamentals_from_window(window, spot)
 
     full = {
         "ticker":             ticker,
         "timestamp":          timestamp_iso,
         "session_phase":      "regular",
         "price":              spot,
-        "open_price":         spot,
-        "high":               spot * 1.005,
-        "low":                spot * 0.995,
-        "prev_close":         spot,
+        "open_price":         fund["open_price"],
+        "high":               fund["high"],
+        "low":                fund["low"],
+        "prev_close":         fund["prev_close"],
         "vix_level":          DEFAULT_VIX_LEVEL,
-        "pdh":                spot * 1.01,
-        "pdl":                spot * 0.99,
-        "pdc":                spot,
-        "rsi_2m":             DEFAULT_RSI,
-        "rsi_15m":            DEFAULT_RSI,
-        "rsi_daily":          DEFAULT_RSI,
-        "atr_2m":             atr,
-        "atr_15m":            atr,
-        "atr_daily":          atr,
+        "pdh":                fund["pdh"],
+        "pdl":                fund["pdl"],
+        "pdc":                fund["pdc"],
+        "rsi_2m":             fund["rsi_2m"],
+        "rsi_15m":            fund["rsi_15m"],
+        "rsi_daily":          fund["rsi_daily"],
+        "atr_2m":             fund["atr_2m"],
+        "atr_15m":            fund["atr_15m"],
+        "atr_daily":          fund["atr_daily"],
+        "ema_9_daily":        fund["ema_9_daily"],
+        "ema_21_daily":       fund["ema_21_daily"],
+        "ema_50_daily":       fund["ema_50_daily"],
+        "ema_200_daily":      fund["ema_200_daily"],
+        "vwap":               fund["vwap"],
+        "fib_r1":             fund["fib_r1"],
+        "fib_r2":             fund["fib_r2"],
+        "fib_r3":             fund["fib_r3"],
+        "fib_s1":             fund["fib_s1"],
+        "fib_s2":             fund["fib_s2"],
+        "fib_s3":             fund["fib_s3"],
     }
     full.update(qd_snap)  # QD-derived fields override defaults
     return full
+
+
+def _fundamentals_from_window(window: list[dict], fallback_spot: float) -> dict:
+    """Compute fundamentals dict from list of daily OHLC candles.
+
+    Window debe estar ordenado asc por fecha. Empty → all defaults.
+    """
+    if not window:
+        atr_default = max(0.01, fallback_spot * DEFAULT_ATR_PCT / 100)
+        rng = max(0.01, fallback_spot * 0.01)
+        return {
+            "open_price":   fallback_spot,
+            "high":         fallback_spot * 1.005,
+            "low":          fallback_spot * 0.995,
+            "prev_close":   fallback_spot,
+            "pdh":          fallback_spot * 1.01,
+            "pdl":          fallback_spot * 0.99,
+            "pdc":          fallback_spot,
+            "rsi_2m":       DEFAULT_RSI,
+            "rsi_15m":      DEFAULT_RSI,
+            "rsi_daily":    DEFAULT_RSI,
+            "atr_2m":       atr_default,
+            "atr_15m":      atr_default,
+            "atr_daily":    atr_default,
+            "ema_9_daily":  fallback_spot,
+            "ema_21_daily": fallback_spot,
+            "ema_50_daily": fallback_spot,
+            "ema_200_daily": fallback_spot,
+            "vwap":         fallback_spot,
+            **fibonacci_levels(fallback_spot + rng, fallback_spot - rng),
+        }
+
+    closes = [c["close"] for c in window]
+    highs  = [c["high"]  for c in window]
+    lows   = [c["low"]   for c in window]
+    last   = window[-1]
+    prev   = window[-2] if len(window) >= 2 else last
+
+    rsis = rsi(closes, period=14)
+    atrs = atr(highs, lows, closes, period=14)
+    ema9   = ema(closes, 9)
+    ema21  = ema(closes, 21)
+    ema50  = ema(closes, 50)
+    ema200 = ema(closes, 200)
+
+    return {
+        "open_price":   last["open"],
+        "high":         last["high"],
+        "low":          last["low"],
+        "prev_close":   prev["close"],
+        "pdh":          prev["high"],
+        "pdl":          prev["low"],
+        "pdc":          prev["close"],
+        "rsi_2m":       rsis[-1],
+        "rsi_15m":      rsis[-1],
+        "rsi_daily":    rsis[-1],
+        "atr_2m":       max(0.01, atrs[-1] * 0.1),  # intraday proxy
+        "atr_15m":      max(0.01, atrs[-1] * 0.3),
+        "atr_daily":    max(0.01, atrs[-1]),
+        "ema_9_daily":  ema9[-1],
+        "ema_21_daily": ema21[-1],
+        "ema_50_daily": ema50[-1],
+        "ema_200_daily": ema200[-1],
+        "vwap":         vwap_from_candles(window[-1:]),  # single-day VWAP proxy
+        **fibonacci_levels(prev["high"], prev["low"]),
+    }
 
 
 def iter_historical_snapshots(
