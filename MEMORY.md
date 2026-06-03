@@ -29,3 +29,26 @@ Pending próxima sesión:
 - Finding G hotfix (~10 min, oportunista)
 - Investigación QD backlog API (paralelo, no-dev research)
 - PROJECT_STATE.md rewrite (stale desde 31-may)
+
+## 2026-06-03 — Reglas operativas Cowork ↔ Claude Code (sesión Juan)
+
+**REGLA 1: NO recomendar después de dar opciones.**
+Cuando Cowork ofrece a Juan opciones (1/2/3/A/B/C), terminar el mensaje ahí.
+Sin "mi recomendación es...", sin "yo iría con X". Juan elige solo.
+Razón: Juan tiene contexto operativo + apetito de riesgo que Cowork no tiene.
+
+**REGLA 2: Maximizar trabajo de Claude Code, minimizar iteración cowork ↔ CC.**
+- Sprints largos (>2h CC autónomo) en lugar de mini-tareas.
+- Bloque CC debe ser end-to-end autónomo: edits + tests + commit + deploy + verify + report.
+- Stops solo en hard failure (test fail, deploy fail, criterio explícito de seguridad).
+- NO stops para clarification dentro del bloque — Cowork debe pensar el bloque
+  completo antes y dar instrucciones unívocas; si hay ambigüedad real, decidir
+  internamente y reportar en el commit/reporte.
+- Decisiones internas autónomas: cuando CC encuentra un caso no previsto, decide
+  con criterio (ej: "schema le=7 vs prompt le=45 → aplicar le=45 per Master Plan"),
+  documenta en commit, sigue. No vuelve a preguntar a Juan.
+
+**REGLA 3 (continuidad):**
+- Schwab paper-trading only. PAPER_TRADING_ONLY=true. Nunca ejecutar trades reales.
+- Canary deploys con tag + smoke + promote autónomo basado en criterios objetivos
+  (HTTP 200 + zero ERROR logs últimos 5min). NO 100% WAIT como criterio bloqueante.
