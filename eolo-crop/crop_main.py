@@ -2505,14 +2505,33 @@ class CropBotTheta:
                 logger.error(f"[TOKEN] Respuesta inesperada: {tokens}")
                 return False
 
-            # Preservar campos existentes y actualizar
+            # Preservar campos existentes y actualizar.
+            # Sub-F MEGATERMINATOR: incluir refresh_token_issued_at en el
+            # loop de preservación. Previa version stripeaba este field
+            # cada 25min de refresh, rompiendo el oauth_health_check Cloud
+            # Function que monitorea el 7-day TTL del refresh_token.
+            prev_refresh_token = None
             existing = {}
             for key in ["access_token", "refresh_token", "expires_in",
-                        "token_type", "scope", "id_token"]:
+                        "token_type", "scope", "id_token",
+                        "refresh_token_issued_at", "access_token_issued_at"]:
                 val = retrieve_firestore_value("schwab-tokens", "schwab-tokens-auth", key)
                 if val is not None:
                     existing[key] = val
+                if key == "refresh_token":
+                    prev_refresh_token = val
+
             existing.update({k: v for k, v in tokens.items() if v is not None})
+
+            # Si Schwab rotó el refresh_token (raro pero documentado), actualizar
+            # refresh_token_issued_at al ahora. Sino, preservar el original
+            # (Sub-F MEGATERMINATOR fix).
+            new_refresh_token = tokens.get("refresh_token")
+            if new_refresh_token and new_refresh_token != prev_refresh_token:
+                existing["refresh_token_issued_at"] = time.time()
+                logger.info("[TOKEN] refresh_token ROTATED — refresh_token_issued_at actualizado")
+            # access_token siempre se renueva en cada refresh.
+            existing["access_token_issued_at"] = time.time()
 
             store_firestore_value(
                 project_id="eolo-schwab-agent",
