@@ -1759,6 +1759,45 @@ def orchestrator_current_phase():
     return jsonify({"current_phase": phase, "phases": [p[0] for p in sched.PHASES]}), 200
 
 
+# ===========================================================================
+# LLM Audit dashboard (server-side rendered) — Sprint LIMPIEZA-FINAL
+#
+# Distinto al `/dashboard` legacy (UI estática GitHub-dark sobre dashboard-crop.html).
+# Este renderiza HTML server-side desde Firestore audit + /api/state, foco audit
+# LLM (decisions hoy, citations KB, verdict distribution, scheduler jobs).
+# ===========================================================================
+@app.route("/audit", methods=["GET"])
+def audit_dashboard():
+    """Server-side HTML LLM audit dashboard."""
+    from dashboard.builder import build_dashboard_data, render_html
+    api_state: dict = {}
+    try:
+        with app.test_client() as c:
+            r = c.get("/api/state")
+            if r.status_code == 200:
+                api_state = r.get_json() or {}
+    except Exception as e:
+        logger.warning(f"[audit] api_state fetch failed: {e}")
+    data = build_dashboard_data(api_state)
+    html = render_html(data)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8"}
+
+
+@app.route("/audit.json", methods=["GET"])
+def audit_dashboard_json():
+    """Same data as /audit but JSON. Para scripting."""
+    from dashboard.builder import build_dashboard_data
+    api_state: dict = {}
+    try:
+        with app.test_client() as c:
+            r = c.get("/api/state")
+            if r.status_code == 200:
+                api_state = r.get_json() or {}
+    except Exception as e:
+        logger.warning(f"[audit.json] api_state fetch failed: {e}")
+    return jsonify(build_dashboard_data(api_state)), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
