@@ -1,0 +1,4 @@
+google-auth>=2.34.0
+google-cloud-firestore>=2.16.0
+requests>=2.32.0
+functions-framework>=3.5.0

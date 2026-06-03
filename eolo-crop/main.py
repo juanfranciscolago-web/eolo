@@ -1495,6 +1495,52 @@ def _t8_generate_confirmation_code() -> str:
     return f"{_t8_secrets.randbelow(1000000):06d}"
 
 
+_TRADING_MODE_COLL = "eolo-config"
+_TRADING_MODE_DOC  = "trading_mode_state"
+
+
+def _read_trading_mode_from_firestore() -> dict:
+    """Read trading mode state. Returns safe defaults if absent or fails."""
+    default = {"is_paper": True, "last_switched_at": None, "last_switched_by": None}
+    try:
+        from google.cloud import firestore as _fs
+        db = _fs.Client()
+        doc = db.collection(_TRADING_MODE_COLL).document(_TRADING_MODE_DOC).get()
+        if not doc.exists:
+            return default
+        data = doc.to_dict() or {}
+        data.setdefault("is_paper", True)
+        return data
+    except Exception as e:
+        logger.warning(f"[trading_mode] Firestore read failed: {e}. Returning safe default (is_paper=True).")
+        return default
+
+
+def _persist_trading_mode_to_firestore(target_mode: str, request_id: str, by: str) -> bool:
+    """Persist trading mode to Firestore. Safe default = PAPER. Returns success."""
+    try:
+        from google.cloud import firestore as _fs
+        db = _fs.Client()
+        db.collection(_TRADING_MODE_COLL).document(_TRADING_MODE_DOC).set({
+            "is_paper":          target_mode == "PAPER",
+            "target_mode":       target_mode,
+            "last_switched_at":  datetime.utcnow().isoformat() + "Z",
+            "last_switched_by":  by,
+            "last_request_id":   request_id,
+        })
+        return True
+    except Exception as e:
+        logger.error(f"[trading_mode] Firestore persist failed: {e}")
+        return False
+
+
+@app.route("/system/trading_mode/current", methods=["GET"])
+def trading_mode_current():
+    """Read current trading mode state from Firestore. Default safe = PAPER."""
+    state = _read_trading_mode_from_firestore()
+    return jsonify(state), 200
+
+
 @app.route("/system/trading_mode/request", methods=["POST"])
 def trading_mode_request():
     """Step 1: request mode change. Returns request_id valid 5 min."""
@@ -1561,12 +1607,14 @@ def trading_mode_confirm():
         "switched_by": "juan",  # in real impl: extract from auth
     })
 
-    # Real impl: persist target_mode to Firestore + signal bot to reload config
+    persisted = _persist_trading_mode_to_firestore(target, req_id, "juan")
+
     return jsonify({
         "mode": target,
         "switched_at": datetime.utcnow().isoformat() + "Z",
         "switched_by": "juan",
-        "note": "Phase 1 stub: mode not actually switched. F-follow-up persists + reloads bot.",
+        "firestore_persisted": persisted,
+        "note": "Sub-C: Firestore state persistido. Bot reload runtime config sigue pendiente — gating step para flip real PAPER → LIVE.",
     }), 200
 
 
@@ -1577,9 +1625,11 @@ def trading_mode_revert():
         "at": datetime.utcnow().isoformat() + "Z",
         "by": "juan",
     })
+    persisted = _persist_trading_mode_to_firestore("PAPER", "REVERT_EMERGENCY", "juan")
     return jsonify({
         "mode": "PAPER",
         "switched_at": datetime.utcnow().isoformat() + "Z",
+        "firestore_persisted": persisted,
         "note": "One-click revert. Always available.",
     }), 200
 
