@@ -375,6 +375,9 @@ class CropBotTheta:
         self._llm_spread_override_threshold: int = 8
         self._llm_client: Optional[LLMGateClient] = None  # lazy init
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
+        # Raw snapshot cache exposed for /juan/suggest (T11) and watchlist
+        # builder (T10): ticker → last built MarketSnapshot dict.
+        self._last_snapshots: dict = {}
         # Sprint 9: TradeLogger lazy init en el primer record_open.
         self._trade_logger: Optional[TradeLogger] = None
         # Sprint 11: LLM metrics eager init para tener stats expuestos desde
@@ -1258,6 +1261,7 @@ class CropBotTheta:
                 if self._llm_client is None:
                     self._llm_client = LLMGateClient(
                         service_url=self._llm_engine_url,
+                        timeout=120.0,
                         haiku_confidence_threshold=self._llm_engine_threshold,
                     )
                     self._llm_cache = DecisionCache(ttl_seconds=self._llm_cache_ttl_seconds)
@@ -1285,6 +1289,14 @@ class CropBotTheta:
                             self.stream, "get_vix_yesterday_close", lambda: None
                         )(),
                     )
+
+                    try:
+                        self._last_snapshots[ticker] = (
+                            snapshot.model_dump() if hasattr(snapshot, "model_dump")
+                            else dict(snapshot)
+                        )
+                    except Exception as _snap_e:
+                        logger.debug(f"[snapshot_cache] write failed for {ticker}: {_snap_e}")
 
                     should_call, reason = should_call_llm(
                         snapshot,

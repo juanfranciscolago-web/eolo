@@ -50,7 +50,7 @@ class Decision(BaseModel):
     confidence: int = Field(ge=0, le=10)
     strikes: StrikesModel = Field(default_factory=StrikesModel)
     deltas: DeltasModel = Field(default_factory=DeltasModel)
-    dte_target: int = Field(default=0, ge=0, le=7)
+    dte_target: int = Field(default=0, ge=0, le=45)
     main_reason: str
     tacit_rules_applied: List[str] = Field(default_factory=list)
     abort_triggers: List[str] = Field(default_factory=list)
@@ -186,15 +186,7 @@ def apply_safety_rails(decision_dict: dict, snapshot: MarketSnapshot) -> Decisio
                 decision.warnings.append(f"CALL strike {call_otm_pct:.1f}% OTM seems excessive")
 
     # ─────────────────────────────────────────────────────
-    # RULE 5: DTE constraints (0-3 DTE only for Theta Harvest)
-    # ─────────────────────────────────────────────────────
-    if decision.verdict != "WAIT" and decision.dte_target > 4:
-        overrides.append(f"DTE_TOO_HIGH_{decision.dte_target}")
-        decision.dte_target = 1  # Force to 1 DTE
-        decision.warnings.append("DTE forced to 1 - Theta Harvest requires 0-3 DTE")
-
-    # ─────────────────────────────────────────────────────
-    # RULE 6: Profit target sanity
+    # RULE 5: Profit target sanity
     # Juan canonical range: 50-60% (TR-Juan-023, TR-Juan-035, Success_Metrics).
     # Si LLM emite fuera de [50, 60] -> clamp y log.
     # ─────────────────────────────────────────────────────
@@ -203,7 +195,7 @@ def apply_safety_rails(decision_dict: dict, snapshot: MarketSnapshot) -> Decisio
         decision.profit_target_pct = max(50, min(60, decision.profit_target_pct))
 
     # ─────────────────────────────────────────────────────
-    # RULE 7: Required strikes
+    # RULE 6: Required strikes
     # ─────────────────────────────────────────────────────
     if decision.verdict == "SELL_PUT" and not decision.strikes.put_strike:
         overrides.append("MISSING_PUT_STRIKE")
@@ -235,7 +227,6 @@ _SAFETY_RAIL_PREFIX_TO_RULE_ID = [
     ("IC_DIRECTO_PROHIBIDO", "SR-003"),
     ("PUT_TOO_FAR_OTM", "SR-004"),
     ("CALL_TOO_FAR_OTM", "SR-004"),
-    ("DTE_TOO_HIGH", "SR-005"),
     ("PROFIT_TARGET_CLAMPED", "SR-006"),
     ("MISSING_PUT_STRIKE", "SR-007"),
     ("MISSING_CALL_STRIKE", "SR-007"),
