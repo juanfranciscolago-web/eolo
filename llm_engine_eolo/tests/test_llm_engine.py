@@ -524,6 +524,96 @@ def test_compute_vrp_score():
     assert compute_vrp_score(None) is None
 
 
+def test_compute_magnet_strength_high_confluence():
+    """TERMINATOR Sub-B: magnet_strength TR-Juan-067 high pin probability."""
+    from llm_engine.quantdata_features import compute_magnet_strength
+    # spot 750.5, max_pain 750.0 → 0.067% distance → base 70
+    # gex_zero 750.5 + oi_max_call 750.2 + oi_max_put 749.8 all within 0.5% of 750 → +30
+    r = compute_magnet_strength(750.5, 750.0, 750.5, 750.2, 749.8)
+    assert r["score"] == 100
+    assert r["magnet_strike"] == 750.0
+    assert r["components"]["max_pain_distance_pct"] < 0.3
+    assert r["components"]["gamma_zero"] == "confluent"
+
+
+def test_compute_magnet_strength_no_data():
+    """Sub-B: graceful None when inputs missing."""
+    from llm_engine.quantdata_features import compute_magnet_strength
+    assert compute_magnet_strength(None, 750.0) is None
+    assert compute_magnet_strength(750.0, None) is None
+    assert compute_magnet_strength(0, 750.0) is None
+
+
+def test_compute_magnet_strength_far_pain():
+    """Sub-B: max_pain >1% away → base 10, no bonus."""
+    from llm_engine.quantdata_features import compute_magnet_strength
+    r = compute_magnet_strength(800.0, 750.0)
+    assert r["score"] == 10
+    assert r["components"]["max_pain_distance_pct"] > 1.0
+
+
+def test_compute_cascade_risk_extreme():
+    """TERMINATOR Sub-B: cascade_risk TR-Juan-064 extreme case."""
+    from llm_engine.quantdata_features import compute_cascade_risk
+    # spot 745, oi_max_put 750, ATR 8 → cascade_zone_top = 758, spot < zone → +50
+    # negative GEX magnitude 3B → +20, IVR call 20 → +10, put_skew 6% → +10, VIX 25 → +10 = 100
+    r = compute_cascade_risk(
+        spot=745.0, oi_max_put_strike=750.0, atr_daily=8.0,
+        gex_total=-3e9, iv_rank_call=20.0, put_skew_25d=6.0, vix_level=25.0,
+    )
+    assert r["risk_level"] == "extreme"
+    assert r["score"] == 100
+    assert any("cascade_zone_top" in d for d in r["drivers"])
+
+
+def test_compute_cascade_risk_low():
+    """Sub-B: cascade_risk safe regime."""
+    from llm_engine.quantdata_features import compute_cascade_risk
+    r = compute_cascade_risk(
+        spot=800.0, oi_max_put_strike=750.0, atr_daily=5.0,
+        gex_total=5e9, iv_rank_call=70.0, put_skew_25d=2.0, vix_level=15.0,
+    )
+    assert r["risk_level"] == "low"
+    assert r["score"] == 0
+
+
+def test_compute_smart_money_bias_bullish():
+    """TERMINATOR Sub-B: smart_money_bias TR-Juan-066 bullish drift."""
+    from llm_engine.quantdata_features import compute_smart_money_bias
+    r = compute_smart_money_bias(
+        net_call_premium_drift=10_000_000, net_put_premium_drift=2_000_000,
+    )
+    assert r["bias"] == "bullish"
+    assert r["conviction"] > 0
+    assert r["evidence"]["diff_usd"] == 8_000_000
+
+
+def test_compute_smart_money_bias_neutral():
+    """Sub-B: small drift → neutral."""
+    from llm_engine.quantdata_features import compute_smart_money_bias
+    r = compute_smart_money_bias(
+        net_call_premium_drift=2_000_000, net_put_premium_drift=1_000_000,
+    )
+    assert r["bias"] == "neutral"
+
+
+def test_compute_smart_money_bias_skew_amplifier():
+    """Sub-B: TR-Juan-068 skew differential amplifies bullish conviction."""
+    from llm_engine.quantdata_features import compute_smart_money_bias
+    r = compute_smart_money_bias(
+        net_call_premium_drift=10_000_000, net_put_premium_drift=2_000_000,
+        put_skew_25d=8.0, call_skew_25d=4.0,  # diff = +4% > 2% → amplifier
+    )
+    assert r["bias"] == "bullish"
+    assert "skew_amplifier" in r["evidence"]
+
+
+def test_compute_smart_money_bias_no_data():
+    """Sub-B: both drifts None → None."""
+    from llm_engine.quantdata_features import compute_smart_money_bias
+    assert compute_smart_money_bias(None, None) is None
+
+
 def test_build_juan_suggestion_prompt():
     """T11.A: prompt builder for /juan/suggest."""
     from llm_engine.prompt_builder import build_juan_suggestion_prompt, JUAN_SUGGESTION_SYSTEM_PROMPT

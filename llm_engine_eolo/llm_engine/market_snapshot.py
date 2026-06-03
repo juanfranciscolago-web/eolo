@@ -152,6 +152,34 @@ class MarketSnapshot(BaseModel):
 
     def to_llm_format(self) -> str:
         """Formatea el snapshot para el LLM."""
+        from llm_engine.quantdata_features import (
+            compute_magnet_strength, compute_cascade_risk, compute_smart_money_bias,
+        )
+        _magnet = compute_magnet_strength(
+            spot=self.price,
+            max_pain_strike=self.max_pain_strike,
+            gamma_zero_strike=self.gamma_zero_strike,
+            oi_max_call_strike=self.oi_max_call_strike,
+            oi_max_put_strike=self.oi_max_put_strike,
+        )
+        _cascade = compute_cascade_risk(
+            spot=self.price,
+            oi_max_put_strike=self.oi_max_put_strike,
+            atr_daily=self.atr_daily,
+            gex_total=self.gex_total,
+            iv_rank_call=self.iv_rank_call,
+            put_skew_25d=self.put_skew_25d,
+            vix_level=self.vix_level,
+        )
+        _smart = compute_smart_money_bias(
+            net_call_premium_drift=self.net_call_premium_drift,
+            net_put_premium_drift=self.net_put_premium_drift,
+            put_skew_25d=self.put_skew_25d,
+            call_skew_25d=self.call_skew_25d,
+        )
+        _magnet_str  = "N/A" if _magnet is None  else f"score={_magnet['score']} magnet=${_magnet['magnet_strike']:.2f} components={_magnet['components']}"
+        _cascade_str = "N/A" if _cascade is None else f"{_cascade['risk_level'].upper()} score={_cascade['score']} drivers={_cascade['drivers']}"
+        _smart_str   = "N/A" if _smart is None   else f"{_smart['bias'].upper()} conviction={_smart['conviction']} evidence={_smart['evidence']}"
         return f"""MARKET SNAPSHOT — {self.ticker} @ {self.timestamp}
 Session phase: {self.session_phase}
 ═══════════════════════════════════════════════════════
@@ -226,6 +254,11 @@ OPTIONS POSITIONING ADVANCED (Quant Data Tier S)
 - OI Max Call Strike: {self.oi_max_call_strike if self.oi_max_call_strike is not None else 'N/A'}
 - OI Max Put Strike: {self.oi_max_put_strike if self.oi_max_put_strike is not None else 'N/A'}
 - Max Pain trend 7d: {self.max_pain_trend_7d if self.max_pain_trend_7d is not None else 'N/A'}
+
+SMART MONEY & CASCADE (Tier S compute layer — TR-Juan-064/066/067/068)
+- Magnet Strength: {_magnet_str}
+- Cascade Risk: {_cascade_str}
+- Smart Money Bias: {_smart_str}
 
 MACRO CONTEXT
 - Days to FOMC: {self.days_to_next_fomc or 'N/A'}
