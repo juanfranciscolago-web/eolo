@@ -39,3 +39,4 @@ gunicorn>=22.0.0
 
 # HTTP client (compatible con anthropic 0.39.0 pin del LLM Engine)
 httpx>=0.25,<0.28
+google-cloud-scheduler>=2.13.0

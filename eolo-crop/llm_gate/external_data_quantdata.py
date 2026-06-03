@@ -5,8 +5,7 @@ Tier 1 endpoints (validados con SPY real 2026-06-01):
     /v1/options/tool/iv-rank           (requires lookBackPeriod + maturity)
     /v1/options/tool/exposure-by-strike (requires greekMode + representationMode)
 
-Tier 1 endpoint pendiente de verificar shape:
-    /v1/options/tool/net-drift         (wire LIVE post-hotfix #95, commit 0f77177)
+    /v1/options/tool/net-drift         (shape validada — wire end-to-end snapshot.py:404 → MarketSnapshot.net_call_premium_drift/net_put_premium_drift → to_llm_format líneas 216-217)
 
 Tier S endpoints (Sprint T1.A 2026-06-02, Master Plan v2.1 sec 5):
     /v1/options/tool/volatility-drift      (IV30/ARV20 → VRP + percentile 252d)
