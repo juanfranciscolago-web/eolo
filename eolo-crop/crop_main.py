@@ -1383,6 +1383,20 @@ class CropBotTheta:
                         except Exception as _me:
                             logger.warning(f"[llm] metrics record_call failed: {_me}")
 
+                        try:
+                            self._log_theta_decision_llm_update(decision_id, {
+                                "llm_verdict":             decision.get("verdict"),
+                                "llm_confidence":          decision.get("confidence"),
+                                "llm_main_reason":         (decision.get("main_reason") or "")[:500],
+                                "llm_layered_path":        decision.get("layered_path"),
+                                "llm_tacit_rules_applied": decision.get("tacit_rules_applied") or [],
+                                "llm_safety_overrides":    decision.get("safety_overrides") or [],
+                                "sonnet_latency_ms":       int(_llm_latency_ms),
+                                "decision_source":         _source,
+                            })
+                        except Exception as _llm_fs_e:
+                            logger.debug(f"[ThetaHarvest][FS] llm update enqueue failed: {_llm_fs_e}")
+
                     verdict = decision.get("verdict", "WAIT")
                     confidence = decision.get("confidence", 0)
                     main_reason = decision.get("main_reason", "")[:200]
@@ -3888,6 +3902,20 @@ class CropBotTheta:
               .set({**payload, "recorded_ts": time.time()})
         except Exception as _e:
             logger.warning(f"[ThetaHarvest][FS] decision write failed: {_e}")
+
+    def _log_theta_decision_llm_update(self, decision_id: str, llm_payload: dict) -> None:
+        """Merge LLM verdict fields onto the existing decision doc. Non-blocking."""
+        try:
+            from google.cloud import firestore as _fs
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            db = _fs.Client()
+            db.collection("eolo-crop-theta-decisions") \
+              .document(today) \
+              .collection("decisions") \
+              .document(decision_id) \
+              .set({**llm_payload, "llm_recorded_ts": time.time()}, merge=True)
+        except Exception as _e:
+            logger.warning(f"[ThetaHarvest][FS] decision llm update failed: {_e}")
 
     def _log_theta_trade_open(self, trade_id: str, decision_id: str, payload: dict) -> None:
         """Persiste apertura de trade en Firestore con status=OPEN."""
