@@ -66,6 +66,19 @@ def _aggregate_verdicts(decisions: list[dict]) -> dict[str, int]:
     return counts
 
 
+def _safe_phase_checkpoints() -> list[dict]:
+    """Read today's phase checkpoints from Firestore."""
+    try:
+        from google.cloud import firestore
+        db = firestore.Client()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        docs = db.collection("phase_checkpoints").document(today).collection("phases").stream()
+        return [d.to_dict() | {"_id": d.id} for d in docs]
+    except Exception as e:
+        logger.warning(f"[dashboard] phase_checkpoints read failed: {e}")
+        return []
+
+
 def _safe_scheduler_jobs() -> list[dict]:
     """List Cloud Scheduler jobs in us-east1 with next-run-time. Optional dep."""
     try:
@@ -100,6 +113,7 @@ def build_dashboard_data(api_state: dict) -> dict:
         "rule_citations": _aggregate_rule_citations(decisions),
         "verdicts": _aggregate_verdicts(decisions),
         "scheduler_jobs": _safe_scheduler_jobs(),
+        "phase_checkpoints": _safe_phase_checkpoints(),
     }
 
 
@@ -115,6 +129,7 @@ def render_html(data: dict) -> str:
     citations = data["rule_citations"] or {}
     decisions = data["decisions"] or []
     jobs = data["scheduler_jobs"] or []
+    phase_checks = data.get("phase_checkpoints") or []
 
     verdicts_json = json.dumps(verdicts)
     citations_top10 = dict(list(citations.items())[:10])
@@ -149,6 +164,17 @@ def render_html(data: dict) -> str:
     job_rows = ""
     for j in jobs:
         job_rows += f'<tr><td>{j["name"]}</td><td>{j["schedule"]}</td><td>{j["state"]}</td><td>{j.get("last_attempt","—")}</td></tr>'
+
+    phase_rows = ""
+    for p in sorted(phase_checks, key=lambda x: x.get("ts", "")):
+        lm = p.get("llm_metrics") or {}
+        phase_rows += (
+            f'<tr><td>{p.get("phase","?")}</td>'
+            f'<td>{p.get("ts","?")}</td>'
+            f'<td>{p.get("positions_count","—")}</td>'
+            f'<td>{lm.get("total_calls","—")}</td>'
+            f'<td>{lm.get("cost_estimate","—")}</td></tr>'
+        )
 
     lat_block = llm_metrics.get("latency_ms", {}) or {}
     latency_p50 = lat_block.get("p50", "?")
@@ -261,6 +287,14 @@ def render_html(data: dict) -> str:
         <tbody>{citation_rows or '<tr><td colspan="2" style="color:#8e8e93">Sin citaciones aún</td></tr>'}</tbody>
       </table>
     </div>
+  </div>
+
+  <div class="card full-width">
+    <h2>Phase Checkpoints Today</h2>
+    <table>
+      <thead><tr><th>Phase</th><th>TS UTC</th><th>Positions</th><th>LLM Calls</th><th>Cost USD</th></tr></thead>
+      <tbody>{phase_rows or '<tr><td colspan="5" style="color:#8e8e93">Sin checkpoints aún hoy</td></tr>'}</tbody>
+    </table>
   </div>
 
   <div class="card full-width">

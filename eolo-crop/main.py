@@ -1864,6 +1864,95 @@ def audit_dashboard_json():
     return jsonify(build_dashboard_data(api_state)), 200
 
 
+# ===========================================================================
+# Sub-C MEGATERMINATOR: Weekly review (60d backtest) endpoints
+# ===========================================================================
+@app.route("/weekly_review/run", methods=["GET", "POST"])
+def weekly_review_run():
+    """Trigger 60d backtest (long-running: ~60-120s).
+
+    Schedule: Cloud Scheduler eolo-weekly-review Sunday 18:00 ET.
+    Body opcional {"tickers": [...], "days_back": int, "budget_cap_usd": float}.
+    """
+    from learning.weekly_review_handler import run_weekly_backtest
+    body = request.get_json(force=True, silent=True) or {}
+    try:
+        summary = run_weekly_backtest(
+            tickers=body.get("tickers"),
+            days_back=int(body.get("days_back", 60)),
+            budget_cap_usd=float(body.get("budget_cap_usd", 12.0)),
+            sample_hours=body.get("sample_hours"),
+        )
+        return jsonify({"status": "OK", "summary": summary}), 200
+    except Exception as e:
+        logger.error(f"[weekly_review/run] failed: {e}")
+        return jsonify({"status": "ERROR", "error": str(e)[:300]}), 500
+
+
+@app.route("/weekly_review/latest", methods=["GET"])
+def weekly_review_latest():
+    """Read latest weekly review doc from Firestore."""
+    from learning.weekly_review_handler import fetch_latest_weekly_review
+    doc = fetch_latest_weekly_review()
+    if doc is None:
+        return jsonify({"status": "NO_REVIEW_YET"}), 200
+    return jsonify(doc), 200
+
+
+# ===========================================================================
+# Sub-D MEGATERMINATOR: Phase 2-5 checkpoint endpoint
+# ===========================================================================
+@app.route("/orchestrator/phase_checkpoint", methods=["POST"])
+def orchestrator_phase_checkpoint():
+    """Cloud Scheduler-triggered checkpoint para cada phase (open/mid_day/afternoon/power_hour).
+
+    Loggea estado del bot al inicio de la phase, persiste a Firestore.
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    phase = (body.get("phase") or "unknown").lower()
+
+    bot = getattr(crop_main, "bot_instance", None)
+    positions_count = 0
+    pnl_today = None
+    llm_metrics: dict = {}
+    if bot is not None:
+        try:
+            positions_count = len(getattr(bot, "_theta_positions", []) or [])
+        except Exception:
+            pass
+        try:
+            llm_metrics_obj = getattr(bot, "_llm_metrics", None)
+            if llm_metrics_obj is not None and hasattr(llm_metrics_obj, "stats"):
+                stats = llm_metrics_obj.stats()
+                llm_metrics = {
+                    "total_calls":   stats.get("total_calls"),
+                    "verdicts":      stats.get("verdicts"),
+                    "errors":        stats.get("errors"),
+                    "cost_estimate": stats.get("cost_estimate_usd"),
+                }
+        except Exception:
+            pass
+
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+    checkpoint = {
+        "phase":            phase,
+        "ts":               datetime.utcnow().isoformat() + "Z",
+        "positions_count":  positions_count,
+        "pnl_today":        pnl_today,
+        "llm_metrics":      llm_metrics,
+    }
+    try:
+        from google.cloud import firestore as _fs
+        db = _fs.Client()
+        db.collection("phase_checkpoints").document(today).collection("phases").document(phase).set(checkpoint)
+    except Exception as e:
+        logger.warning(f"[phase_checkpoint] firestore write failed: {e}")
+        checkpoint["firestore_error"] = str(e)[:200]
+
+    logger.info(f"[phase_checkpoint] {phase}: positions={positions_count} llm_calls={llm_metrics.get('total_calls')}")
+    return jsonify(checkpoint), 200
+
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
