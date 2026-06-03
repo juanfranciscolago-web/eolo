@@ -22,12 +22,17 @@ URL = "https://api.schwabapi.com/marketdata/v1/pricehistory"
 
 
 def _get_schwab_token() -> Optional[str]:
-    """Try to fetch Schwab access_token via existing helpers."""
+    """Try to fetch Schwab access_token via existing helpers.
+
+    Sub-1 BACKTEST-COMPLETO fix: helpers exporta `get_access_token`, no
+    `get_schwab_access_token`. El nombre erróneo del primer scaffold S5
+    causaba que todo el backtest local usara indicators defaults.
+    """
     try:
         import sys
         sys.path.insert(0, "eolo-crop")
-        from helpers import get_schwab_access_token  # type: ignore
-        return get_schwab_access_token()
+        from helpers import get_access_token  # type: ignore
+        return get_access_token()
     except Exception as e:
         logger.warning(f"[schwab_historical] token fetch failed: {e}")
         return None
