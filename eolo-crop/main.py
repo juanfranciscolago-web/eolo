@@ -861,6 +861,22 @@ def api_state():
         except Exception as me:
             logger.debug(f"[API /state] Could not read llm_metrics stats: {me}")
 
+        # Sub-B MEGATERMINATOR: expose trading_mode (Firestore-driven + paper constraint).
+        try:
+            cached_tm = getattr(bot, "_cached_trading_mode", {"is_paper": True, "source": "no_bot"})
+            paper_only_env = os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true"
+            state["trading_mode"] = {
+                "effective":              "PAPER" if cached_tm.get("is_paper") else "LIVE",
+                "firestore_requested":    "PAPER" if cached_tm.get("firestore_requested") != "LIVE" else "LIVE",
+                "paper_only_constraint":  paper_only_env,
+                "source":                 cached_tm.get("source"),
+                "last_switched_by":       cached_tm.get("last_switched_by"),
+                "last_switched_at":       cached_tm.get("last_switched_at"),
+            }
+        except Exception as tm_e:
+            logger.debug(f"[API /state] trading_mode read failed: {tm_e}")
+            state["trading_mode"] = {"effective": "PAPER", "source": "fallback_error"}
+
         return jsonify(state), 200
 
     except Exception as e:

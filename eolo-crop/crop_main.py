@@ -378,6 +378,10 @@ class CropBotTheta:
         # Raw snapshot cache exposed for /juan/suggest (T11) and watchlist
         # builder (T10): ticker → last built MarketSnapshot dict.
         self._last_snapshots: dict = {}
+        # Sub-B MEGATERMINATOR: cached trading_mode state (Firestore-driven).
+        # Bot consulta cada N seg y compara con PAPER_TRADING_ONLY constraint.
+        self._cached_trading_mode: dict = {"is_paper": True, "source": "init_default"}
+        self._last_trading_mode_check_ts: float = 0.0
         # Sprint 9: TradeLogger lazy init en el primer record_open.
         self._trade_logger: Optional[TradeLogger] = None
         # Sprint 11: LLM metrics eager init para tener stats expuestos desde
@@ -1055,6 +1059,48 @@ class CropBotTheta:
                 logger.warning(f"[ThetaHarvest] pivot_analysis falló {ticker}: {e}")
         return self._theta_pivot_cache.get(ticker)
 
+    def _refresh_trading_mode_if_stale(self, ttl_seconds: float = 60.0) -> None:
+        """Sub-B MEGATERMINATOR: lee Firestore eolo-config/trading_mode_state.
+
+        Compara con PAPER_TRADING_ONLY constraint. Si Firestore pide LIVE
+        pero PAPER_TRADING_ONLY=true sigue hardcoded → log WARN y mantiene paper.
+        """
+        now = time.time()
+        if now - self._last_trading_mode_check_ts < ttl_seconds:
+            return
+        self._last_trading_mode_check_ts = now
+        try:
+            from google.cloud import firestore as _fs
+            db = _fs.Client()
+            doc = db.collection("eolo-config").document("trading_mode_state").get()
+            if not doc.exists:
+                self._cached_trading_mode = {"is_paper": True, "source": "firestore_absent"}
+                return
+            data = doc.to_dict() or {}
+            firestore_is_paper = bool(data.get("is_paper", True))
+            paper_only_env = os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true"
+            if not firestore_is_paper and paper_only_env:
+                logger.warning(
+                    "[trading_mode] Firestore requests LIVE but PAPER_TRADING_ONLY=true env "
+                    f"blocks. Effective=PAPER. last_switched_by={data.get('last_switched_by')}"
+                )
+                self._cached_trading_mode = {
+                    "is_paper":                 True,
+                    "source":                   "paper_only_constraint_override",
+                    "firestore_requested":      "LIVE",
+                    "last_switched_by":         data.get("last_switched_by"),
+                    "last_switched_at":         data.get("last_switched_at"),
+                }
+                return
+            self._cached_trading_mode = {
+                "is_paper":               firestore_is_paper,
+                "source":                 "firestore",
+                "last_switched_at":       data.get("last_switched_at"),
+                "last_switched_by":       data.get("last_switched_by"),
+            }
+        except Exception as e:
+            logger.debug(f"[trading_mode] firestore read failed: {e}. Keeping cached.")
+
     async def _run_theta_harvest(self, ticker: str, chain: dict):
         """
         Always-In Multi-DTE: intenta abrir spreads en todos los DTEs libres.
@@ -1068,6 +1114,9 @@ class CropBotTheta:
         """
         from datetime import date as _date
         today = _date.today().isoformat()
+
+        # Sub-B MEGATERMINATOR: refresh trading_mode each ciclo, fail-safe to paper.
+        self._refresh_trading_mode_if_stale(ttl_seconds=60.0)
 
         # ── 0. Gate horario — solo operar dentro de sesión NYSE (9:30–16:00 ET)
         #       Bloquea entradas en pre/post market y fines de semana.
