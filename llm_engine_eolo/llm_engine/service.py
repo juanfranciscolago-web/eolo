@@ -61,13 +61,18 @@ async def lifespan(app: FastAPI):
         logger.warning(f"KB_PATH env var={_env_kb} no existe, fallback a {_default_kb}")
         _env_kb = None
 
+    _resolved_kb = _env_kb or _default_kb
+    _ver_m = _re.search(r"v(\d+\.\d+)", _resolved_kb)
+    _resolved_kb_version = f"v{_ver_m.group(1)}" if _ver_m else "unknown"
+
     CONFIG = {
         "ANTHROPIC_API_KEY": os.getenv("ANTHROPIC_API_KEY"),
         "LLM_MODEL": os.getenv("LLM_MODEL", "claude-sonnet-4-5-20250929"),
         "HAIKU_MODEL": os.getenv("HAIKU_MODEL", "claude-haiku-4-5-20251001"),
         "LLM_MAX_TOKENS": int(os.getenv("LLM_MAX_TOKENS", "4096")),
         "LLM_TEMPERATURE": float(os.getenv("LLM_TEMPERATURE", "0.3")),
-        "KB_PATH": _env_kb or _default_kb,
+        "KB_PATH": _resolved_kb,
+        "KB_VERSION": _resolved_kb_version,
         "PAPER_TRADING_ONLY": os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true",
     }
 
@@ -202,7 +207,7 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
         "request_id": request_id,
         "latency_ms": total_latency_ms,
         "model": CONFIG["LLM_MODEL"],
-        "kb_version": "v1.2",
+        "kb_version": CONFIG.get("KB_VERSION", "unknown"),
         # Sprint 21: tokens consumidos en esta llamada. El bot CROP
         # (crop_main.py:1346-1353) ya los lee para LLMMetrics.record_call().
         "input_tokens":  input_tokens,
