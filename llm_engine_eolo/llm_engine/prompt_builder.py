@@ -427,6 +427,16 @@ Devolvé JSON al cierre:
   "artifacts_proposed": [{"type": "rule_proposal|case_upgrade|lesson_learned", ...}],
   "session_should_close": true|false
 }
+
+ANTI-HALLUCINATION (CRITICAL):
+- Cuando referenciás reglas del KB, SOLO citar rule_ids que existen en la KB
+  cargada. NO inventes IDs.
+- NO atribuyas convenciones del pre-training como reglas reales. Lo único
+  vigente sobre cushion es TR-Juan-001 con números absolutos (SPX $10, SPY $1,
+  QQQ $0.50, IWM $0.30). NO existe regla "cushion 1% en VIX<20".
+- En artifacts type=rule_proposal, asignar rule_id="auto" para que el sistema
+  asigne el próximo libre. NO inventar IDs como "TR-Juan-9999".
+- Mejor no citar rule_id que inventar uno.
 """
 
     # User: journal + history
