@@ -242,12 +242,26 @@ class KBLoader:
 
     # Sprint ANTI-HALLUCINATION-FIX: validators externos usan estos sets.
     def get_all_rule_ids(self) -> set:
-        """Returns set of all rule_ids in the loaded KB."""
-        return {r.rule_id for r in self.rules if getattr(r, "rule_id", None)}
+        """Returns set of canonical rule_ids (TR-Juan-XXX) loaded en KB.
+
+        Importante: algunos rule_ids del Excel tienen sufijos decorativos
+        como '⭐ MAESTRA' o '⭐⭐ PROHIBITIVA'. Usamos self._rule_index.keys()
+        que ya están canonicalizados (sin sufijo) — el mismo set que usa
+        get_rule_by_id() para lookups.
+        """
+        return set(self._rule_index.keys())
 
     def get_all_case_ids(self) -> set:
         """Returns set of all case_ids in the loaded KB."""
-        return {c.case_id for c in self.cases if getattr(c, "case_id", None)}
+        out = set()
+        for c in self.cases:
+            cid = getattr(c, "case_id", None)
+            if cid:
+                # Tomar el primer token sin espacios (defensivo si vienen sufijos)
+                token = str(cid).strip().split()[0]
+                if token:
+                    out.add(token)
+        return out
 
     def get_priority_rules(self) -> List[TacitRule]:
         """Devuelve reglas en orden de prioridad para el prompt."""
