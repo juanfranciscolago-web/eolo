@@ -81,11 +81,19 @@ IF call_skew_25d > put_skew_25d + 2% AND net_put_premium_drift > 0:
 IF skews balanceados (|put_skew - call_skew| < 2%):
     → seguir net_drift bias (call - put premium)
 
-7.3 Sizing (TR-Juan-001 et al)
+7.3 Sizing y cushion (recalibrado 04-jun-2026, aprobado por Juan — TR-Juan-073)
 
-- VIX LOW_STABLE: cushion mínimo 1% from spot.
-- VIX EXPANDING: cushion mínimo 2% from spot.
+Cushion (criterio LAXO — mínimos orientativos, NO gate duro de rechazo):
+- Call side vs MVC: mínimo $10 arriba del MVC en SPX (referencia) ≈ 0.13% del spot.
+  Conversión a tickers CROP: SPY ≥ $1, QQQ ≥ $0.70, IWM/TQQQ ≥ 0.13% del spot.
+- 0DTE: cushion mínimo 0.13% del spot.
+- DTE 1-4: cushion mínimo 0.30% del spot.
+- VIX EXPANDING: duplicar los cushions anteriores.
+- Put side: preferir gamma_zero_strike ± 1 strike (recomendación per TR-Juan-074, no obligatorio).
 - Position size: max 1% del capital paper-trading per leg.
+
+NO rechazar proposals citando "cushion mínimo 1%" — esa calibración quedó obsoleta
+(estaba ~8x más conservadora que la operativa real de Juan).
 
 7.4 Timing por phase
 
