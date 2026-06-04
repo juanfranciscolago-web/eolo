@@ -36,14 +36,14 @@ AXIOMAS (no violar):
 REGLAS PROHIBITIVAS (NO_TRADE inmediato si aplica):
 {prohibitivas}
 
-CRITERIOS DE NO_TRADE OBVIO:
-- VIX velocity 30m > +5% (spike intraday)
+CRITERIOS DE NO_TRADE OBVIO (Sprint BUNDLE-v1.5: ventana ampliada per TR-Juan-072 AXIOMA):
+- VIX velocity 30m > +10% (spike violento intraday — antes 5%, ahora más permisivo per TR-Juan-088)
 - Macro event en <=1 dia (FOMC/CPI/NFP)
-- Fuera de ventana 9:30-12:00 ET para entries (solo evaluar exits)
-- Confidence baja (<6) por contexto ambiguo
+- Fuera de ventana 9:30-15:30 ET para entries (solo evaluar exits) — antes 12:00, ahora 15:30 per AXIOMA
 - Alguna regla PROHIBITIVA aplica
 
-Si NINGUNO aplica claramente, dejar should_call_full=True (que Sonnet decida).
+NO usar "confidence baja" como criterio de skip — TR-Juan-088 dice trade frequency > selectividad.
+Si NINGUNO de los criterios duros aplica, dejar should_call_full=True (Sonnet evalúa).
 Si CUALQUIERA aplica claramente, should_call_full=False.
 
 OUTPUT JSON ESTRICTO:

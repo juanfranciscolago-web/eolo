@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 ET = ZoneInfo("America/New_York")
 
 # Pre-filter thresholds
-_VIX_SPIKE_VEL_PCT = 5.0
+# Sprint BUNDLE-v1.5: VIX spike threshold subido 5%→10% per TR-Juan-088
+# (trade frequency > selectividad, WAIT solo en eventos extremos).
+_VIX_SPIKE_VEL_PCT = 10.0
 _MACRO_EVENT_BLOCK_DAYS = 1
 # Sprint 15: defaults overridables vía strategy_overrides.
 _ENTRY_WINDOW_START_DEFAULT = time(9, 30)
@@ -39,7 +41,8 @@ def _parse_hhmm(s: str) -> Optional[time]:
 
 def _get_entry_window(bot_instance=None) -> Tuple[time, time]:
     """Sprint 15: lee override entry_window_{start,end}_et de
-    bot_instance._strategy_overrides si existe, sino default 09:30-12:00 ET.
+    bot_instance._strategy_overrides si existe, sino default 09:30-15:30 ET
+    (BUNDLE-v1.5: ventana ampliada per TR-Juan-072 AXIOMA intraday theta).
 
     Defensivo: cualquier fallo retorna defaults.
     """
@@ -72,9 +75,9 @@ def should_call_llm(
     Reglas (NO_CALL si alguna aplica):
     0. Ticker not in {SPY, QQQ, IWM} — TQQQ excluded (3x leverage, KB additions pending)
     1. Ticker no enabled en tickers_enabled
-    2. Hora fuera de ventana 9:30-12:00 ET (para entries) — permitir para
-       exits si has_open_positions
-    3. VIX velocity 30m > 5% (spike intraday) — solo bloquea si NO hay positions
+    2. Hora fuera de ventana 9:30-15:30 ET (para entries) — permitir para
+       exits si has_open_positions (BUNDLE-v1.5)
+    3. VIX velocity 30m > 10% (spike violento) — solo bloquea si NO hay positions
     4. Macro event en <=1 dia (FOMC/CPI/NFP)
     5. Bot ya en max positions
 

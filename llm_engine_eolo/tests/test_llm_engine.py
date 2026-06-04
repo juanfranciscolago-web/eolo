@@ -76,23 +76,24 @@ def make_test_snapshot(**overrides) -> MarketSnapshot:
 
 
 def test_kb_loads():
-    """KB Excel v1.4 FULL (Sprint INTRADAY-THETA-PIVOT-FULL) carga OK."""
+    """KB Excel v1.5 BUNDLE-FINAL carga OK.
+
+    Bundle v1.5: 90 reglas (80 v1.4 + 10 nuevas TR-Juan-081..088 + 089/090).
+    Tier distribution shifts: +3 PROHIBITIVA (081, 084, 085), +2 MAESTRA
+    (082, 088), +2 PROTOCOLO (086, 087), +3 TACTICAL_PLUS (083, 089, 090).
+    """
     kb = KBLoader(KB_PATH)
     stats = kb.stats()
 
-    # v1.4 BUNDLED: 80 reglas (77 + 3 nuevas TR-Juan-078/079/080)
-    assert stats["total_rules"] == 80, f"Expected 80 rules, got {stats['total_rules']}"
-    # Cases: 6 SILVER + 3 GOLD (007, 008, 009 today) = 9
+    assert stats["total_rules"] == 90, f"Expected 90 rules, got {stats['total_rules']}"
     assert stats["total_cases"] >= 9, f"Expected >=9 cases, got {stats['total_cases']}"
 
     tiers = stats["rules_by_tier"]
     assert tiers.get("AXIOMA", 0) == 4, f"AXIOMA count wrong: {tiers}"
-    assert tiers.get("PROHIBITIVA", 0) == 6, f"PROHIBITIVA count wrong: {tiers}"
-    assert tiers.get("MAESTRA", 0) == 13, f"MAESTRA count wrong: {tiers}"
-    # +1 TR-Juan-079 BUNDLED → 9
-    assert tiers.get("PROTOCOLO", 0) == 9, f"PROTOCOLO count wrong: {tiers}"
-    # +2 TR-Juan-078, TR-Juan-080 → 25
-    assert tiers.get("TACTICAL_PLUS", 0) == 25, f"TACTICAL_PLUS count wrong: {tiers}"
+    assert tiers.get("PROHIBITIVA", 0) == 9, f"PROHIBITIVA count wrong: {tiers}"
+    assert tiers.get("MAESTRA", 0) == 15, f"MAESTRA count wrong: {tiers}"
+    assert tiers.get("PROTOCOLO", 0) == 11, f"PROTOCOLO count wrong: {tiers}"
+    assert tiers.get("TACTICAL_PLUS", 0) == 28, f"TACTICAL_PLUS count wrong: {tiers}"
     assert tiers.get("TACTICAL", 0) == 23, f"TACTICAL count wrong: {tiers}"
 
     # Verificar que TR-019 a TR-022 existen (fix v1.0)
@@ -275,7 +276,8 @@ def test_haiku_prompts_build():
     assert "should_call_full" in system
     assert "SPY" in user
     assert "VIX" in user
-    assert len(system) < 5000, f"Haiku system prompt too long: {len(system)} chars"
+    # BUNDLE-v1.5: +3 PROHIBITIVA (081/084/085) → prompt grew; cap 6000.
+    assert len(system) < 6000, f"Haiku system prompt too long: {len(system)} chars"
     print(f"OK Haiku prompts built: system={len(system)} chars, user={len(user)} chars")
 
 

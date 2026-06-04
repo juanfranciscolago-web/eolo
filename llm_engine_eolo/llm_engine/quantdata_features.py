@@ -25,10 +25,23 @@ def classify_gamma_regime(
     long: spot > gamma_zero + threshold% → mean-reverting
     negative: spot < gamma_zero - threshold% → trending/explosive
     transition: within ±threshold% → high vol zone gris
+
+    Sprint BUNDLE-v1.5: validación defensiva — gamma_zero<=0 o non-finite
+    también return None (evita 'transition' espurea ante missing/garbage data,
+    causa raíz de 160 WAIT/8d via TR-Juan-070).
     """
-    if spot is None or gamma_zero_strike is None or spot <= 0:
+    if spot is None or gamma_zero_strike is None:
         return None
-    distance_pct = (spot - gamma_zero_strike) / spot * 100
+    try:
+        s = float(spot)
+        gz = float(gamma_zero_strike)
+    except (TypeError, ValueError):
+        return None
+    if s <= 0 or gz <= 0:
+        return None
+    if s != s or gz != gz:  # NaN
+        return None
+    distance_pct = (s - gz) / s * 100
     if distance_pct > flip_threshold_pct:
         return "long"
     elif distance_pct < -flip_threshold_pct:
@@ -45,12 +58,27 @@ def compute_vrp_score(
     rich: percentile > 70 → vender es muy rentable
     fair: 30-70 → neutral
     cheap: < 30 → NO vender, esperar
+
+    Sprint BUNDLE-v1.5: tratar 0 / valores no-finitos / fuera de [0,100]
+    como sentinels de missing data → return None en vez de 'cheap'. Esto
+    evita disparar TR-Juan-063 (NO_NEW_SELLING) ante data ausente,
+    causa raíz de 119 WAIT/8d en análisis live.
     """
     if vrp_percentile_252d is None:
         return None
-    if vrp_percentile_252d > 70:
+    try:
+        v = float(vrp_percentile_252d)
+    except (TypeError, ValueError):
+        return None
+    # NaN / Inf / fuera de rango → tratar como missing
+    if v != v or v < 0 or v > 100:  # NaN check via self-compare
+        return None
+    # Sentinel exacto 0 = no data (percentiles legítimos casi nunca caen exactamente en 0)
+    if v == 0:
+        return None
+    if v > 70:
         return "rich"
-    elif vrp_percentile_252d < 30:
+    elif v < 30:
         return "cheap"
     else:
         return "fair"
