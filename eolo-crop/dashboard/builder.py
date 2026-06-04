@@ -79,6 +79,25 @@ def _safe_phase_checkpoints() -> list[dict]:
         return []
 
 
+def _safe_feedback_artifacts() -> dict:
+    """Wave 2A: read today's feedback artifacts (rule_proposals, case_upgrades, lessons, qa_tickets)."""
+    try:
+        from google.cloud import firestore
+        db = firestore.Client()
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        out: dict = {"rule_proposals": [], "case_upgrades": [], "lessons_learned": [], "qa_tickets": []}
+        for coll in list(out.keys()):
+            try:
+                docs = db.collection(coll).document(today).collection("items").stream()
+                out[coll] = [d.to_dict() | {"_id": d.id} for d in docs]
+            except Exception:
+                pass
+        return out
+    except Exception as e:
+        logger.warning(f"[dashboard] feedback_artifacts read failed: {e}")
+        return {}
+
+
 def _safe_scheduler_jobs() -> list[dict]:
     """List Cloud Scheduler jobs in us-east1 with next-run-time. Optional dep."""
     try:
@@ -114,6 +133,7 @@ def build_dashboard_data(api_state: dict) -> dict:
         "verdicts": _aggregate_verdicts(decisions),
         "scheduler_jobs": _safe_scheduler_jobs(),
         "phase_checkpoints": _safe_phase_checkpoints(),
+        "feedback_artifacts": _safe_feedback_artifacts(),
     }
 
 
@@ -130,6 +150,7 @@ def render_html(data: dict) -> str:
     decisions = data["decisions"] or []
     jobs = data["scheduler_jobs"] or []
     phase_checks = data.get("phase_checkpoints") or []
+    artifacts = data.get("feedback_artifacts") or {}
 
     verdicts_json = json.dumps(verdicts)
     citations_top10 = dict(list(citations.items())[:10])
@@ -175,6 +196,14 @@ def render_html(data: dict) -> str:
             f'<td>{lm.get("total_calls","—")}</td>'
             f'<td>{lm.get("cost_estimate","—")}</td></tr>'
         )
+
+    artifact_rows = ""
+    for atype, items in (artifacts or {}).items():
+        for item in (items or [])[:10]:
+            content = (item.get("text") or item.get("content") or item.get("rule_id") or item.get("case_id") or item.get("summary") or item.get("lesson") or item.get("bug_summary") or "—")
+            content_str = str(content)[:200]
+            ts = item.get("ts") or item.get("at") or "—"
+            artifact_rows += f'<tr><td>{atype}</td><td>{content_str}</td><td>{ts}</td></tr>'
 
     lat_block = llm_metrics.get("latency_ms", {}) or {}
     latency_p50 = lat_block.get("p50", "?")
@@ -287,6 +316,14 @@ def render_html(data: dict) -> str:
         <tbody>{citation_rows or '<tr><td colspan="2" style="color:#8e8e93">Sin citaciones aún</td></tr>'}</tbody>
       </table>
     </div>
+  </div>
+
+  <div class="card full-width">
+    <h2>Feedback Artifacts Today</h2>
+    <table>
+      <thead><tr><th>Type</th><th>Content</th><th>TS</th></tr></thead>
+      <tbody>{artifact_rows or '<tr><td colspan="3" style="color:#8e8e93">Sin artifacts hoy</td></tr>'}</tbody>
+    </table>
   </div>
 
   <div class="card full-width">

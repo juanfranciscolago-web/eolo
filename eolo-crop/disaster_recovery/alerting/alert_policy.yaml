@@ -1,0 +1,32 @@
+# Cloud Monitoring alert policy template.
+# Aplicar con: gcloud alpha monitoring policies create --policy-from-file=alert_policy.yaml
+# (después de reemplazar PLACEHOLDER_EMAIL_CHANNEL_ID).
+displayName: "Eolo Crop — DR CRITICAL events"
+combiner: OR
+conditions:
+  - displayName: "Bot CRITICAL log"
+    conditionMatchedLog:
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="eolo-bot-crop"
+        AND severity="CRITICAL"
+  - displayName: "DR Cloud Function ERROR"
+    conditionMatchedLog:
+      filter: |
+        resource.type="cloud_function"
+        AND resource.labels.function_name="disaster-recovery-auto-close"
+        AND severity>=ERROR
+  - displayName: "Engine CRITICAL"
+    conditionMatchedLog:
+      filter: |
+        resource.type="cloud_run_revision"
+        AND resource.labels.service_name="llm-engine-service"
+        AND severity="CRITICAL"
+notificationChannels:
+  - projects/eolo-schwab-agent/notificationChannels/PLACEHOLDER_EMAIL_CHANNEL_ID
+documentation:
+  content: |
+    DR critical event detected. Check:
+    - Bot logs:   https://console.cloud.google.com/run/detail/us-east1/eolo-bot-crop/logs
+    - DR Function: https://console.cloud.google.com/functions/details/us-east1/disaster-recovery-auto-close
+    - Engine logs: https://console.cloud.google.com/run/detail/us-central1/llm-engine-service/logs
