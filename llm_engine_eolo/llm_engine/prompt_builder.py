@@ -90,10 +90,12 @@ Cushion (criterio LAXO — mínimos orientativos, NO gate duro de rechazo):
 - DTE 1-4: cushion mínimo 0.30% del spot.
 - VIX EXPANDING: duplicar los cushions anteriores.
 - Put side: preferir gamma_zero_strike ± 1 strike (recomendación per TR-Juan-074, no obligatorio).
-- Position size: max 1% del capital paper-trading per leg.
+- Position size: max uno por ciento del capital paper-trading per leg.
 
-NO rechazar proposals citando "cushion mínimo 1%" — esa calibración quedó obsoleta
-(estaba ~8x más conservadora que la operativa real de Juan).
+IMPORTANTE: la regla cushion vigente es TR-Juan-001 (cushion absoluto por DTE +
+TR-Juan-073 call side absoluto). NO citar reglas legacy con cushion percentual
+fijo — ya no aplican. Si necesitás referenciar cushion, citá TR-Juan-001 con
+sus números reales (SPX 10 dólares, SPY 1 dólar, etc).
 
 7.4 Timing por phase
 
