@@ -28,7 +28,14 @@ from google.cloud import firestore
 logger = logging.getLogger(__name__)
 
 _PROJECT_ID = "eolo-schwab-agent"
-_BACKUP_DB = "eolo-backups"
+# REGRESSION-FIX 2026-06-04: la database "eolo-backups" referenciada
+# originalmente NUNCA fue creada en GCP. Causaba silent failures en TODOS
+# los callers: feedback_sessions, nightly_journal, system_events, trades,
+# kb_snapshots. Log evidence:
+#   "404 The database eolo-backups does not exist for project ..."
+# Fix: usar la database default que sí existe (mismo DB donde viven
+# eolo-crop-theta-decisions, phase_checkpoints, etc).
+_BACKUP_DB: Optional[str] = None  # None → default database
 
 _client: Optional[firestore.Client] = None
 
@@ -36,7 +43,10 @@ _client: Optional[firestore.Client] = None
 def _get_client() -> firestore.Client:
     global _client
     if _client is None:
-        _client = firestore.Client(project=_PROJECT_ID, database=_BACKUP_DB)
+        if _BACKUP_DB:
+            _client = firestore.Client(project=_PROJECT_ID, database=_BACKUP_DB)
+        else:
+            _client = firestore.Client(project=_PROJECT_ID)
     return _client
 
 
