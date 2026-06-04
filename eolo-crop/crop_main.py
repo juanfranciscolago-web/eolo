@@ -776,7 +776,15 @@ class CropBotTheta:
             # Acumular en CandleBuffer común (shape normalizado)
             norm = from_schwab_chart_equity(data)
             if norm is not None:
+                size_before = self._candle_buffer.size(ticker)
                 self._candle_buffer.push(norm)
+                size_after = self._candle_buffer.size(ticker)
+                # CANDLE-BUFFER-FIX observabilidad: log every push to verify rolling.
+                # Identifica si pushes están realmente llegando (vs RSI stuck).
+                logger.info(
+                    f"[CANDLE] {ticker} ts_ms={norm['ts_ms']} "
+                    f"close={norm['close']} size {size_before}->{size_after}"
+                )
 
         elif event_type == "quote":
             # Quote L1: merge con estado previo (Schwab manda partial updates)
@@ -1183,6 +1191,28 @@ class CropBotTheta:
 
         # Sub-B MEGATERMINATOR: refresh trading_mode each ciclo, fail-safe to paper.
         self._refresh_trading_mode_if_stale(ttl_seconds=60.0)
+
+        # CANDLE-BUFFER-FIX observabilidad: detectar buffer stale por ticker.
+        # Si la latest vela del buffer es > 3 min vieja durante RTH, log WARNING
+        # con info para diagnóstico (root cause stuck RSI 2m investigation).
+        try:
+            raw_candles = self._candle_buffer.raw_candles(ticker)
+            if raw_candles:
+                latest_ts_ms = raw_candles[-1].get("ts_ms", 0)
+                age_sec = time.time() - (latest_ts_ms / 1000.0)
+                if age_sec > 180:  # > 3 min stale
+                    logger.warning(
+                        f"[CANDLE_STALE] {ticker} latest_ts_ms={latest_ts_ms} "
+                        f"age={age_sec:.0f}s buffer_size={len(raw_candles)} "
+                        f"latest_close={raw_candles[-1].get('close')}"
+                    )
+                elif age_sec > 60:  # info if 1-3 min (boundary case)
+                    logger.info(
+                        f"[CANDLE_FRESH] {ticker} latest_ts_ms={latest_ts_ms} "
+                        f"age={age_sec:.0f}s buffer_size={len(raw_candles)}"
+                    )
+        except Exception as _stale_e:
+            logger.debug(f"[CANDLE_STALE_CHECK] {ticker} failed: {_stale_e}")
 
         # ── 0. Gate horario — solo operar dentro de sesión NYSE (9:30–16:00 ET)
         #       Bloquea entradas en pre/post market y fines de semana.
