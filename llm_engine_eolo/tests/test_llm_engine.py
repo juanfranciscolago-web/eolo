@@ -80,23 +80,21 @@ def test_kb_loads():
     kb = KBLoader(KB_PATH)
     stats = kb.stats()
 
-    # v1.4 FULL: 76 reglas (71 v1.3 + 5 nuevas TR-Juan-072..076)
-    assert stats["total_rules"] == 76, f"Expected 76 rules, got {stats['total_rules']}"
-    # Cases: 6 SILVER v1.3 + 1 GOLD nueva (2026-05-29_SPX_real_007) = 7
-    assert stats["total_cases"] >= 7, f"Expected >=7 cases, got {stats['total_cases']}"
+    # v1.4 PIVOT-PLUS-OR: 77 reglas (71 v1.3 + 6 nuevas TR-Juan-072..077)
+    assert stats["total_rules"] == 77, f"Expected 77 rules, got {stats['total_rules']}"
+    # Cases: 6 SILVER v1.3 + 2 GOLD (007 Friday EOM, 008 Monday scaling) = 8
+    assert stats["total_cases"] >= 8, f"Expected >=8 cases, got {stats['total_cases']}"
 
     tiers = stats["rules_by_tier"]
-    # v1.4 FULL: TR-Juan-001 + 003 promoted to AXIOMA + TR-Juan-072 new = 4 AXIOMA
+    # PIVOT-PLUS-OR: TR-Juan-001 + 003 promoted to AXIOMA + TR-Juan-072 new = 4 AXIOMA
     assert tiers.get("AXIOMA", 0) == 4, f"AXIOMA count wrong: {tiers}"
-    # +1 TR-Juan-071 (OI<1000 gate)
     assert tiers.get("PROHIBITIVA", 0) == 6, f"PROHIBITIVA count wrong: {tiers}"
-    # +1 TR-042 moved in, +1 TR-Juan-063 (VRP cheap)
     assert tiers.get("MAESTRA", 0) == 13, f"MAESTRA count wrong: {tiers}"
-    # v1.4 FULL: +1 TR-Juan-008 PROTOCOLO + 1 TR-Juan-073 new PROTOCOLO = 8
+    # +1 TR-Juan-008 PROTOCOLO + 1 TR-Juan-073 new PROTOCOLO = 8
     assert tiers.get("PROTOCOLO", 0) == 8, f"PROTOCOLO count wrong: {tiers}"
-    # v1.4 FULL: 20 v1.3 + 2 nuevas TR-Juan-074/075 = 22
-    assert tiers.get("TACTICAL_PLUS", 0) == 22, f"TACTICAL_PLUS count wrong: {tiers}"
-    # v1.4 FULL: 25 v1.3 - 2 promoted (001, 003) - 1 moved (008) + 1 nueva (076) = 23
+    # 20 v1.3 + 3 nuevas TACTICAL_PLUS (074, 075, 077) = 23
+    assert tiers.get("TACTICAL_PLUS", 0) == 23, f"TACTICAL_PLUS count wrong: {tiers}"
+    # 25 v1.3 - 2 promoted (001, 003) - 1 moved (008) + 1 nueva (076) = 23
     assert tiers.get("TACTICAL", 0) == 23, f"TACTICAL count wrong: {tiers}"
 
     # Verificar que TR-019 a TR-022 existen (fix v1.0)

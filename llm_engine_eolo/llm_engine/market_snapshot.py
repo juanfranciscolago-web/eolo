@@ -146,6 +146,17 @@ class MarketSnapshot(BaseModel):
     days_to_next_nfp: Optional[int] = None
     session_news: Optional[str] = None
 
+    # Opening Range (TR-Juan-077) — sprint PIVOT-PLUS-OR
+    or_high:           Optional[float] = None
+    or_low:            Optional[float] = None
+    or_mid:            Optional[float] = None
+    or_width:          Optional[float] = None
+    or_fib_up_1618:    Optional[float] = None
+    or_fib_up_2618:    Optional[float] = None
+    or_fib_down_1618:  Optional[float] = None
+    or_fib_down_2618:  Optional[float] = None
+    or_state:          Optional[str] = None  # in_range|breakout_up|breakout_down|deep_above|deep_below|no_data
+
     # Open positions (para que LLM decida CLOSE_POSITIONS)
     has_open_positions: bool = False
     open_positions_summary: Optional[str] = None
@@ -259,6 +270,12 @@ SMART MONEY & CASCADE (Tier S compute layer — TR-Juan-064/066/067/068)
 - Magnet Strength: {_magnet_str}
 - Cascade Risk: {_cascade_str}
 - Smart Money Bias: {_smart_str}
+
+OPENING RANGE (TR-Juan-077, primeros 6 min 9:30-9:36 ET)
+- State: {self.or_state if self.or_state else 'N/A'}
+- ORH: {self.or_high if self.or_high is not None else 'N/A'} | ORL: {self.or_low if self.or_low is not None else 'N/A'} | OR_mid: {self.or_mid if self.or_mid is not None else 'N/A'} | width: {self.or_width if self.or_width is not None else 'N/A'}
+- Fib up: 1.618={self.or_fib_up_1618 if self.or_fib_up_1618 is not None else 'N/A'} · 2.618={self.or_fib_up_2618 if self.or_fib_up_2618 is not None else 'N/A'}
+- Fib down: 1.618={self.or_fib_down_1618 if self.or_fib_down_1618 is not None else 'N/A'} · 2.618={self.or_fib_down_2618 if self.or_fib_down_2618 is not None else 'N/A'}
 
 MACRO CONTEXT
 - Days to FOMC: {self.days_to_next_fomc or 'N/A'}

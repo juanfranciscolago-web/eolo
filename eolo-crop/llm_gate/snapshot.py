@@ -484,6 +484,29 @@ def build_market_snapshot_from_crop(
         except Exception as e:
             logger.warning(f"[snapshot] quantdata enrichment failed: {e}")
 
+    # Sprint PIVOT-PLUS-OR: Opening Range indicator (TR-Juan-077)
+    # Compute desde raw 1-min candles del buffer (~6 candles del session open).
+    try:
+        import sys as _sys
+        _sys.path.insert(0, "..")
+        from backtest.opening_range import compute_opening_range, classify_or_state
+        raw_candles = candle_buffer.raw_candles(ticker) if hasattr(candle_buffer, "raw_candles") else []
+        if raw_candles:
+            or_data = compute_opening_range(raw_candles, or_duration_min=6)
+            if or_data is not None:
+                snapshot["or_high"] = or_data["or_high"]
+                snapshot["or_low"]  = or_data["or_low"]
+                snapshot["or_mid"]  = or_data["or_mid"]
+                snapshot["or_width"] = or_data["or_width"]
+                snapshot["or_fib_up_1618"]   = or_data["or_fib_up_1618"]
+                snapshot["or_fib_up_2618"]   = or_data["or_fib_up_2618"]
+                snapshot["or_fib_down_1618"] = or_data["or_fib_down_1618"]
+                snapshot["or_fib_down_2618"] = or_data["or_fib_down_2618"]
+                or_state = classify_or_state(or_data, snapshot.get("price"))
+                snapshot["or_state"] = or_state.get("state")
+    except Exception as e:
+        logger.debug(f"[snapshot] OR compute failed for {ticker}: {e}")
+
     return snapshot
 
 
