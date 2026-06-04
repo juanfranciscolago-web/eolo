@@ -40,24 +40,35 @@ REGLAS TÁCTICAS (contextuales)
 {tacticas}
 
 ═══════════════════════════════════════════════════════
-DECISION MATRIX (Master Plan v2.1 sec 7)
+DECISION MATRIX — CROP INTRADAY THETA HARVEST (Master Plan v2.2)
 ═══════════════════════════════════════════════════════
 
-Usá esta matriz como GUÍA estructural. Tus decisiones pueden desviarse si
-las reglas del KB (especialmente Prohibitivas o Axiomas) lo justifican.
+**FILOSOFÍA OPERATIVA (AXIOMA TR-Juan-072):**
 
-7.1 Matriz principal — régimen × IVR × Flow
+CROP es theta harvest INTRADAY puro. NO posición overnight.
+- Strategy #1 (primary): vender premium con theta extremo, capturar decay misma sesión.
+- Strategy #2: recomprar (close) cuando theta + price action erosionaron premium a 50-60% del original (TR-Juan-023, TR-Juan-035).
 
-| Régimen + IVR | Flow Bullish | Flow Neutral | Flow Bearish |
-|---|---|---|---|
-| Long γ · IVR > 50 | SELL_PUT Δ 0.20 · 30-45 DTE · OI wall inferior | IRON_CONDOR_SEQUENTIAL Δ 0.15 ambos · 30-45 DTE | SELL_CALL Δ 0.18 · 30-45 DTE · sobre call wall |
-| Long γ · IVR < 50 | WAIT (esperar VRP rico) | WAIT (no edge) | WAIT (no edge) |
-| Transición · IVR > 50 | SELL_PUT lejos Δ 0.12 · DTE 14-21 | WAIT 12-24h (esperar resolución) | SELL_CALL lejos Δ 0.12 · DTE 14-21 |
-| Neg γ · IVR > 70 | SELL_CALL muy lejos Δ 0.10 · 14 DTE | Solo cobertura — no agregar shorts | SELL_PUT muy lejos Δ 0.10 · 14 DTE |
-| Neg γ · IVR < 70 | NO operar (WAIT) | NO operar (WAIT) | NO operar (WAIT) |
+**REGLAS DURAS:**
+
+- DTE permitido: **0-4 (estricto)**. 0DTE preferred cuando hay setup técnico claro.
+- Entry window: **9:30 ET → 15:30 ET** (last 30min reservados para exits/monitor).
+- **NO posiciones overnight**. Cualquier posición se cierra el mismo día.
+- Profit target: 50-60% del premium capturado.
+
+7.1 Tabla decisión por régimen × IVR (DTE 0-4 SIEMPRE)
+
+| Régimen GEX | IVR  | Acción primaria          | DTE  | Notas                                  |
+|---|---|---|---|---|
+| Long γ      | > 50 | SELL_PUT Δ 0.20          | 0-2  | Soporte fuerte, magnet effect          |
+| Long γ      | < 50 | SELL_PUT Δ 0.15-0.20     | 1-4  | Premium bajo, DTE más largo del rango |
+| Negative γ  | > 70 | SELL_PUT_SPREAD def.     | 1-3  | Protección por wing, IV alta           |
+| Negative γ  | < 50 | WAIT (cascade risk)      | —    | Régimen frágil sin IV                  |
+| Flip zone   | any  | SELL_PUT Δ 0.10-0.15     | 0-2  | Setup conservador, strikes lejanos     |
+| Transición  | any  | WAIT                     | —    | Régimen ambiguo, no operar             |
 
 Usá:
-- gamma_regime_v2 ∈ {{long, negative, transition}}
+- gamma_regime_v2 ∈ {{long, negative, transition, flip_zone}}
 - iv_rank_call / iv_rank_put / vrp_score
 - smart_money_bias (cuando disponible) o aproximación: net_call_premium_drift > net_put → bullish flow
 
@@ -70,16 +81,21 @@ IF call_skew_25d > put_skew_25d + 2% AND net_put_premium_drift > 0:
 IF skews balanceados (|put_skew - call_skew| < 2%):
     → seguir net_drift bias (call - put premium)
 
-7.3 DTE selection con term_slope_60d_7d
+7.3 Sizing (TR-Juan-001 et al)
 
-IF term_slope_60d_7d > 0 (contango fuerte, +2% típico):
-    → DTE corto 14-21 mejor risk/reward (IV expensive far out)
-IF term_slope_60d_7d < 0 (backwardation):
-    → DTE largo 45-60 (IV se va a comprimir)
-IF |term_slope| < 1% (flat):
-    → DTE estándar 30-45
+- VIX LOW_STABLE: cushion mínimo 1% from spot.
+- VIX EXPANDING: cushion mínimo 2% from spot.
+- Position size: max 1% del capital paper-trading per leg.
 
-7.4 Strike selection multi-fuente (scoring heurístico)
+7.4 Timing por phase
+
+- **Open (9:30-10:30 ET)**: primera ventana, monitor confirmation. Entries OK si setup claro.
+- **Mid-day (10:30-13:00)**: segunda ventana, mejor theta decay rate. Entries OK.
+- **Afternoon (13:00-15:00)**: tercera ventana, post-lunch trends. Entries OK.
+- **Power hour (15:00-15:30)**: último window de entries. Strict cushion, no rollovers.
+- **Close (15:30-16:00)**: **NO entries**. Solo exits / monitor.
+
+7.5 Strike selection multi-fuente (scoring heurístico)
 
 Para strikes candidatos con 0.10 ≤ delta ≤ 0.25:
 - +3 si abs(strike - oi_max_call_strike o oi_max_put_strike) < ATR
@@ -90,7 +106,7 @@ Para strikes candidatos con 0.10 ≤ delta ≤ 0.25:
 
 Pick strike con mayor score.
 
-7.5 Sizing dinámico
+7.6 Sizing dinámico
 
 base_size = portfolio_premium_target / expected_credit
 - ×0.5 si max_pain dentro de ±0.3% de spot (alerta pin proximity)

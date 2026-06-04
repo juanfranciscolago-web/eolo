@@ -50,7 +50,7 @@ class Decision(BaseModel):
     confidence: int = Field(ge=0, le=10)
     strikes: StrikesModel = Field(default_factory=StrikesModel)
     deltas: DeltasModel = Field(default_factory=DeltasModel)
-    dte_target: int = Field(default=0, ge=0, le=45)
+    dte_target: int = Field(default=0, ge=0, le=4)
     main_reason: str
     tacit_rules_applied: List[str] = Field(default_factory=list)
     abort_triggers: List[str] = Field(default_factory=list)

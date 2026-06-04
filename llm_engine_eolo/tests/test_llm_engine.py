@@ -76,27 +76,28 @@ def make_test_snapshot(**overrides) -> MarketSnapshot:
 
 
 def test_kb_loads():
-    """KB Excel v1.3 se carga correctamente con TODAS las reglas."""
+    """KB Excel v1.4 se carga correctamente con TODAS las reglas."""
     kb = KBLoader(KB_PATH)
     stats = kb.stats()
 
-    # v1.3 (Sprint UP-1.4-A T2): 71 reglas (61 v1.2 + 10 QD-aware TR-Juan-062..071)
-    assert stats["total_rules"] == 71, f"Expected 71 rules, got {stats['total_rules']}"
+    # v1.4 (Sprint INTRADAY-THETA-PIVOT): 72 reglas (71 v1.3 + TR-Juan-072 AXIOMA)
+    assert stats["total_rules"] == 72, f"Expected 72 rules, got {stats['total_rules']}"
     assert stats["total_cases"] >= 5, f"Expected >=5 cases, got {stats['total_cases']}"
 
-    # Tier counts esperados en v1.3
+    # Tier counts esperados en v1.4
     tiers = stats["rules_by_tier"]
-    # TR-Juan-042 moved AXIOMA → MAESTRA (Finding R4 scope=SPY)
-    assert tiers.get("AXIOMA", 0) == 1, f"AXIOMA count wrong: {tiers}"
+    # v1.4: TR-Juan-003 promoted to AXIOMA + TR-Juan-072 new AXIOMA → 3 total
+    assert tiers.get("AXIOMA", 0) == 3, f"AXIOMA count wrong: {tiers}"
     # +1 TR-Juan-071 (OI<1000 gate)
     assert tiers.get("PROHIBITIVA", 0) == 6, f"PROHIBITIVA count wrong: {tiers}"
     # +1 TR-042 moved in, +1 TR-Juan-063 (VRP cheap)
     assert tiers.get("MAESTRA", 0) == 13, f"MAESTRA count wrong: {tiers}"
-    assert tiers.get("PROTOCOLO", 0) == 6, f"PROTOCOLO count wrong: {tiers}"
+    # v1.4: +1 TR-Juan-008 moved TACTICAL → PROTOCOLO
+    assert tiers.get("PROTOCOLO", 0) == 7, f"PROTOCOLO count wrong: {tiers}"
     # +7 TACTICAL_PLUS new: 062, 064, 065, 067, 068, 069, 070
     assert tiers.get("TACTICAL_PLUS", 0) == 20, f"TACTICAL_PLUS count wrong: {tiers}"
-    # +1 TR-Juan-066 (smart_money_bias)
-    assert tiers.get("TACTICAL", 0) == 25, f"TACTICAL count wrong: {tiers}"
+    # v1.4: -1 TR-Juan-003 → AXIOMA, -1 TR-Juan-008 → PROTOCOLO. Era 25 v1.3.
+    assert tiers.get("TACTICAL", 0) == 23, f"TACTICAL count wrong: {tiers}"
 
     # Verificar que TR-019 a TR-022 existen (fix v1.0)
     for rule_num in [19, 20, 21, 22]:

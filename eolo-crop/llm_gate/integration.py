@@ -17,7 +17,10 @@ _VIX_SPIKE_VEL_PCT = 5.0
 _MACRO_EVENT_BLOCK_DAYS = 1
 # Sprint 15: defaults overridables vía strategy_overrides.
 _ENTRY_WINDOW_START_DEFAULT = time(9, 30)
-_ENTRY_WINDOW_END_DEFAULT = time(12, 0)
+# Sprint INTRADAY-THETA-PIVOT 2026-06-04: full session entries 9:30-15:30 ET.
+# Last 30min (15:30-16:00) reservados para exits/monitor, no nuevas entries.
+# Era 12:00 — alineado con DTE 0-4 intraday theta harvest puro.
+_ENTRY_WINDOW_END_DEFAULT = time(15, 30)
 
 # OPS-1 2026-06-01: LLM scope allowlist. TQQQ excluded (3x leverage requires
 # KB additions specific). TODO post-close: hacer config-driven via
