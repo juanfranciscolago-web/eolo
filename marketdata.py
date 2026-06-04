@@ -76,12 +76,19 @@ class MarketData:
         frequency = frequency if frequency in (1, 5, 10, 15, 30) else 1
 
         url = self.base_url + "/pricehistory"
+        # CANDLE-BUFFER-FIX 2026-06-04: period=N con periodType=day devolvía
+        # solo "the most recent complete trading day" (= AYER en RTH). El
+        # intraday-in-progress quedaba afuera. Fix: startDate/endDate epoch ms.
+        import time as _t
+        now_ms   = int(_t.time() * 1000)
+        start_ms = now_ms - days * 24 * 3600 * 1000
         params = {
             "symbol":                symbol,
             "periodType":            "day",
-            "period":                days,
             "frequencyType":         "minute",
             "frequency":             frequency,
+            "startDate":             start_ms,
+            "endDate":               now_ms,
             "needExtendedHoursData": False,
         }
 

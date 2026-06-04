@@ -1,0 +1,40 @@
+# ============================================================
+#  EOLO Bot — Build-only pipeline (for canary deploy flow)
+#
+#  Builds + pushes the image but does NOT deploy. Use this when
+#  you want canary-first promotion:
+#
+#    1) gcloud builds submit --config Bot/cloudbuild-buildonly.yaml \
+#         --substitutions=_TAG=<canary-tag> . --project eolo-schwab-agent
+#    2) gcloud run deploy eolo-bot --no-traffic --tag <canary-tag> \
+#         --image gcr.io/eolo-schwab-agent/eolo-bot:<canary-tag> \
+#         --region us-central1 ...
+#    3) smoke test the canary URL
+#    4) gcloud run services update-traffic eolo-bot \
+#         --to-tags <canary-tag>=100 --region us-central1
+# ============================================================
+
+substitutions:
+  _TAG: 'candidate'
+
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-f'
+      - 'Bot/Dockerfile'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:${_TAG}'
+      - '.'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/eolo-bot:${_TAG}'
+
+images:
+  - 'gcr.io/$PROJECT_ID/eolo-bot:${_TAG}'
+
+timeout: '600s'
+options:
+  logging: CLOUD_LOGGING_ONLY
