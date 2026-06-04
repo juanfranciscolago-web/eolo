@@ -1101,6 +1101,72 @@ class CropBotTheta:
         except Exception as e:
             logger.debug(f"[trading_mode] firestore read failed: {e}. Keeping cached.")
 
+    def _resolve_trade_execution_mode(self) -> str:
+        """Wave 3 OMNI-SPRINT: returns 'paper' or 'live'.
+
+        Triple safety check (TODAS deben permitir LIVE):
+        1. PAPER_TRADING_ONLY env var (hardcoded constraint) → ALWAYS paper.
+        2. Firestore kill_switch_active en eolo-config/risk_limits → paper.
+        3. self._cached_trading_mode.is_paper (Sub-B MEGATERMINATOR) → paper.
+
+        PAPER_TRADING_ONLY=true en Cloud Run garantiza paper sin importar los otros.
+        Bot NUNCA opera LIVE hasta cambio explícito de env + Firestore + TOTP confirm.
+        """
+        import os as _os
+        if _os.getenv("PAPER_TRADING_ONLY", "true").lower() == "true":
+            return "paper"
+        try:
+            import sys as _sys
+            _sys.path.insert(0, BASE_DIR)
+            from safety.limits import RiskLimits
+            limits = RiskLimits.from_firestore()
+            if limits.kill_switch_active:
+                logger.warning("[trade_mode] kill_switch_active=True → paper")
+                return "paper"
+        except Exception as e:
+            logger.warning(f"[trade_mode] risk_limits read failed, defaulting to paper: {e}")
+            return "paper"
+        cached_tm = getattr(self, "_cached_trading_mode", {"is_paper": True})
+        if cached_tm.get("is_paper", True):
+            return "paper"
+        return "live"
+
+    def _check_circuit_breakers_before_entry(self, ticker: str, proposed_position_value_usd: float) -> tuple:
+        """Wave 3 OMNI-SPRINT: pre-entry circuit breaker check.
+
+        Returns (allowed, reasons). If not allowed: log + alert_critical + skip entry.
+        Fail-safe a BLOCK si el check falla por cualquier razón.
+        """
+        try:
+            import sys as _sys
+            _sys.path.insert(0, BASE_DIR)
+            from safety.limits import check_pre_entry_limits
+            current_positions = getattr(self, "_theta_positions", []) or []
+            daily_pnl = getattr(self, "_theta_pnl_today", 0.0) or 0.0
+            allowed, reasons = check_pre_entry_limits(
+                proposed_position_value_usd=proposed_position_value_usd,
+                current_positions=current_positions,
+                ticker=ticker,
+                daily_pnl_usd=daily_pnl,
+                consecutive_losses_today=0,
+            )
+            if not allowed:
+                try:
+                    from disaster_recovery.alerting import alert_critical
+                    alert_critical(
+                        "dr_circuit_breaker",
+                        "; ".join(reasons),
+                        ticker=ticker,
+                        value=proposed_position_value_usd,
+                    )
+                except Exception:
+                    pass
+                logger.warning(f"[circuit_breaker] ENTRY BLOCKED ticker={ticker} reasons={reasons}")
+            return allowed, reasons
+        except Exception as e:
+            logger.error(f"[circuit_breaker] check failed (fail-safe BLOCK): {e}")
+            return False, ["CIRCUIT_BREAKER_CHECK_FAILED"]
+
     async def _run_theta_harvest(self, ticker: str, chain: dict):
         """
         Always-In Multi-DTE: intenta abrir spreads en todos los DTEs libres.

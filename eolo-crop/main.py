@@ -1606,12 +1606,72 @@ def trading_mode_request():
     }), 200
 
 
+def _verify_totp(code: str) -> bool:
+    """Wave 3 OMNI-SPRINT: verify TOTP code against Firestore-stored secret."""
+    try:
+        import pyotp
+        from google.cloud import firestore as _fs
+        db = _fs.Client()
+        doc = db.collection("eolo-config").document("totp_secret").get()
+        if not doc.exists:
+            logger.warning("[totp] secret not configured in Firestore eolo-config/totp_secret")
+            return False
+        secret = (doc.to_dict() or {}).get("secret")
+        if not secret:
+            return False
+        return pyotp.TOTP(secret).verify(code, valid_window=1)
+    except Exception as e:
+        logger.error(f"[totp] verify failed: {e}")
+        return False
+
+
+@app.route("/system/trading_mode/setup_totp", methods=["POST"])
+def trading_mode_setup_totp():
+    """Wave 3 OMNI-SPRINT: one-time TOTP secret bootstrap.
+
+    Genera nuevo secret + provisioning URI (escanear con Google Authenticator).
+    Si ya hay secret en Firestore → 409 (debe borrarse manualmente para regenerar).
+    """
+    try:
+        import pyotp
+        from google.cloud import firestore as _fs
+        db = _fs.Client()
+        existing = db.collection("eolo-config").document("totp_secret").get()
+        if existing.exists and (existing.to_dict() or {}).get("secret"):
+            return jsonify({
+                "error": "TOTP already configured. Delete eolo-config/totp_secret first to regenerate.",
+            }), 409
+        secret = pyotp.random_base32()
+        uri = pyotp.totp.TOTP(secret).provisioning_uri(
+            name="juan@eolo-crop", issuer_name="Eolo Crop",
+        )
+        db.collection("eolo-config").document("totp_secret").set({
+            "secret":      secret,
+            "created_at":  datetime.utcnow().isoformat() + "Z",
+            "created_by":  "juan",
+        })
+        return jsonify({
+            "status":            "OK",
+            "secret_base32":     secret,
+            "provisioning_uri":  uri,
+            "instructions":      "Scan provisioning_uri with Google Authenticator. From now on, /confirm requires totp_code field para LIVE flips.",
+        }), 200
+    except Exception as e:
+        logger.error(f"[setup_totp] failed: {e}")
+        return jsonify({"error": str(e)[:300]}), 500
+
+
 @app.route("/system/trading_mode/confirm", methods=["POST"])
 def trading_mode_confirm():
-    """Step 2: confirm with request_id + code (received separately)."""
+    """Step 2: confirm with request_id + code (received separately).
+
+    Wave 3 OMNI-SPRINT: para target=LIVE además requiere totp_code en el body
+    (Google Authenticator). Para target=PAPER no requiere TOTP.
+    """
     body = request.get_json(force=True, silent=True) or {}
     req_id = body.get("request_id")
     code = body.get("confirmation_code")
+    totp_code = body.get("totp_code") or ""
 
     if not req_id or not code:
         return jsonify({"error": "request_id and confirmation_code required"}), 400
@@ -1626,6 +1686,14 @@ def trading_mode_confirm():
 
     if pending["confirmation_code"] != code:
         return jsonify({"error": "invalid confirmation_code"}), 403
+
+    # Wave 3 OMNI-SPRINT: TOTP gate solo para LIVE.
+    target_check = (pending.get("target_mode") or "").upper()
+    if target_check == "LIVE":
+        if not totp_code:
+            return jsonify({"error": "TOTP code required for LIVE mode flip. Field: totp_code"}), 401
+        if not _verify_totp(totp_code):
+            return jsonify({"error": "Invalid TOTP code"}), 401
 
     # One-shot
     _pending_mode_requests.pop(req_id, None)
