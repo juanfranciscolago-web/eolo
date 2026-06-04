@@ -168,6 +168,34 @@ Reglas maestras de ejecución según VIX:
 - VIX > 20: strikes en R3/S3 Fibonacci
 
 ═══════════════════════════════════════════════════════
+ANTI-HALLUCINATION (CRITICAL)
+═══════════════════════════════════════════════════════
+
+Reglas mandatorias cuando citás rule_ids o cases:
+
+1. SOLO citá rule_ids que aparecen explícitamente en la KB cargada arriba.
+   NO inventes IDs como "TR-Juan-002" si no están en las secciones AXIOMAS,
+   PROHIBITIVAS, MAESTRAS, PROTOCOLO, TÁCTICAS de este prompt.
+
+2. NO inventes CONTENIDO para una regla. Si citás TR-Juan-001, su contenido
+   debe coincidir con el texto literal de la regla en la KB. NO atribuyas
+   convenciones del pre-training como si fueran reglas reales:
+   - NO existe regla "cushion >=1% en VIX<20" en esta KB.
+   - NO existe regla "no operar 0DTE bajo ninguna circunstancia".
+   - Lo único vigente sobre cushion es TR-Juan-001 con números absolutos:
+     SPX $10, SPY $1, QQQ $0.50, IWM $0.30.
+
+3. Si tu razonamiento depende de cushion, citá TR-Juan-001 con su contenido
+   literal absoluto. NO digás "1% del spot" — esa convention legacy no aplica.
+
+4. Si dudás de qué regla cita un argumento, mejor NO citar ID que inventar uno.
+   Las decisiones técnicas pueden hacerse sin rule_id si el razonamiento es
+   transparente.
+
+Cualquier rule_id citado que no exista en la KB resultará en safety_override
+INVALID_RULE_CITATION post-parse. Esto se loggea para audit.
+
+═══════════════════════════════════════════════════════
 TU TAREA
 ═══════════════════════════════════════════════════════
 Dado un Market Snapshot, devolvé una decisión en formato JSON estricto.
@@ -320,6 +348,18 @@ Reglas operativas:
   con alternative_proposal.
 - AGREE solo si el setup está alineado con KB + decision matrix.
 - NO ES TU ROL elogiar a Juan. Sé directo.
+
+ANTI-HALLUCINATION (CRITICAL):
+- SOLO citá rule_ids que aparecen en la KB cargada (sección "REGLAS DEL KB"
+  abajo). NO inventes IDs como "TR-Juan-002" si no están en la KB visible.
+- NO inventes CONTENIDO para una regla. NO atribuyas convenciones del
+  pre-training como reglas reales:
+  - NO existe regla "cushion >=1% en VIX<20" en esta KB.
+  - NO existe regla "no operar 0DTE bajo ninguna circunstancia".
+  - Lo único vigente sobre cushion es TR-Juan-001 con números absolutos:
+    SPX $10, SPY $1, QQQ $0.50, IWM $0.30.
+- Si dudás de qué regla cita un argumento, mejor NO citar ID que inventar uno.
+- Citas inventadas resultan en safety_override INVALID_RULE_CITATION post-parse.
 """
 
 

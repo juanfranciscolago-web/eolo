@@ -613,6 +613,85 @@ def test_compute_smart_money_bias_no_data():
     assert compute_smart_money_bias(None, None) is None
 
 
+def test_validate_rule_citations_valid():
+    """Sprint ANTI-HALLUCINATION-FIX: citations existentes pasan sin overrides."""
+    from llm_engine.decision_parser import validate_rule_citations_from_lists
+
+    class StubKB:
+        def get_all_rule_ids(self): return {"TR-Juan-001", "TR-Juan-072", "TR-Juan-077"}
+        def get_all_case_ids(self): return {"CASE-Juan-001", "CASE-Juan-002"}
+
+    overrides = validate_rule_citations_from_lists(
+        rules_supporting=["TR-Juan-072", "TR-Juan-077"],
+        rules_questioning=["TR-Juan-001"],
+        kb_loader=StubKB(),
+    )
+    assert overrides == []
+
+
+def test_validate_rule_citations_hallucinated():
+    """Sprint ANTI-HALLUCINATION-FIX: rule_id inventado genera INVALID_RULE_CITATION."""
+    from llm_engine.decision_parser import validate_rule_citations_from_lists
+
+    class StubKB:
+        def get_all_rule_ids(self): return {"TR-Juan-001"}
+        def get_all_case_ids(self): return set()
+
+    overrides = validate_rule_citations_from_lists(
+        rules_supporting=["TR-Juan-001", "TR-Juan-002"],  # 002 inventado
+        rules_questioning=["TR-Juan-9999"],                # inventado
+        kb_loader=StubKB(),
+    )
+    assert "INVALID_RULE_CITATION_TR-Juan-002" in overrides
+    assert "INVALID_RULE_CITATION_TR-Juan-9999" in overrides
+    assert len(overrides) == 2
+
+
+def test_validate_case_citations_hallucinated():
+    """Sprint ANTI-HALLUCINATION-FIX: case_id inventado genera INVALID_CASE_CITATION."""
+    from llm_engine.decision_parser import validate_rule_citations_from_lists
+
+    class StubKB:
+        def get_all_rule_ids(self): return set()
+        def get_all_case_ids(self): return {"CASE-Juan-001"}
+
+    overrides = validate_rule_citations_from_lists(
+        rules_supporting=["CASE-Juan-001", "CASE-Juan-999"],
+        rules_questioning=[],
+        kb_loader=StubKB(),
+    )
+    assert "INVALID_CASE_CITATION_CASE-Juan-999" in overrides
+    assert len(overrides) == 1
+
+
+def test_validate_rule_citations_strips_descriptive_suffix():
+    """Sprint ANTI-HALLUCINATION-FIX: tolera sufijos descriptivos (LLM citation style)."""
+    from llm_engine.decision_parser import validate_rule_citations_from_lists
+
+    class StubKB:
+        def get_all_rule_ids(self): return {"TR-Juan-073"}
+        def get_all_case_ids(self): return set()
+
+    overrides = validate_rule_citations_from_lists(
+        rules_supporting=["TR-Juan-073 (cushion call side absolute)"],
+        rules_questioning=[],
+        kb_loader=StubKB(),
+    )
+    assert overrides == []
+
+
+def test_kbloader_get_all_rule_ids_real():
+    """Sprint ANTI-HALLUCINATION-FIX: real KBLoader retorna set con rule_ids reales."""
+    kb = KBLoader(KB_PATH)
+    rule_ids = kb.get_all_rule_ids()
+    case_ids = kb.get_all_case_ids()
+    assert isinstance(rule_ids, set)
+    assert "TR-Juan-001" in rule_ids
+    assert "TR-Juan-072" in rule_ids
+    assert "TR-Juan-077" in rule_ids
+    assert len(rule_ids) >= 70
+
+
 def test_build_juan_suggestion_prompt():
     """T11.A: prompt builder for /juan/suggest."""
     from llm_engine.prompt_builder import build_juan_suggestion_prompt, JUAN_SUGGESTION_SYSTEM_PROMPT

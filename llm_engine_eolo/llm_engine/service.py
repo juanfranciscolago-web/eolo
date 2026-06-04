@@ -18,7 +18,10 @@ from anthropic import Anthropic, APIError, APITimeoutError
 from llm_engine.kb_loader import KBLoader
 from llm_engine.market_snapshot import MarketSnapshot
 from llm_engine.prompt_builder import build_prompts
-from llm_engine.decision_parser import safe_decision_pipeline, Decision
+from llm_engine.decision_parser import (
+    safe_decision_pipeline, Decision,
+    validate_rule_citations_from_lists, validate_decision_rule_citations,
+)
 from llm_engine.haiku_prefilter import (
     build_haiku_prompts, parse_pre_decision, PreDecision
 )
@@ -183,6 +186,16 @@ async def decide(snapshot: MarketSnapshot, request: Request) -> dict:
 
     # Parse + safety rails
     decision = safe_decision_pipeline(raw_output, snapshot, kb_loader=kb_loader)
+
+    # Sprint ANTI-HALLUCINATION-FIX: post-parse rule_id existence check.
+    # Appendea INVALID_RULE_CITATION_<id> a safety_overrides para audit (no
+    # cambia verdict — la decisión puede estar bien razonada aunque cita fantasma).
+    try:
+        extra_overrides = validate_decision_rule_citations(decision, kb_loader)
+        if extra_overrides:
+            decision.safety_overrides = (decision.safety_overrides or []) + extra_overrides
+    except Exception as _vc_e:
+        logger.warning(f"[{request_id}] rule citation validation failed: {_vc_e}")
 
     # Log full decision
     total_latency_ms = int((time.time() - start_time) * 1000)
@@ -362,14 +375,30 @@ async def juan_suggest(req: JuanSuggestionRequest) -> dict:
                 "reasoning": f"Output parse failed: {str(e)[:200]}",
             }
 
+        # Sprint ANTI-HALLUCINATION-FIX: post-parse rule_id existence check.
+        invalid_citations: list = []
+        try:
+            invalid_citations = validate_rule_citations_from_lists(
+                rules_supporting=parsed.get("rules_supporting_juan", []) or [],
+                rules_questioning=parsed.get("rules_questioning_juan", []) or [],
+                kb_loader=kb_loader,
+            )
+            if invalid_citations:
+                logger.warning(f"[{request_id}] juan_suggest hallucinated citations: {invalid_citations}")
+        except Exception as _vc_e:
+            logger.warning(f"[{request_id}] citation validation failed: {_vc_e}")
+
+        meta: dict = {
+            "request_id":    request_id,
+            "input_tokens":  response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+            "model":         CONFIG["LLM_MODEL"],
+        }
+        if invalid_citations:
+            meta["invalid_citations"] = invalid_citations
         return {
             **parsed,
-            "_meta": {
-                "request_id": request_id,
-                "input_tokens": response.usage.input_tokens,
-                "output_tokens": response.usage.output_tokens,
-                "model": CONFIG["LLM_MODEL"],
-            },
+            "_meta": meta,
         }
     except HTTPException:
         raise

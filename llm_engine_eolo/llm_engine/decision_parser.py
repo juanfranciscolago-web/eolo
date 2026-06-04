@@ -242,6 +242,83 @@ _SAFETY_RAIL_PREFIX_TO_RULE_ID = [
 _SR_NEUTRAL_PREFIXES = ("PUT_TOO_FAR_OTM", "CALL_TOO_FAR_OTM")
 
 
+def validate_rule_citations_from_lists(
+    rules_supporting: Optional[List[str]],
+    rules_questioning: Optional[List[str]],
+    kb_loader,
+) -> List[str]:
+    """Sprint ANTI-HALLUCINATION-FIX: post-parse existence check.
+
+    Args:
+        rules_supporting: list de rule_ids citados como soporte (puede incluir CASE-*).
+        rules_questioning: list de rule_ids citados como cuestionamiento.
+        kb_loader: instancia con .get_all_rule_ids() y .get_all_case_ids().
+
+    Returns:
+        Lista de overrides: "INVALID_RULE_CITATION_<id>" o
+        "INVALID_CASE_CITATION_<id>" para cualquier citación inexistente en KB.
+        Empty list si todas las citaciones son válidas.
+
+    Filtros tolerantes:
+    - Tira sufijos descriptivos del LLM (e.g. "TR-Juan-073 (cushion call)").
+      Extrae el rule_id canónico via regex antes de validar.
+    - Skip None / empty / duplicados.
+    """
+    if kb_loader is None:
+        return []
+    try:
+        valid_rules = kb_loader.get_all_rule_ids()
+    except Exception:
+        return []
+    try:
+        valid_cases = kb_loader.get_all_case_ids()
+    except Exception:
+        valid_cases = set()
+
+    rule_pattern = re.compile(r"^(TR-Juan-\d+)")
+    case_pattern = re.compile(r"^(CASE-[A-Za-z]+-\d+)")
+
+    overrides: List[str] = []
+    seen: set = set()
+    all_cited = (rules_supporting or []) + (rules_questioning or [])
+    for cited in all_cited:
+        if not cited:
+            continue
+        s = str(cited).strip()
+        if not s:
+            continue
+        m_rule = rule_pattern.match(s)
+        m_case = case_pattern.match(s)
+        if m_rule:
+            canonical = m_rule.group(1)
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            if canonical not in valid_rules:
+                overrides.append(f"INVALID_RULE_CITATION_{canonical}")
+                logger.warning(f"[validation] LLM cited non-existent rule_id: {canonical}")
+        elif m_case:
+            canonical = m_case.group(1)
+            if canonical in seen:
+                continue
+            seen.add(canonical)
+            if canonical not in valid_cases:
+                overrides.append(f"INVALID_CASE_CITATION_{canonical}")
+                logger.warning(f"[validation] LLM cited non-existent case: {canonical}")
+    return overrides
+
+
+def validate_decision_rule_citations(decision: "Decision", kb_loader) -> List[str]:
+    """Sprint ANTI-HALLUCINATION-FIX: wrapper para Decision objects (/decide path).
+
+    Toma tacit_rules_applied del Decision y delega a la function de listas.
+    """
+    if decision is None:
+        return []
+    cited = list(getattr(decision, "tacit_rules_applied", None) or [])
+    return validate_rule_citations_from_lists(cited, [], kb_loader)
+
+
 def build_rule_evaluation_trace(
     decision_dict: dict,
     kb_loader=None,

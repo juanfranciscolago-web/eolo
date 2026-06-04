@@ -240,6 +240,15 @@ class KBLoader:
             return None
         return self._rule_index.get(m.group(1))
 
+    # Sprint ANTI-HALLUCINATION-FIX: validators externos usan estos sets.
+    def get_all_rule_ids(self) -> set:
+        """Returns set of all rule_ids in the loaded KB."""
+        return {r.rule_id for r in self.rules if getattr(r, "rule_id", None)}
+
+    def get_all_case_ids(self) -> set:
+        """Returns set of all case_ids in the loaded KB."""
+        return {c.case_id for c in self.cases if getattr(c, "case_id", None)}
+
     def get_priority_rules(self) -> List[TacitRule]:
         """Devuelve reglas en orden de prioridad para el prompt."""
         order = ["AXIOMA", "PROHIBITIVA", "MAESTRA", "PROTOCOLO", "TACTICAL_PLUS", "TACTICAL"]
