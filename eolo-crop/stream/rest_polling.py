@@ -239,6 +239,17 @@ class SchwabRestPoller:
         if not token:
             logger.warning(f"[REST_POLLER] sin access_token para {symbol}")
             return []
+        # CANDLE-BUFFER-FIX 2026-06-04: period=1 con periodType=day devolvía
+        # solo "the most recent complete trading day" = AYER (sesión RTH cerrada).
+        # Hoy intraday-in-progress NO entraba. RSI quedaba calculado sobre data
+        # de 19h+ vieja (confirmado vía [CANDLE_STALE] log).
+        # Fix: usar startDate + endDate explícitos para today's session vía
+        # epoch ms params. Schwab acepta startDate/endDate sobreescribiendo
+        # period.
+        import time as _t
+        now_ms = int(_t.time() * 1000)
+        # Window de 36h hacia atrás para garantizar today + ayer en buffer
+        start_ms = now_ms - 36 * 3600 * 1000
         try:
             resp = requests.get(
                 URL_PRICEHISTORY,
@@ -246,9 +257,10 @@ class SchwabRestPoller:
                 params={
                     "symbol":                symbol,
                     "periodType":            "day",
-                    "period":                1,
                     "frequencyType":         "minute",
                     "frequency":             1,
+                    "startDate":             start_ms,
+                    "endDate":               now_ms,
                     "needExtendedHoursData": False,
                 },
                 timeout=TIMEOUT_SEC,
