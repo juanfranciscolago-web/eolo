@@ -1647,7 +1647,11 @@ class CropBotTheta:
                     spread_type           = spread_type,
                     dte_preference        = dte,
                     pivot_result          = pivot_result,
-                    force_entry           = getattr(self, "_theta_force_entry", False),
+                    # CRITICAL ROOT CAUSE fix 2026-06-05: LLM override (conf>=4 + SELL_*
+                    # → llm_override_no_trade_hint=True) bypasses la window legacy 9:30-11:00 ET
+                    # de theta_harvest_strategy. Sin esto, 22 SELL_PUT/día se rechazaban "fuera
+                    # de ventana" después de 11:00 ET.
+                    force_entry           = bool(llm_override_no_trade_hint) or getattr(self, "_theta_force_entry", False),
                     entry_hour_et         = self._entry_hour_et,
                     entry_window_minutes  = self._entry_window_minutes,
                     vix_max_entry         = self._vix_entry_threshold,
