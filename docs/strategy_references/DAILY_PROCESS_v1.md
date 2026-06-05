@@ -70,3 +70,55 @@ Solo:
 - CASE-Juan-001 (Friday EOM SPX): IC simétrico, gamma_zero alignment
 - CASE-Juan-002 (Monday SPX): IC + scaling puts on dip pattern
 - CASE-Juan-003 (Tuesday SPY): Bottom detection at OR pivot
+
+## Deploy flow (sprint AUTO-CANARY-PROMOTE)
+
+Para evitar 503 "no snapshot cached" en bot canary deploys:
+
+1. **Build + canary deploy** (`gcloud builds submit` + `gcloud run deploy --no-traffic --tag=tNN`)
+2. **Smoke tests** contra tag URL (endpoints simples respondan; no requiere cache)
+3. **Promote con warmup automático**:
+   ```bash
+   ./tools/promote_canary.sh tNN 300 900
+   ```
+   Args: tag, warmup_sec, max_wait_sec. El script espera 5 min warmup + verifica
+   `_last_snapshots` cache cada 60s (vía `/api/state`), max 15 min total. Si cache
+   OK → promote 100% + cleanup tag previo. Si timeout → alerta y NO promote (exit 1).
+
+### Schedule diferido para market-open promote
+
+Si querés promover el canary mañana antes del open (e.g. 9:25 ET para que esté
+caliente al market open 9:30 ET):
+
+```bash
+# Calcular segundos hasta target ET:
+SECS=$(python3 -c "
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+et = ZoneInfo('America/New_York')
+now = datetime.now(et)
+target = now.replace(hour=9, minute=25, second=0, microsecond=0)
+if target <= now: target += timedelta(days=1)
+print(int((target - now).total_seconds()))
+")
+
+LOG="/tmp/promote_t23_$(date +%Y%m%d_%H%M%S).log"
+nohup bash -c "sleep $SECS && cd ~/PycharmProjects/eolo && ./tools/promote_canary.sh t23 300 1200" > $LOG 2>&1 &
+disown
+echo "Scheduled. Log: $LOG  PID: $!"
+```
+
+Caveat: el `nohup` corre en tu Mac local. Si se cierra sesión o sleep largo
+suspende el proceso, no se ejecuta. Para schedule reliable: usar `launchd`
+plist o un Cloud Scheduler + Cloud Function que ejecute el promote remoto.
+
+### Por qué importa
+El bot lazy-inicializa `_last_snapshots` cuando arranca el polling loop. Un
+fresh container necesita ~30-90s después del start para tener snapshots cached.
+Si se promotea antes: `/juan/suggest` retorna 503 "no snapshot cached for {ticker}".
+
+### Próximo paso (futuro)
+Integrar `tools/promote_canary.sh` directamente en `cloudbuild-buildonly.yaml`
+o en `eolo-crop/deploy.sh` para que el promote sea siempre post-warmup.
+Alternativa robusta: warmup endpoint explícito en bot que pre-popula el cache
+on-demand antes del promote.
