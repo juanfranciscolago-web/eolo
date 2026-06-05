@@ -64,7 +64,7 @@ def _result(ticker: str, strat_name: str, res: dict, df: pd.DataFrame) -> dict:
         ct = str(df.index[-1])
     except Exception:
         price, ct = None, None
-    return {
+    out = {
         "ticker":      ticker,
         "signal":      res.get("signal", "HOLD"),
         "strategy":    strat_name,
@@ -72,6 +72,11 @@ def _result(ticker: str, strat_name: str, res: dict, df: pd.DataFrame) -> dict:
         "reason":      res.get("reason", ""),
         "candle_time": ct,
     }
+    # RETEST-FIX 2026-06-05: propagar exit_only del wrapper direccional
+    # (señal de cierre de un _LONG/_SHORT — nunca abre posición nueva).
+    if res.get("exit_only"):
+        out["exit_only"] = True
+    return out
 
 
 def _dispatch(strategy_key: str, market_data, ticker: str) -> dict:

@@ -886,9 +886,17 @@ def list_strategies_for_bot(bot_kind: str) -> list[str]:
 # intactas para back-compat y para el caso "ambas direcciones unificadas".
 
 def _directional_wrapper(fn, direction: str):
-    """Filtra la salida del strategy para emitir solo señales de la dirección dada.
-    Si la estrategia retorna BUY y direction='short', devuelve HOLD (y viceversa).
-    El campo 'reason' se anota con [LONG-only] / [SHORT-only] para trazabilidad.
+    """Filtra la salida del strategy para emitir solo APERTURAS de la dirección dada.
+
+    RETEST-FIX 2026-06-05 (root cause WR 0% en _LONG y SHORTs huérfanos):
+    la versión anterior convertía la señal opuesta en HOLD, lo que también
+    tragaba la señal de SALIDA — un EMA_LONG nunca recibía su SELL de cierre
+    y un EMA_SHORT nunca recibía su BUY_TO_COVER. Resultado: posiciones que
+    solo cerraba el RISK_WATCHDOG/auto_close (WR 0% atribuido a la estrategia).
+
+    Ahora la señal opuesta SE DEJA PASAR marcada con exit_only=True.
+    El trader la interpreta como "solo cerrar posición existente, nunca
+    abrir una nueva en la dirección opuesta".
     """
     if direction not in ("long", "short"):
         raise ValueError(f"direction debe ser 'long' o 'short', got {direction!r}")
@@ -908,7 +916,15 @@ def _directional_wrapper(fn, direction: str):
             out["reason"] = (out.get("reason") or "") + f" {tag}"
             out["direction"] = direction
             return out
-        # Diferente dirección → HOLD silencioso (no leak de señal opuesta).
+        if sig in ("BUY", "SELL"):
+            # Señal opuesta = señal de SALIDA para esta dirección.
+            # Pasa marcada exit_only: cierra posición existente, no abre nueva.
+            out = dict(res)
+            out["signal"] = sig
+            out["exit_only"] = True
+            out["reason"] = (out.get("reason") or "") + f" {tag} exit"
+            out["direction"] = direction
+            return out
         out = dict(res)
         out["signal"] = "HOLD"
         out["direction"] = direction

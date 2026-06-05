@@ -395,6 +395,40 @@ def _place_live_order(action: str, ticker: str, shares: int):
         return
 
 
+# ── Entry-price recovery (RETEST-FIX 2026-06-05) ───────────
+# Root cause de PnL=null en 38.5% de SELLs de BOLLINGER (auditoría 17-may):
+# si el container reinicia entre el BUY y el SELL y entry_prices no se
+# restauró, el cierre se persistía con pnl_usd=None. Esto intenta recuperar
+# el entry desde el doc de trades del día en Firestore antes de rendirse.
+
+def _recover_entry_price(ticker: str, current_state: str) -> float | None:
+    """Busca el último open (BUY o SELL_SHORT según el estado) del día
+    para `ticker` en eolo-trades/<today>. Best-effort, fail-soft → None."""
+    open_action = "BUY" if current_state == "LONG" else "SELL_SHORT"
+    try:
+        from google.cloud import firestore
+        db    = firestore.Client(project=project_id)
+        today = datetime.now().strftime("%Y-%m-%d")
+        doc   = db.collection("eolo-trades").document(today).get()
+        if not doc.exists:
+            return None
+        trades = [t for t in (doc.to_dict() or {}).values()
+                  if isinstance(t, dict)
+                  and t.get("ticker") == ticker
+                  and t.get("action") == open_action]
+        if not trades:
+            return None
+        trades.sort(key=lambda t: t.get("timestamp", ""))
+        entry = float(trades[-1].get("price", 0))
+        if entry > 0:
+            logger.warning(f"[TRADER] entry_price de {ticker} recuperado desde "
+                           f"Firestore ({open_action} @ {entry}) — evita pnl=null")
+            return entry
+    except Exception as e:
+        logger.debug(f"_recover_entry_price({ticker}) falló: {e}")
+    return None
+
+
 # ── Main execute function ──────────────────────────────────
 
 def execute(result: dict):
@@ -422,6 +456,17 @@ def execute(result: dict):
     reason      = result.get("reason", "")
     macro       = result.get("_macro_feeds")
     allow_short = result.get("_allow_short", False)
+
+    # RETEST-FIX 2026-06-05: señales exit-only de variantes direccionales.
+    # Un _LONG que emite SELL (o un _SHORT que emite BUY) solo puede CERRAR
+    # una posición existente — nunca abrir una nueva en dirección opuesta.
+    # La heurística por sufijo cubre el path de confluencia, donde el dict
+    # se reconstruye y el flag exit_only del wrapper se pierde
+    # (strategy llega como "CONFLUENCE:EMA_3_8_LONG").
+    _strat_base = strategy.split(":", 1)[-1].upper()
+    exit_only   = bool(result.get("exit_only")) \
+        or (_strat_base.endswith("_LONG")  and signal == "SELL") \
+        or (_strat_base.endswith("_SHORT") and signal == "BUY")
     shares      = calculate_shares(price, budget)
     mode        = "📄 PAPER" if PAPER_TRADING else "💰 LIVE"
     total       = shares * price
@@ -430,7 +475,7 @@ def execute(result: dict):
     if signal == "BUY":
         if current == "SHORT":
             # Cerrar short (BUY TO COVER) → FLAT
-            entry     = entry_prices.get(ticker)
+            entry     = entry_prices.get(ticker) or _recover_entry_price(ticker, "SHORT")
             opened_at = entry_open_ts.get(ticker)
             pnl       = round((entry - price) * shares, 2) if entry else None  # ganancia si bajó
             pnl_str   = f"${pnl:+.2f}" if pnl is not None else "—"
@@ -454,7 +499,7 @@ def execute(result: dict):
                 f"🔖 Modo     : {mode}"
             )
 
-        elif current != "LONG":
+        elif current != "LONG" and not exit_only:
             # Abrir LONG (desde FLAT)
             _log_trade("BUY", ticker, shares, price, strategy,
                        timeframe=tf_min, reason=reason,
@@ -478,7 +523,7 @@ def execute(result: dict):
     elif signal == "SELL":
         if current == "LONG":
             # Cerrar LONG → FLAT
-            entry     = entry_prices.get(ticker)
+            entry     = entry_prices.get(ticker) or _recover_entry_price(ticker, "LONG")
             opened_at = entry_open_ts.get(ticker)
             pnl       = round((price - entry) * shares, 2) if entry else None
             pnl_str   = f"${pnl:+.2f}" if pnl is not None else "—"
@@ -502,7 +547,7 @@ def execute(result: dict):
                 f"🔖 Modo     : {mode}"
             )
 
-        elif current != "SHORT" and allow_short:
+        elif current != "SHORT" and allow_short and not exit_only:
             # Abrir SHORT (desde FLAT, solo si allow_short=True)
             _log_trade("SELL_SHORT", ticker, shares, price, strategy,
                        timeframe=tf_min, reason=reason,

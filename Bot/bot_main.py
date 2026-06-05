@@ -367,12 +367,18 @@ def is_market_open(settings: dict = None) -> bool:
 
 def close_all_open_positions(market_data: MarketData, budget: float,
                                settings: dict | None = None):
-    """Cierra en market order todas las posiciones con estado LONG."""
+    """Cierra en market order todas las posiciones abiertas (LONG y SHORT).
+
+    RETEST-FIX 2026-06-05: la versión anterior solo cerraba LONGs — los
+    SHORTs quedaban huérfanos para siempre (auditoría 17-may: 1,938 SHORTs
+    sin cubrir). Ahora un SHORT se cubre con BUY (BUY_TO_COVER en trader).
+    Además itera sobre TODAS las posiciones en trader.positions, no solo
+    los tickers de config — cubre posiciones huérfanas fuera del universo.
+    """
     logger.warning("🚨 CLOSE ALL — cerrando todas las posiciones abiertas")
-    all_tickers = TICKERS_EMA_GAP + TICKERS_LEVERAGED
     closed = 0
-    for ticker in all_tickers:
-        if trader.positions.get(ticker) == "LONG":
+    for ticker, state in list(trader.positions.items()):
+        if state in ("LONG", "SHORT"):
             try:
                 # Usar precio en tiempo real para el cierre
                 price = market_data.get_quote(ticker)
@@ -381,14 +387,16 @@ def close_all_open_positions(market_data: MarketData, budget: float,
                     candles = market_data.get_candles(ticker, period_type="day", period=1)
                     price = float(candles["close"].iloc[-1]) if candles is not None and not candles.empty else 0
                 if price and price > 0:
+                    exit_signal = "SELL" if state == "LONG" else "BUY"  # BUY = cover
                     result = {
                         "ticker":       ticker,
-                        "signal":       "SELL",
+                        "signal":       exit_signal,
                         "price":        price,
                         "strategy":     "CLOSE_ALL",
                         "_budget":      budget,
-                        "reason":       "CLOSE_ALL manual flag",
+                        "reason":       f"CLOSE_ALL ({state})",
                         "_macro_feeds": (settings or {}).get("_macro_feeds"),
+                        "_allow_short": False,  # nunca abrir nada desde acá
                     }
                     trader.execute(result)
                     closed += 1
@@ -602,9 +610,13 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
         )
 
     def _exec(result, strat_name):
-        # Si el cap del día está activo, dejamos pasar SOLO las SELL
-        # (cerrar posiciones existentes); los BUY se suprimen.
-        if daily_cap_hit and result.get("signal") == "BUY":
+        # Si el cap del día está activo, dejamos pasar SOLO los cierres;
+        # las APERTURAS se suprimen. RETEST-FIX 2026-06-05: un BUY que es
+        # cover de un SHORT (o exit_only de un _SHORT) es un CIERRE y no
+        # debe suprimirse — antes quedaban shorts colgados con cap activo.
+        if (daily_cap_hit and result.get("signal") == "BUY"
+                and not result.get("exit_only")
+                and trader.positions.get(result.get("ticker")) != "SHORT"):
             result["signal"] = "HOLD"
             result["_daily_cap_suppressed"] = True
         # ── Macro Regime Bridge: ajuste dinámico del budget ──
@@ -1210,7 +1222,9 @@ def run_multi_tf_confluence_cycle(market_data: MarketData, settings: dict,
     daily_cap_hit = is_daily_loss_cap_hit(settings)
 
     def _execute(ticker, strat_name, signal):
-        if daily_cap_hit and signal == "BUY":
+        # RETEST-FIX 2026-06-05: no suprimir BUYs que son cover de SHORT.
+        if (daily_cap_hit and signal == "BUY"
+                and trader.positions.get(ticker) != "SHORT"):
             logger.info(f"🛑 daily cap hit — BUY {ticker}/{strat_name} suprimida")
             return
         # Precio real de ejecución (quote live)
@@ -1410,9 +1424,12 @@ def main():
             logger.warning("⏰ AUTO-CLOSE — cerrando todas las posiciones")
             try:
                 close_all_open_positions(market_data, budget, settings=settings)
+                # RETEST-FIX 2026-06-05: marcar done SOLO si no levantó.
+                # Antes se marcaba igual tras una exception → el bot no
+                # reintentaba hasta el día siguiente (overnight gap exposure).
+                auto_close_done_date = today   # no volver a ejecutar hoy
             except Exception as e:
-                logger.error(f"Auto-close error: {e}")
-            auto_close_done_date = today   # no volver a ejecutar hoy
+                logger.error(f"Auto-close error: {e} — se reintenta el próximo ciclo")
 
         # ── Close All flag manual (dashboard) ─────────────────
         if settings.get("close_all"):
