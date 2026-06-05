@@ -66,12 +66,26 @@ def _load_bot_trader():
     """
     if "mod" not in _BT_CACHE:
         import importlib.util
-        path = os.path.join(ROOT, "Bot", "bot_trader.py")
-        spec = importlib.util.spec_from_file_location("bot_trader_v1_test", path)
-        mod = importlib.util.module_from_spec(spec)
-        sys.modules["bot_trader_v1_test"] = mod
-        spec.loader.exec_module(mod)
-        _BT_CACHE["mod"] = mod
+        bot_dir = os.path.join(ROOT, "Bot")
+        # Aislar deps: otras suites pueden haber cacheado los helpers/marketdata
+        # del repo root (versiones legacy distintas) bajo los mismos nombres.
+        _dep_names = ("helpers", "marketdata", "secret_stuff")
+        saved = {n: sys.modules.pop(n, None) for n in _dep_names}
+        sys.path.insert(0, bot_dir)
+        try:
+            path = os.path.join(bot_dir, "bot_trader.py")
+            spec = importlib.util.spec_from_file_location("bot_trader_v1_test", path)
+            mod = importlib.util.module_from_spec(spec)
+            sys.modules["bot_trader_v1_test"] = mod
+            spec.loader.exec_module(mod)
+            _BT_CACHE["mod"] = mod
+        finally:
+            sys.path.remove(bot_dir)
+            for n, m in saved.items():
+                if m is not None:
+                    sys.modules[n] = m
+                else:
+                    sys.modules.pop(n, None)
     return _BT_CACHE["mod"]
 
 
