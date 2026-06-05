@@ -54,9 +54,30 @@ def test_wrapper_hold_sigue_hold():
 
 # ── 2. trader.execute con exit_only ─────────────────────────
 
+_BT_CACHE = {}
+
+
+def _load_bot_trader():
+    """Carga Bot/bot_trader.py por path explícito.
+
+    Hay un bot_trader.py legacy en el repo root; un `import bot_trader`
+    plano puede resolver al equivocado según qué suite corrió antes.
+    El deployado (Bot/Dockerfile copia Bot/ → /app) es Bot/bot_trader.py.
+    """
+    if "mod" not in _BT_CACHE:
+        import importlib.util
+        path = os.path.join(ROOT, "Bot", "bot_trader.py")
+        spec = importlib.util.spec_from_file_location("bot_trader_v1_test", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules["bot_trader_v1_test"] = mod
+        spec.loader.exec_module(mod)
+        _BT_CACHE["mod"] = mod
+    return _BT_CACHE["mod"]
+
+
 @pytest.fixture()
 def bt(monkeypatch):
-    import bot_trader as _bt
+    _bt = _load_bot_trader()
     monkeypatch.setattr(_bt, "_log_trade", lambda *a, **k: None)
     monkeypatch.setattr(_bt, "_send_telegram", lambda *a, **k: None)
     monkeypatch.setattr(_bt, "save_positions", lambda *a, **k: None)
