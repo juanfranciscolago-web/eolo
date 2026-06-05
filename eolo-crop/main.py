@@ -1485,7 +1485,9 @@ def juan_suggest():
             },
             method="POST",
         )
-        with urllib.request.urlopen(req_engine, timeout=60) as resp:
+        # CRITICAL-FIXES-BUNDLE 2026-06-05: 60→120s. Engine cold-start observed
+        # 60-90s; Sonnet API latency variable; margin needed even con min-instances=1.
+        with urllib.request.urlopen(req_engine, timeout=120) as resp:
             engine_response = _json.load(resp)
     except Exception as e:
         logger.error(f"[/juan/suggest] engine call failed: {e}")
@@ -1796,7 +1798,9 @@ def journal_chat_message():
             headers={"Authorization": f"Bearer {engine_token}", "Content-Type": "application/json"},
             method="POST",
         )
-        with urllib.request.urlopen(req_engine, timeout=60) as resp:
+        # CRITICAL-FIXES-BUNDLE 2026-06-05: 60→120s. Engine cold-start observed
+        # 60-90s; Sonnet API latency variable; margin needed even con min-instances=1.
+        with urllib.request.urlopen(req_engine, timeout=120) as resp:
             engine_response = _json.load(resp)
     except Exception as e:
         logger.error(f"[chat] engine call failed: {e}")
