@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 380" font-family="Arial, sans-serif" font-size="12">
+  <defs>
+    <pattern id="gridG" width="20" height="20" patternUnits="userSpaceOnUse">
+      <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#e0e0e0" stroke-width="0.5"/>
+    </pattern>
+  </defs>
+  <rect width="600" height="380" fill="#fafafa"/>
+  <rect x="40" y="40" width="520" height="260" fill="url(#gridG)"/>
+
+  <!-- Axes -->
+  <line x1="40" y1="170" x2="560" y2="170" stroke="#333" stroke-width="2"/>
+  <line x1="40" y1="40" x2="40" y2="300" stroke="#333" stroke-width="1.5"/>
+
+  <!-- Y-axis labels -->
+  <text x="35" y="60" text-anchor="end" font-size="10" fill="#666">+2B</text>
+  <text x="35" y="115" text-anchor="end" font-size="10" fill="#666">+1B</text>
+  <text x="35" y="173" text-anchor="end" font-size="10" fill="#666">0</text>
+  <text x="35" y="230" text-anchor="end" font-size="10" fill="#666">-1B</text>
+  <text x="35" y="285" text-anchor="end" font-size="10" fill="#666">-2B</text>
+
+  <!-- GEX bars per strike -->
+  <!-- Negative (red) bars left of gamma zero -->
+  <rect x="70" y="170" width="30" height="20" fill="#f44336" opacity="0.7"/>
+  <rect x="105" y="170" width="30" height="35" fill="#f44336" opacity="0.7"/>
+  <rect x="140" y="170" width="30" height="55" fill="#f44336" opacity="0.7"/>
+  <rect x="175" y="170" width="30" height="80" fill="#f44336" opacity="0.8"/>
+  <rect x="210" y="170" width="30" height="50" fill="#f44336" opacity="0.7"/>
+  <rect x="245" y="170" width="30" height="30" fill="#f44336" opacity="0.6"/>
+
+  <!-- Positive (green) bars right of gamma zero -->
+  <rect x="295" y="40" width="30" height="130" fill="#4caf50" opacity="0.8"/>
+  <rect x="330" y="100" width="30" height="70" fill="#4caf50" opacity="0.8"/>
+  <rect x="365" y="120" width="30" height="50" fill="#4caf50" opacity="0.7"/>
+  <rect x="400" y="135" width="30" height="35" fill="#4caf50" opacity="0.7"/>
+  <rect x="435" y="145" width="30" height="25" fill="#4caf50" opacity="0.6"/>
+  <rect x="470" y="155" width="30" height="15" fill="#4caf50" opacity="0.6"/>
+
+  <!-- Gamma zero vertical line -->
+  <line x1="280" y1="40" x2="280" y2="300" stroke="#9c27b0" stroke-width="2.5" stroke-dasharray="8,4"/>
+  <text x="280" y="35" text-anchor="middle" font-size="11" font-weight="bold" fill="#9c27b0">gamma_zero = $753</text>
+
+  <!-- Current spot indicator -->
+  <line x1="320" y1="40" x2="320" y2="300" stroke="#2196f3" stroke-width="2"/>
+  <circle cx="320" cy="170" r="6" fill="#2196f3"/>
+  <text x="320" y="320" text-anchor="middle" font-size="11" font-weight="bold" fill="#2196f3">SPY $754</text>
+
+  <!-- Labels -->
+  <text x="150" y="280" text-anchor="middle" font-size="11" font-weight="bold" fill="#d32f2f">NEGATIVE GAMMA REGIME</text>
+  <text x="150" y="295" text-anchor="middle" font-size="10" fill="#d32f2f">Trending, volatile</text>
+
+  <text x="400" y="280" text-anchor="middle" font-size="11" font-weight="bold" fill="#2e7d32">LONG GAMMA REGIME</text>
+  <text x="400" y="295" text-anchor="middle" font-size="10" fill="#2e7d32">Mean-reverting, range-bound</text>
+
+  <!-- Title -->
+  <text x="300" y="22" text-anchor="middle" font-size="14" font-weight="bold" fill="#333">Net Gamma Exposure by Strike — SPY</text>
+</svg>
