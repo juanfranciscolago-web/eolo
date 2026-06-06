@@ -76,24 +76,25 @@ def make_test_snapshot(**overrides) -> MarketSnapshot:
 
 
 def test_kb_loads():
-    """KB Excel v1.5 BUNDLE-FINAL carga OK.
+    """KB Excel v1.7 DISAGGREGATED carga OK.
 
-    Bundle v1.5: 90 reglas (80 v1.4 + 10 nuevas TR-Juan-081..088 + 089/090).
-    Tier distribution shifts: +3 PROHIBITIVA (081, 084, 085), +2 MAESTRA
-    (082, 088), +2 PROTOCOLO (086, 087), +3 TACTICAL_PLUS (083, 089, 090).
+    v1.7: 108 reglas (90 v1.6 + 18 sub-reglas TR-Juan-091..108).
+    Routers desagregados: TR-Juan-063 → 091-094, TR-Juan-067 → 095-099,
+    TR-Juan-022 → 100-103, TR-Juan-043 → 104-108.
+    Tier shifts vs v1.6: +13 TACTICAL_PLUS (091-103), +5 MAESTRA (104-108).
     """
     kb = KBLoader(KB_PATH)
     stats = kb.stats()
 
-    assert stats["total_rules"] == 90, f"Expected 90 rules, got {stats['total_rules']}"
+    assert stats["total_rules"] == 108, f"Expected 108 rules, got {stats['total_rules']}"
     assert stats["total_cases"] >= 9, f"Expected >=9 cases, got {stats['total_cases']}"
 
     tiers = stats["rules_by_tier"]
     assert tiers.get("AXIOMA", 0) == 4, f"AXIOMA count wrong: {tiers}"
     assert tiers.get("PROHIBITIVA", 0) == 9, f"PROHIBITIVA count wrong: {tiers}"
-    assert tiers.get("MAESTRA", 0) == 15, f"MAESTRA count wrong: {tiers}"
+    assert tiers.get("MAESTRA", 0) == 20, f"MAESTRA count wrong: {tiers}"
     assert tiers.get("PROTOCOLO", 0) == 11, f"PROTOCOLO count wrong: {tiers}"
-    assert tiers.get("TACTICAL_PLUS", 0) == 28, f"TACTICAL_PLUS count wrong: {tiers}"
+    assert tiers.get("TACTICAL_PLUS", 0) == 41, f"TACTICAL_PLUS count wrong: {tiers}"
     assert tiers.get("TACTICAL", 0) == 23, f"TACTICAL count wrong: {tiers}"
 
     # Verificar que TR-019 a TR-022 existen (fix v1.0)
