@@ -178,3 +178,47 @@ def test_recover_entry_price_existe():
     assert "_recover_entry_price" in src
     assert src.count("_recover_entry_price(ticker") >= 2, \
         "ambos cierres (LONG y SHORT) deben intentar recovery del entry"
+
+
+# ── 4. Routing Tier 2 ampliado al universo V1 ───────────────
+
+def _router():
+    import importlib.util
+    path = os.path.join(ROOT, "Bot", "strategy_router.py")
+    spec = importlib.util.spec_from_file_location("strategy_router_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+_V1_INDEX = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA"]
+_V1_LEV = ["SOXL", "TSLL", "NVDL", "TQQQ"]
+_V1_ALL = _V1_INDEX + _V1_LEV
+
+
+def test_vwap_zscore_corre_en_v1_30m():
+    """Antes solo JPM/AMZN (fuera de V1) → nunca disparaba."""
+    f = _router().should_run_strategy
+    assert all(f("vwap_zscore", t, 30) for t in _V1_ALL)
+
+
+def test_supertrend_corre_en_leveraged_30m():
+    """Antes QQQ/UNH pero el bloque itera leveraged → nunca disparaba."""
+    f = _router().should_run_strategy
+    assert all(f("supertrend", t, 30) for t in _V1_LEV)
+
+
+def test_macd_bb_corre_en_leveraged_30m():
+    f = _router().should_run_strategy
+    assert all(f("macd_bb", t, 30) for t in _V1_LEV)
+
+
+def test_gap_fade_sigue_gateada_a_60m():
+    """No romper la restricción existente: gap_fade solo 60m+."""
+    f = _router().should_run_strategy
+    assert f("gap_fade", "SPY", 60) and not f("gap_fade", "SPY", 30)
+
+
+def test_suite_corre_en_todos_los_tf_activos():
+    f = _router().should_run_strategy
+    assert all(f("ema_3_8", "SPY", tf) for tf in (5, 15, 30, 60))

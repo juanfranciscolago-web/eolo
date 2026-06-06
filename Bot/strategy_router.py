@@ -5,42 +5,55 @@
 #  backtesting. Routes each strategy call to correct combo.
 # ============================================================
 
-# ── TIER 2 OPTIMIZED MAPPING (from FASE 6 backtest results) ──
+# ── Universo real de Eolo V1 (Bot/bot_trader.py) ────────────
+# Las calibraciones FASE 6 originales apuntaban a JPM/MSFT/UNH/AMZN/XOM, que
+# NO están en el universo de V1 → varias Tier 2 nunca disparaban. Para el
+# re-test (RETEST_V1_2026H1) ampliamos el routing a los tickers que V1 opera.
+# active_timeframes en prod = [5,15,30,60]: usamos 30 y 60 (ambos activos).
+_V1_INDEX = ["SPY", "QQQ", "AAPL", "TSLA", "NVDA"]       # tickers_ema_gap
+_V1_LEV   = ["SOXL", "TSLL", "NVDL", "TQQQ"]             # tickers_leveraged
+_V1_ALL   = _V1_INDEX + _V1_LEV
+
+
+def _tf(tickers, tfs):
+    """Helper: {ticker: tfs} para cada ticker de la lista."""
+    return {t: list(tfs) for t in tickers}
+
+
+# ── TIER 2 OPTIMIZED MAPPING (FASE 6 + ampliación re-test 2026-06-06) ──
+# TF estándar 30m (modal de la calibración FASE 6). stop_run además 60m
+# (tenía 60/240 original; 240 no está en active_timeframes, se omite).
+# Las entradas originales fuera del universo V1 se conservan (inocuas: nunca
+# se iteran) por si esos tickers se reincorporan al universo.
 TIER2_STRATEGY_MAP = {
     # Strategy → {Asset → [TF1, TF2, ...]}
+    # stop_run / vwap_zscore / volume_reversal_bar iteran tickers_all (9 V1):
     "stop_run": {
-        "JPM": [30],
-        "MSFT": [60, 240],
-        "TSLA": [60, 240],
-        "XOM": [30],
-        "SPY": [30],
+        "JPM": [30], "MSFT": [60, 240], "XOM": [30],
+        **_tf(_V1_ALL, [30, 60]),
     },
     "vwap_zscore": {
-        "JPM": [30],
-        "AMZN": [30],
+        "JPM": [30], "AMZN": [30],
+        **_tf(_V1_ALL, [30]),
     },
     "volume_reversal_bar": {
-        "TSLA": [30],
-        "JPM": [30],
-        "AMZN": [30],
-        "NVDA": [30],
+        "JPM": [30], "AMZN": [30],
+        **_tf(_V1_ALL, [30]),
     },
+    # supertrend / macd_bb iteran SOLO tickers_leveraged → ahí deben estar:
     "supertrend": {
-        "QQQ": [30],
-        "UNH": [30],
+        "QQQ": [30], "UNH": [30],
+        **_tf(_V1_LEV, [30]),
     },
     "macd_bb": {
-        "SPY": [30],
-        "QQQ": [30],
-        "JPM": [30],
-        "XOM": [30],
-        "UNH": [30],
+        "JPM": [30], "XOM": [30], "UNH": [30],
+        **_tf(_V1_LEV, [30]),
     },
+    # bollinger: el bloque clásico de run_cycle corre sobre tickers_leveraged
+    # SIN gate; este mapa queda para referencia/coherencia.
     "bollinger": {
-        "MSFT": [30],
-        "JPM": [30],
-        "QQQ": [30],
-        "UNH": [30],
+        "MSFT": [30], "JPM": [30], "UNH": [30],
+        **_tf(_V1_ALL, [30]),
     },
 }
 

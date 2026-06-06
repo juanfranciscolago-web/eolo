@@ -75,6 +75,26 @@ el re-test las revalida en paralelo sin tocarlas.
 4. SELLs con `pnl_usd` poblado (no null) — recovery activo.
 5. A los 2-3 días: ratio opens/closes por estrategia ≈ balanceado (no más huérfanos).
 
+## 5b. Routing de timeframes (ampliación 06-jun)
+
+Confirmado que varias estrategias no disparaban en V1 por `should_run_strategy`
+(`Bot/strategy_router.py`). Estado tras la revisión:
+
+- **Suite v3 + Tier 1** (ema_3_8, ema_8_21, combos, stop_run, vw_macd, rvol_breakout,
+  tsv, volume_reversal_bar): corren en **todos** los TF activos `[5,15,30,60]`.
+- **vwap_zscore, supertrend, macd_bb**: antes apuntaban a JPM/MSFT/UNH/AMZN/XOM
+  (fuera del universo V1) → **nunca disparaban**. Ampliados a tickers V1 @30m
+  (supertrend/macd_bb sobre leveraged; vwap_zscore sobre los 9).
+- **stop_run**: agregado @30/@60 para V1, aunque ya corría por Tier 1.
+- **gap_fade**: sin cambios — sigue gateada a 60m+ (intencional).
+- **bollinger**: el bloque clásico corre sobre los 4 leveraged sin gate, en todos
+  los TF activos. Junta muestra rápido.
+
+Config en prod: `active_timeframes=[5,15,30,60]`, `confluence_mode=False`,
+`min_agree=1` → cada TF ejecuta independiente (un trade por señal por TF).
+
+Requiere **redeploy** para tomar efecto (cambio de código en strategy_router.py).
+
 ## 6. Riesgos
 
 - Las keys de Firestore pueden diferir de los nombres asumidos — el script lista
