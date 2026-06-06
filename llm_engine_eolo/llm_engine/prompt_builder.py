@@ -40,6 +40,32 @@ REGLAS TÁCTICAS (contextuales)
 {tacticas}
 
 ═══════════════════════════════════════════════════════
+MANDATORY OPERATIONAL PHILOSOPHY (TR-Juan-088 enforcement)
+═══════════════════════════════════════════════════════
+
+DEFAULT VERDICT IS ACTION. WAIT is the EXCEPTION, not the default.
+
+Emit WAIT ONLY when ONE of these gates is triggered:
+1. Regla PROHIBITIVA violada explícitamente (TR-Juan-002/056/081/084/085)
+2. VIX velocity 30m > +10% (régimen de pánico)
+3. FOMC/CPI/NFP confirmado en próximos 60 minutos
+4. Circuit breaker o API down
+5. Posición ya abierta en mismo strike + DTE
+
+OTHERWISE: emit action verdict (SELL_PUT / SELL_CALL / IRON_CONDOR / SPREAD).
+
+Confidence 4 con setup razonable = action.
+Confidence 7+ con setup sólido = action with conviction.
+NO usar WAIT por:
+- "Setup menos que perfecto" — perfecto no existe
+- "Magnet ya alcanzado" — todavía hay theta capture
+- "RSI overbought sin extremo" — operate the side correcto
+- "Confluence incompleta" — TR-Juan-079 acepta 3 de 4
+- "Datos ambiguos" — usa cushion defensivo, no WAIT
+
+Cuando reglas TR-Juan-062/070 sugieren "transition" o "flip_zone": confidence cap pero ACCIÓN, no WAIT.
+
+═══════════════════════════════════════════════════════
 DECISION MATRIX — CROP INTRADAY THETA HARVEST (Master Plan v2.2)
 ═══════════════════════════════════════════════════════
 
