@@ -611,11 +611,10 @@ def run_cycle(market_data: MarketData, settings: dict, timeframe: int = 1,
 
     def _exec(result, strat_name):
         # Si el cap del día está activo, dejamos pasar SOLO los cierres;
-        # las APERTURAS se suprimen. RETEST-FIX 2026-06-05: un BUY que es
-        # cover de un SHORT (o exit_only de un _SHORT) es un CIERRE y no
-        # debe suprimirse — antes quedaban shorts colgados con cap activo.
+        # las APERTURAS se suprimen. Un BUY que es cover de un SHORT es un
+        # CIERRE y no debe suprimirse — antes quedaban shorts colgados con
+        # el cap activo.
         if (daily_cap_hit and result.get("signal") == "BUY"
-                and not result.get("exit_only")
                 and trader.positions.get(result.get("ticker")) != "SHORT"):
             result["signal"] = "HOLD"
             result["_daily_cap_suppressed"] = True

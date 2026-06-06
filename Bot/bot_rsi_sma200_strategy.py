@@ -47,17 +47,20 @@ def calculate_indicators(df: pd.DataFrame) -> pd.DataFrame:
 
 # ── Señal ─────────────────────────────────────────────────
 
-def detect_signal(df: pd.DataFrame, ticker: str) -> str:
-    if len(df) < SMA_PERIOD + RSI_PERIOD:
-        logger.debug(f"[RSI_SMA200] {ticker} — insuficientes barras ({len(df)})")
+def detect_signal(df: pd.DataFrame, ticker: str, sma200_daily: float | None = None) -> str:
+    # H2 fix (audit 06-jun): el guard pedía 214 barras (SMA200+RSI) que NUNCA
+    # se alcanzan intradía (~65-78 máx) → la estrategia quedaba en HOLD perpetuo.
+    # El RSI solo necesita ~RSI_PERIOD*2 barras. El SMA200, como filtro de
+    # tendencia, se calcula sobre velas DIARIAS (sma200_daily), no intradía.
+    if len(df) < RSI_PERIOD * 2:
+        logger.debug(f"[RSI_SMA200] {ticker} — insuficientes barras RSI ({len(df)})")
         return "HOLD"
 
     curr = df.iloc[-1]
     rsi    = curr["rsi"]
-    sma200 = curr["sma200"]
     close  = curr["close"]
 
-    if pd.isna(rsi) or pd.isna(sma200):
+    if pd.isna(rsi):
         return "HOLD"
 
     # ── SELL: RSI sobrecomprado ────────────────────────────
@@ -68,26 +71,48 @@ def detect_signal(df: pd.DataFrame, ticker: str) -> str:
         )
         return "SELL"
 
-    # ── BUY: RSI oversold (filtro SMA200 deshabilitado — permite entrar en cualquier tendencia)
+    # ── BUY: RSI oversold + filtro de tendencia SMA200 diario ──
+    # Si no hay SMA200 diario (fetch falló) → RSI-only, no bloquea.
     if rsi < RSI_BUY_MAX:
+        if sma200_daily is not None and close < sma200_daily:
+            logger.debug(
+                f"[RSI_SMA200] {ticker} BUY filtrado — close={close:.4f} < "
+                f"sma200_d={sma200_daily:.4f} (tendencia bajista)"
+            )
+            return "HOLD"
+        trend = f"sma200_d={sma200_daily:.4f}" if sma200_daily is not None else "sin filtro daily"
         logger.info(
             f"[RSI_SMA200] {ticker} BUY ✅ — RSI={rsi:.1f} < {RSI_BUY_MAX} | "
-            f"close={close:.4f} | sma200={sma200:.4f}"
+            f"close={close:.4f} | {trend}"
         )
         return "BUY"
-
-    if False:  # placeholder — SMA200 block removido
-        logger.info(
-            f"[RSI_SMA200] {ticker} — (SMA200 block deshabilitado)"
-        )
 
     return "HOLD"
 
 
 # ── Pipeline completo ─────────────────────────────────────
 
+def _fetch_sma200_daily(market_data, ticker: str) -> float | None:
+    """SMA200 sobre velas DIARIAS (filtro de tendencia). Best-effort → None.
+
+    H2 fix: el SMA200 intradía es inalcanzable (~78 velas máx vs 200). El daily
+    da ~290 sesiones (periodType=month, period 20) → SMA200 real. Usa cierres
+    completos hasta ayer, que es exactamente lo que un filtro de tendencia quiere.
+    """
+    try:
+        daily = market_data.get_price_history(ticker, candles=0, days=420, frequency=1440)
+        if daily is None or daily.empty or len(daily) < SMA_PERIOD:
+            logger.debug(f"[RSI_SMA200] {ticker} — daily insuficiente para SMA200 "
+                         f"({0 if daily is None else len(daily)})")
+            return None
+        return float(daily["close"].rolling(window=SMA_PERIOD).mean().iloc[-1])
+    except Exception as e:
+        logger.debug(f"[RSI_SMA200] {ticker} — fetch SMA200 daily falló: {e}")
+        return None
+
+
 def analyze(market_data, ticker: str) -> dict:
-    # 1 día de velas 1-min → ≈390 candles → suficiente para SMA200 + RSI
+    # RSI sobre el TF intradía activo; SMA200 sobre velas diarias (H2 fix).
     df = market_data.get_price_history(ticker, candles=0, days=1)
 
     if df is None or df.empty:
@@ -95,11 +120,10 @@ def analyze(market_data, ticker: str) -> dict:
         return {"ticker": ticker, "signal": "ERROR", "strategy": STRATEGY_NAME,
                 "price": None, "rsi": None, "sma200": None}
 
-    df     = calculate_indicators(df)
-    signal = detect_signal(df, ticker)
-    last   = df.iloc[-1]
-
-    sma200_val = float(last["sma200"]) if not pd.isna(last["sma200"]) else None
+    df           = calculate_indicators(df)
+    sma200_daily = _fetch_sma200_daily(market_data, ticker)
+    signal       = detect_signal(df, ticker, sma200_daily=sma200_daily)
+    last         = df.iloc[-1]
 
     return {
         "ticker":      ticker,
@@ -107,7 +131,7 @@ def analyze(market_data, ticker: str) -> dict:
         "strategy":    STRATEGY_NAME,
         "price":       round(float(last["close"]), 4),
         "rsi":         round(float(last["rsi"]),   2) if not pd.isna(last["rsi"]) else None,
-        "sma200":      round(sma200_val, 4) if sma200_val else None,
-        "above_sma200": float(last["close"]) > sma200_val if sma200_val else None,
+        "sma200":      round(sma200_daily, 4) if sma200_daily is not None else None,
+        "above_sma200": (float(last["close"]) > sma200_daily) if sma200_daily is not None else None,
         "candle_time": str(last["datetime"]),
     }

@@ -456,17 +456,6 @@ def execute(result: dict):
     reason      = result.get("reason", "")
     macro       = result.get("_macro_feeds")
     allow_short = result.get("_allow_short", False)
-
-    # RETEST-FIX 2026-06-05: señales exit-only de variantes direccionales.
-    # Un _LONG que emite SELL (o un _SHORT que emite BUY) solo puede CERRAR
-    # una posición existente — nunca abrir una nueva en dirección opuesta.
-    # La heurística por sufijo cubre el path de confluencia, donde el dict
-    # se reconstruye y el flag exit_only del wrapper se pierde
-    # (strategy llega como "CONFLUENCE:EMA_3_8_LONG").
-    _strat_base = strategy.split(":", 1)[-1].upper()
-    exit_only   = bool(result.get("exit_only")) \
-        or (_strat_base.endswith("_LONG")  and signal == "SELL") \
-        or (_strat_base.endswith("_SHORT") and signal == "BUY")
     shares      = calculate_shares(price, budget)
     mode        = "📄 PAPER" if PAPER_TRADING else "💰 LIVE"
     total       = shares * price
@@ -499,7 +488,7 @@ def execute(result: dict):
                 f"🔖 Modo     : {mode}"
             )
 
-        elif current != "LONG" and not exit_only:
+        elif current != "LONG":
             # Abrir LONG (desde FLAT)
             _log_trade("BUY", ticker, shares, price, strategy,
                        timeframe=tf_min, reason=reason,
@@ -547,7 +536,7 @@ def execute(result: dict):
                 f"🔖 Modo     : {mode}"
             )
 
-        elif current != "SHORT" and allow_short and not exit_only:
+        elif current != "SHORT" and allow_short:
             # Abrir SHORT (desde FLAT, solo si allow_short=True)
             _log_trade("SELL_SHORT", ticker, shares, price, strategy,
                        timeframe=tf_min, reason=reason,

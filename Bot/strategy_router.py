@@ -25,36 +25,24 @@ def _tf(tickers, tfs):
 # (tenía 60/240 original; 240 no está en active_timeframes, se omite).
 # Las entradas originales fuera del universo V1 se conservan (inocuas: nunca
 # se iteran) por si esos tickers se reincorporan al universo.
+# H3 (audit 06-jun): stop_run y volume_reversal_bar están en TIER1_STRATEGIES
+# (return True antes de mirar el mapa) → sus entradas Tier 2 eran inalcanzables
+# y confundían. Se quitaron del mapa; corren en todos los TF vía Tier 1.
+# H4 (audit 06-jun): bollinger corre por su bloque clásico SIN gate (sobre
+# leveraged), así que su entrada Tier 2 nunca se consultaba — eliminada.
+#
+# Solo quedan en el mapa las que realmente se gatean en run_cycle y NO están
+# en Tier 1: vwap_zscore, supertrend, macd_bb. Ampliadas al universo V1 @30m.
 TIER2_STRATEGY_MAP = {
     # Strategy → {Asset → [TF1, TF2, ...]}
-    # stop_run / vwap_zscore / volume_reversal_bar iteran tickers_all (9 V1):
-    "stop_run": {
-        "JPM": [30], "MSFT": [60, 240], "XOM": [30],
-        **_tf(_V1_ALL, [30, 60]),
-    },
-    "vwap_zscore": {
-        "JPM": [30], "AMZN": [30],
-        **_tf(_V1_ALL, [30]),
-    },
-    "volume_reversal_bar": {
-        "JPM": [30], "AMZN": [30],
-        **_tf(_V1_ALL, [30]),
-    },
-    # supertrend / macd_bb iteran SOLO tickers_leveraged → ahí deben estar:
-    "supertrend": {
-        "QQQ": [30], "UNH": [30],
-        **_tf(_V1_LEV, [30]),
-    },
-    "macd_bb": {
-        "JPM": [30], "XOM": [30], "UNH": [30],
-        **_tf(_V1_LEV, [30]),
-    },
-    # bollinger: el bloque clásico de run_cycle corre sobre tickers_leveraged
-    # SIN gate; este mapa queda para referencia/coherencia.
-    "bollinger": {
-        "MSFT": [30], "JPM": [30], "UNH": [30],
-        **_tf(_V1_ALL, [30]),
-    },
+    # vwap_zscore itera tickers_all (9 V1):
+    "vwap_zscore": _tf(_V1_ALL, [30]),
+    # H7 (audit 06-jun): supertrend y macd_bb declaran en su header
+    # "Tickers recomendados: SOXL, TSLL, NVDL, TQQQ" (leveraged) y su bloque
+    # itera tickers_leveraged. Las entradas índice (QQQ/UNH/SPY/JPM/XOM) eran
+    # restos de un backtest FASE 6 sobre otro universo → eliminadas.
+    "supertrend": _tf(_V1_LEV, [30]),
+    "macd_bb":    _tf(_V1_LEV, [30]),
 }
 
 # ── TIER 1 & Baseline (run on all, or specific tickers) ──

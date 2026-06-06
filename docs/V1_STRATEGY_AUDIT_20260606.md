@@ -25,6 +25,20 @@ del gateo y dejarla correr en todos los TF como las suite (ver F3).
 
 ---
 
+## ESTADO (actualizado 06-jun tras decisiones de Juan)
+
+| # | Hallazgo | Decisión | Estado |
+|---|---|---|---|
+| H1 | _long/_short código muerto | Limpiar | ✅ exit_only revertido; `tools/v1_cleanup_directional.py` borra keys Firestore; registry queda (lo usa diagnostics) |
+| H2 | SMA200 inalcanzable intradía | Arreglar | ✅ SMA200 sobre velas diarias + guard relajado |
+| H3 | Tier1 ∩ Tier2 | Aplicar | ✅ stop_run/volume_reversal_bar fuera del mapa |
+| H4 | bollinger map muerto | Aplicar | ✅ entrada eliminada del mapa |
+| H5 | macro SPOF | Documentar | ⏳ pendiente (monitor podría exponerlo) |
+| H6 | alias label↔config | Aplicar | ✅ tabla en `v1_retest_evaluate.py` |
+| H7 | supertrend/macd_bb universo | Arreglar | ✅ eran para leveraged (header), routing corregido; restos índice limpiados |
+
+Requiere **redeploy** de eolo-bot para tomar efecto (H1/H2/H3/H4/H7 son código).
+
 ## HALLAZGOS
 
 ### H1 — [ALTA] Las variantes `_long`/`_short` son código muerto

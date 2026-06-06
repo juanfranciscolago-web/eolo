@@ -30,20 +30,20 @@ def test_wrapper_long_pasa_buy():
     assert not out.get("exit_only")
 
 
-def test_wrapper_long_sell_es_exit_only():
-    """El SELL de un _LONG es su señal de SALIDA — debe pasar marcado."""
+def test_wrapper_long_sell_da_hold():
+    """H1 revertido: el registry direccional no ejecuta trades (solo
+    diagnostics). La señal opuesta vuelve a HOLD, sin exit_only."""
     from eolo_common.strategies_v3.strategies import _directional_wrapper
     out = _directional_wrapper(_mk_fn("SELL"), "long")(None)
-    assert out["signal"] == "SELL"
-    assert out.get("exit_only") is True
+    assert out["signal"] == "HOLD"
+    assert "exit_only" not in out
 
 
-def test_wrapper_short_buy_es_exit_only():
-    """El BUY de un _SHORT es su BUY_TO_COVER — debe pasar marcado."""
+def test_wrapper_short_buy_da_hold():
     from eolo_common.strategies_v3.strategies import _directional_wrapper
     out = _directional_wrapper(_mk_fn("BUY"), "short")(None)
-    assert out["signal"] == "BUY"
-    assert out.get("exit_only") is True
+    assert out["signal"] == "HOLD"
+    assert "exit_only" not in out
 
 
 def test_wrapper_hold_sigue_hold():
@@ -104,40 +104,28 @@ def bt(monkeypatch):
     return _bt
 
 
-def test_flat_sell_exit_only_no_abre_short(bt):
-    bt.execute({"ticker": "SPY", "signal": "SELL", "price": 757.0,
-                "strategy": "EMA_3_8_LONG", "_budget": 100,
-                "_allow_short": True, "exit_only": True})
-    assert bt.positions["SPY"] is None
-
-
-def test_long_sell_exit_only_cierra(bt):
+def test_long_sell_cierra(bt):
+    """LONG + SELL → cierra (path base, sin direccionales)."""
     bt.positions["SPY"] = "LONG"
     bt.entry_prices["SPY"] = 750.0
     bt.entry_open_ts["SPY"] = 0
     bt.execute({"ticker": "SPY", "signal": "SELL", "price": 757.0,
-                "strategy": "EMA_3_8_LONG", "_budget": 100, "exit_only": True})
+                "strategy": "SQUEEZE", "_budget": 100})
     assert bt.positions["SPY"] is None
 
 
-def test_short_buy_de_short_cubre(bt):
+def test_short_buy_cubre(bt):
+    """SHORT + BUY → cover (BUY_TO_COVER), path base."""
     bt.positions["QQQ"] = "SHORT"
     bt.entry_prices["QQQ"] = 745.0
     bt.entry_open_ts["QQQ"] = 0
     bt.execute({"ticker": "QQQ", "signal": "BUY", "price": 742.0,
-                "strategy": "EMA_3_8_SHORT", "_budget": 100})
-    assert bt.positions["QQQ"] is None
-
-
-def test_flat_buy_heuristica_confluence_short_no_abre_long(bt):
-    """Path confluencia: el flag se pierde, la heurística por sufijo cubre."""
-    bt.execute({"ticker": "QQQ", "signal": "BUY", "price": 742.0,
-                "strategy": "CONFLUENCE:EMA_3_8_SHORT", "_budget": 100})
+                "strategy": "SQUEEZE", "_budget": 100})
     assert bt.positions["QQQ"] is None
 
 
 def test_flat_buy_normal_abre_long(bt):
-    """Control: estrategia no-direccional abre LONG como siempre."""
+    """Control: estrategia abre LONG desde FLAT."""
     bt.execute({"ticker": "QQQ", "signal": "BUY", "price": 742.0,
                 "strategy": "SQUEEZE", "_budget": 100})
     assert bt.positions["QQQ"] == "LONG"
@@ -222,3 +210,44 @@ def test_gap_fade_sigue_gateada_a_60m():
 def test_suite_corre_en_todos_los_tf_activos():
     f = _router().should_run_strategy
     assert all(f("ema_3_8", "SPY", tf) for tf in (5, 15, 30, 60))
+
+
+# ── 5. H2 RSI_SMA200 corre intradía (guard relajado) ────────
+
+def _rsi_sma200():
+    import importlib.util
+    path = os.path.join(ROOT, "Bot", "bot_rsi_sma200_strategy.py")
+    spec = importlib.util.spec_from_file_location("rsi_sma200_test", path)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _df_low_rsi():
+    import pandas as pd, numpy as np
+    closes = list(100 + np.zeros(40)) + list(np.linspace(100, 92, 20))
+    m = _rsi_sma200()
+    return m, m.calculate_indicators(pd.DataFrame({"close": closes}))
+
+
+def test_rsi_sma200_corre_con_60_barras():
+    """Antes el guard pedía 214 barras → HOLD perpetuo intradía."""
+    m, df = _df_low_rsi()
+    assert len(df) == 60
+    assert m.detect_signal(df, "SPY", sma200_daily=None) == "BUY"
+
+
+def test_rsi_sma200_filtro_tendencia_daily():
+    m, df = _df_low_rsi()
+    last = float(df["close"].iloc[-1])
+    assert m.detect_signal(df, "SPY", sma200_daily=last + 10) == "HOLD"   # bajista filtra
+    assert m.detect_signal(df, "SPY", sma200_daily=last - 10) == "BUY"    # alcista permite
+
+
+# ── 6. H7 supertrend/macd_bb solo leveraged, sin restos índice ──
+
+def test_h7_supertrend_macd_bb_solo_leveraged():
+    sr = _router()
+    for strat in ("supertrend", "macd_bb"):
+        m = sr.TIER2_STRATEGY_MAP[strat]
+        assert set(m) == set(_V1_LEV), f"{strat} debe mapear solo leveraged, got {set(m)}"

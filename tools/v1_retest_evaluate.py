@@ -33,6 +33,25 @@ OUTDIR  = ROOT / "docs"
 STATUS  = ROOT / "docs" / "retest_status"
 EXCLUDE_STRATS = {"", "TEST", "CLOSE_ALL", "RISK_WATCHDOG", None}
 
+# H6 (audit 06-jun): el label persistido en eolo-trades difiere de la key de
+# config para varias estrategias. Esta tabla normaliza label→config key para
+# que el veredicto se lea contra la config. El grouping usa el label tal cual
+# (consistente), pero el reporte muestra ambos.
+LABEL_TO_CONFIG = {
+    "EMA":             "ema_crossover",
+    "GAP":             "gap_fade",
+    "VWAP+RSI":        "vwap_rsi",
+    "VOL_REVERSAL_BAR": "volume_reversal_bar",
+    "SPY_QQQ_DIV":     "spy_qqq_divergence",
+    "MACD_CONFLUENCE": "macd_confluence_fase7a",
+    "MOMENTUM_SCORE":  "momentum_score_fase7a",
+}
+
+
+def config_key(label: str) -> str:
+    """Devuelve la key de config para un label persistido (alias o lower)."""
+    return LABEL_TO_CONFIG.get(label, str(label).lower())
+
 
 def compute(pnls: list[float]) -> dict:
     arr = np.array(pnls, dtype=float)
@@ -95,6 +114,7 @@ def main() -> int:
     for strat, pnls in by_strat.items():
         m = compute(pnls)
         m["strategy"] = strat
+        m["config_key"] = config_key(strat)
         m["verdict"] = verdict(m, n_target)
         rows.append(m)
     rows.sort(key=lambda r: (-r["n"]))
@@ -113,8 +133,9 @@ def main() -> int:
     # CSV
     csv_path = OUTDIR / f"V1_RETEST_RESULTS_{stamp}.csv"
     with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=["strategy", "verdict", "n", "win_rate",
-                                          "expectancy", "ci95_low", "ci95_high", "total_pnl"])
+        w = csv.DictWriter(f, fieldnames=["strategy", "config_key", "verdict", "n",
+                                          "win_rate", "expectancy", "ci95_low",
+                                          "ci95_high", "total_pnl"])
         w.writeheader()
         for r in rows:
             w.writerow({k: r.get(k) for k in w.fieldnames})
@@ -128,11 +149,11 @@ def main() -> int:
           f"KEEP {counts['KEEP']} · DISABLE {counts['DISABLE']} · "
           f"INCONCLUSIVE {counts['INCONCLUSIVE']} · INSUFFICIENT {counts['INSUFFICIENT']}",
           "",
-          "| Estrategia | Veredicto | n | WR% | Exp $ | CI95 low | CI95 high | PnL total |",
-          "|---|---|---:|---:|---:|---:|---:|---:|"]
+          "| Estrategia | config key | Veredicto | n | WR% | Exp $ | CI95 low | CI95 high | PnL total |",
+          "|---|---|---|---:|---:|---:|---:|---:|---:|"]
     for r in rows:
-        md.append(f"| {r['strategy']} | **{r['verdict']}** | {r['n']} | {r['win_rate']} | "
-                  f"{r['expectancy']} | {r['ci95_low']} | {r['ci95_high']} | {r['total_pnl']} |")
+        md.append(f"| {r['strategy']} | {r['config_key']} | **{r['verdict']}** | {r['n']} | "
+                  f"{r['win_rate']} | {r['expectancy']} | {r['ci95_low']} | {r['ci95_high']} | {r['total_pnl']} |")
     md += ["",
            "## Interpretación",
            "- **KEEP**: CI95 low > 0 → edge positivo confirmado con datos sanos. Mantener ON.",
