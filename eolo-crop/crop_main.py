@@ -372,7 +372,7 @@ class CropBotTheta:
         self._llm_max_positions: int = 10
         # 4.C.1: threshold para overridear spread_type del sector
         # (mas conservador que el strike hint threshold del scan = 7)
-        self._llm_spread_override_threshold: int = 8
+        self._llm_spread_override_threshold: int = 4
         self._llm_client: Optional[LLMGateClient] = None  # lazy init
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
         # Raw snapshot cache exposed for /juan/suggest (T11) and watchlist

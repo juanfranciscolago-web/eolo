@@ -341,6 +341,7 @@ def build_prompts(kb: KBLoader, snapshot: MarketSnapshot) -> tuple:
     similar_cases = kb.get_similar_cases(snapshot.get_setup_keywords(), top_k=3)
     system = build_system_prompt(kb, similar_cases)
     user = build_user_prompt(snapshot)
+    system, user = maybe_inject_shadow_extras(system, user, snapshot)
     return system, user
 
 
@@ -482,3 +483,96 @@ ANTI-HALLUCINATION (CRITICAL):
         user_parts.append(f"[{msg.get('role')}] {msg.get('content', '')[:500]}")
 
     return system, "\n".join(user_parts)
+
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# SHADOW MODE additions (engine B only) — bundle 9
+# ═══════════════════════════════════════════════════════════════════════
+import os as _os
+SHADOW_MODE = _os.getenv("SHADOW_MODE", "false").lower() == "true"
+
+FEW_SHOT_EXAMPLES = """
+═══════════════════════════════════════════════════════
+EJEMPLOS DE VERDICTS CORRECTOS EN SETUPS AMBIGUOS (anti-WAIT-bias, TR-Juan-088)
+═══════════════════════════════════════════════════════
+
+EJEMPLO 1 — Setup mid-IVR mid-VIX range marginal:
+  Snapshot: SPY $603.00, IVR 35, VIX 18, RSI 53, MACD plano debil, vrp neutral
+  Verdict CORRECTO: IRON_CONDOR Δ 0.20 short $599/$607, confidence 5, size ×0.5
+  Razonamiento: setup técnico operable, premium moderado, sin PROHIBITIVA activa.
+  Default = ACTION con cap conf (NO WAIT).
+  Citas: TR-Juan-100, TR-Juan-105.
+
+EJEMPLO 2 — Pin borderline (0.07% del threshold):
+  Snapshot: SPY $605.40, max_pain $605, IVR 48, VIX 17, magnet 70
+  Verdict CORRECTO: IRON_CONDOR Δ 0.15 cushion absoluto, confidence 7, size baseline
+  Razonamiento: pin borderline cumple <0.3%, IVR mid, VIX bajo, magnet alto = operable.
+  Citas: TR-Juan-095, TR-Juan-105.
+
+EJEMPLO 3 — VRP cheap pero IV nominal alto:
+  Snapshot: QQQ $545, vrp_score=cheap (pctl 25), IV 12.8%, RSI 51
+  Verdict CORRECTO: SELL_PUT $544 cushion $1, confidence 6, size ×0.5
+  Razonamiento: vrp percentil bajo PERO IV nominal operable >12% → TR-091 dispara.
+  Citas: TR-Juan-091, TR-Juan-001.
+
+EJEMPLO 4 — Range breaking con momentum naciente:
+  Snapshot: IWM $228, RSI 54.5, 2 velas 5m verdes consecutivas, OR_high $228.20
+  Verdict CORRECTO: SELL_PUT $227 (just below OR_high), confidence 6, size baseline
+  Razonamiento: transición de range a bullish breakout. ACTION direccional, NO WAIT.
+  Citas: TR-Juan-103.
+
+EJEMPLO 5 — VIX defensivo con setup direccional claro:
+  Snapshot: SPY $600, VIX 23, EMA9<EMA21<EMA50 (bear trend)
+  Verdict CORRECTO: SELL_CALL_SPREAD $603/$606, cushion $3, size ×0.7, confidence 6
+  Razonamiento: VIX 20-25 = DEFENSIVE_OP, pero edge bearish claro → ACTION acotada.
+  Citas: TR-Juan-106, TR-Juan-010.
+
+REGLA CLAVE: en setups marginalmente operables, la respuesta correcta es ACTION
+con confidence y sizing reducidos. WAIT está reservado para los 5 gates de TR-Juan-088.
+"""
+
+
+try:
+    from llm_engine_eolo.llm_engine.earnings_filter import is_earnings_blackout
+except Exception:
+    try:
+        from llm_engine.earnings_filter import is_earnings_blackout
+    except Exception:
+        def is_earnings_blackout(ticker, today):
+            return False, ""
+
+from datetime import date as _date
+
+
+def maybe_inject_shadow_extras(system_prompt: str, user_prompt: str, snapshot=None):
+    """Inject few-shot + visibility reorder + streak + earnings if SHADOW_MODE."""
+    if not SHADOW_MODE:
+        return system_prompt, user_prompt
+    if "DECISION MATRIX" in system_prompt and "anti-WAIT-bias" not in system_prompt:
+        system_prompt = system_prompt.replace(
+            "DECISION MATRIX",
+            FEW_SHOT_EXAMPLES + "\n═══════════════════════════════════════════════════════\nDECISION MATRIX",
+            1,
+        )
+    try:
+        ticker = getattr(snapshot, "ticker", None) or (snapshot or {}).get("ticker", "") if snapshot else ""
+        ts = getattr(snapshot, "timestamp_et", None) or (snapshot or {}).get("timestamp_et", "") if snapshot else ""
+        today = _date.fromisoformat(str(ts)[:10]) if ts else _date.today()
+        blocked, reason = is_earnings_blackout(ticker, today)
+        if blocked:
+            user_prompt += f"\n\nEARNINGS FILTER: {reason} — recommend WAIT or low-confidence action only."
+    except Exception:
+        pass
+    try:
+        streak = (getattr(snapshot, "accumulated_wait_streak", None)
+                  or (snapshot or {}).get("accumulated_wait_streak", 0) if snapshot else 0)
+        if streak and int(streak) >= 5:
+            user_prompt += (
+                f"\n\nAVISO STREAK: detectados {streak} WAIT consecutivos en esta sesión. "
+                f"Si el setup actual es marginalmente operable y NO hay gate TR-088 activo, "
+                f"prefiere ACTION con cap confidence 4."
+            )
+    except Exception:
+        pass
+    return system_prompt, user_prompt

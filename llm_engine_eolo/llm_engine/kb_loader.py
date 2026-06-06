@@ -104,6 +104,9 @@ class KBLoader:
         ws = self.wb['Decision_Rules']
         rules = []
 
+        header_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True), None) or ()
+        deprecated_by_idx = header_row.index("Deprecated_By") if "Deprecated_By" in header_row else None
+
         for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
             if not row or not row[0]:
                 continue
@@ -111,6 +114,12 @@ class KBLoader:
             rule_id = str(row[0]).strip()
             if not rule_id.startswith("TR-"):
                 continue
+
+            if deprecated_by_idx is not None and deprecated_by_idx < len(row):
+                dep_by = row[deprecated_by_idx]
+                if dep_by and str(dep_by).strip():
+                    logger.info(f"Skipping {rule_id} (deprecated_by={dep_by})")
+                    continue
 
             tier_from_col = None
             if len(row) >= 8 and row[7]:
