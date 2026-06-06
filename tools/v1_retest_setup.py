@@ -44,17 +44,19 @@ REINSERT_PERFORMANCE = [
     "tsv",                       # disabled post-11-may
 ]
 
-# Removidas por BUG ARQUITECTURAL del wrapper (solo con RETEST-FIX deployado):
+# Removidas por BUG ARQUITECTURAL del wrapper (solo con RETEST-FIX deployado).
+# NOTA 2026-06-06: verificado contra eolo-config/strategies. El registry
+# direccional (post Phase-A) solo parte en _long/_short estas 16 bases:
+# bulls_bsp, buy_pressure, combo1..7, donchian_turtle, ema_3_8, ema_8_21,
+# macd_accel, net_bsv, orb_v3, sell_pressure, volume_breakout, vwap_momentum.
+# Los "orphan SHORTs" de la auditoría 17-may (vw_macd/ha_cloud/ema_tsi/xom_30m)
+# eran del sistema viejo pre-Phase-A: hoy vw_macd/ha_cloud/ema_tsi existen solo
+# como base NO-direccional y xom_30m no existe. No hay nada que reinsertar ahí.
 REINSERT_DIRECTIONAL = [
-    "vwap_momentum_long",
-    "net_bsv_long",
-    "donchian_turtle_long",
-    "vw_macd_short",
-    "ha_cloud_short",
-    "ema_short",
-    "ema_tsi_short",
+    "vwap_momentum_long",   # WR 0% por wrapper — el _LONG no recibía su SELL de cierre
+    "net_bsv_long",         # idem
+    "donchian_turtle_long", # idem
     "ema_3_8_short",
-    "xom_30m_short",
 ]
 
 COHORT_DOC = {

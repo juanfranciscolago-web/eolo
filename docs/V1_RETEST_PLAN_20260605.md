@@ -44,8 +44,14 @@ bollinger, rvol_breakout, anchor_vwap, tick_trin_fade, opening_drive,
 bollinger_rsi_sensitive, ema_8_21, tsv.
 
 **Por bug arquitectural ya fixeado** (`--include-directional`):
-vwap_momentum_long, net_bsv_long, donchian_turtle_long, vw_macd_short,
-ha_cloud_short, ema_short, ema_tsi_short, ema_3_8_short, xom_30m_short.
+vwap_momentum_long, net_bsv_long, donchian_turtle_long, ema_3_8_short.
+
+> **Aplicado 06-jun:** los `_long`/`_short` del registry direccional (16 bases)
+> ya estaban todos ON; solo faltaban estos 4. Los "orphan SHORTs" de la auditoría
+> (vw_macd/ha_cloud/ema_tsi/xom_30m) eran del sistema pre-Phase-A — hoy existen
+> solo como base no-direccional o no existen, no hay nada que reinsertar.
+> **Pendiente de Juan:** confirmar `allow_short_selling` — si está False las
+> variantes `_short` no abren posiciones y su re-test queda vacío.
 
 **Las 12 "activas" siguen ON** — sus métricas históricas también quedan invalidadas;
 el re-test las revalida en paralelo sin tocarlas.
