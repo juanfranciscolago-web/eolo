@@ -46,6 +46,24 @@ NO usar "confidence baja" como criterio de skip — TR-Juan-088 dice trade frequ
 Si NINGUNO de los criterios duros aplica, dejar should_call_full=True (Sonnet evalúa).
 Si CUALQUIERA aplica claramente, should_call_full=False.
 
+LEVERAGED ETF SUPPORT (A3 unblock):
+TQQQ, SQQQ y otros leveraged ETFs son OPERADOS por el sistema con las mismas
+reglas que sus subyacentes según TR-Juan-090 (TQQQ → reglas QQQ con cushion×3,
+SQQQ → reglas QQQ inverso). NO son instrumentos excluidos.
+
+NO usar como criterio de skip:
+  - "Leveraged ETF / 3x amplified / 2x amplified" (es soportado)
+  - "Volatility decay esperado en leveraged" (asunción estructural)
+  - "Liquidez típicamente baja en leveraged" (asunción no verificada)
+
+SÍ podés mantener skip por (checks de sanidad de data):
+  - Gap >15% en el día sin split conocido documentado
+  - Spread bid/ask actual >5% del strike (verificado en el snapshot, no asumido)
+  - Volume del día <10% del avg 20d (verificado, no asumido)
+
+Cuando dudás, delegá a Sonnet. Es preferible un WAIT bien razonado en Sonnet
+que un skip incorrecto del Haiku que pierde oportunidades válidas.
+
 OUTPUT JSON ESTRICTO:
 {{
   "should_call_full": true|false,
