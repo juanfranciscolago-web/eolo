@@ -199,6 +199,7 @@ def run_backtest(
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
     sample_hours = sample_hours or [10]
+    get_token = make_token_refresher(auth_token)
 
     all_decisions: list[dict] = []
     requested = 0
@@ -210,6 +211,7 @@ def run_backtest(
         if budget_hit:
             break
         per_ticker: list[dict] = []
+        jsonl_path = out / f"decisions_{ticker}_{start_date.isoformat()}_{end_date.isoformat()}.jsonl"
         for snap in iter_historical_snapshots(
             ticker, start_date, end_date, sample_hours=sample_hours, cache_dir=cache_dir,
         ):
@@ -224,7 +226,7 @@ def run_backtest(
             result = backtest_call_with_cost_control(
                 snapshot=snap,
                 engine_url=engine_url,
-                auth_token=auth_token,
+                auth_token=get_token(),
                 use_prescreen=use_prescreen,
             )
             result["snapshot"] = snap
@@ -234,11 +236,10 @@ def run_backtest(
             all_decisions.append(result)
             per_ticker.append(result)
 
-        jsonl_path = out / f"decisions_{ticker}_{start_date.isoformat()}_{end_date.isoformat()}.jsonl"
-        with jsonl_path.open("w") as f:
-            for d in per_ticker:
-                f.write(json.dumps(d, default=str) + "\n")
-        logger.info(f"[runner] wrote {jsonl_path} ({len(per_ticker)} decisions)")
+            with jsonl_path.open("a") as f:
+                f.write(json.dumps(result, default=str) + "\n")
+
+        logger.info(f"[runner] {ticker} done ({len(per_ticker)} decisions)")
 
     metrics = aggregate(all_decisions, requested)
     summary = {
