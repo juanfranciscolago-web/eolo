@@ -189,8 +189,12 @@ def iter_historical_snapshots(
     current = start_date
     while current <= end_date:
         if current.weekday() < 5:  # Mon-Fri
-            for hour in sample_hours:
-                snap = reconstruct_snapshot(ticker, current, hour, cache_dir=cache_dir)
+            for hour_spec in sample_hours:
+                hour_int = int(hour_spec)
+                minute_int = int(round((float(hour_spec) - hour_int) * 60))
+                snap = reconstruct_snapshot(
+                    ticker, current, hour_int, target_minute=minute_int, cache_dir=cache_dir,
+                )
                 if snap is not None:
                     yield snap
         current += timedelta(days=1)
