@@ -373,6 +373,10 @@ class CropBotTheta:
         # 4.C.1: threshold para overridear spread_type del sector
         # (mas conservador que el strike hint threshold del scan = 7)
         self._llm_spread_override_threshold: int = 4
+        # E2: cooldown 90min post-stop-loss para mismo strike+DTE.
+        # Previene revenge trade cuando el setup vuelve a calificar.
+        self._stop_loss_cooldown: dict = {}  # {(ticker, strike, dte): unix_ts}
+        self._stop_loss_cooldown_seconds: int = 90 * 60
         self._llm_client: Optional[LLMGateClient] = None  # lazy init
         self._llm_cache: Optional[DecisionCache] = None   # lazy init
         # Raw snapshot cache exposed for /juan/suggest (T11) and watchlist
@@ -2776,6 +2780,32 @@ class CropBotTheta:
         except Exception as e:
             logger.debug(f"[COMMANDS] poll_commands error: {e}")
 
+
+
+    def _mark_stop_loss_cooldown(self, ticker, strike, dte):
+        """Registra cooldown post-stop-loss. Llamar desde el path que cierra por SL."""
+        import time
+        key = (ticker, float(strike), int(dte))
+        self._stop_loss_cooldown[key] = time.time()
+        logger.warning(
+            f"[E2 cooldown] stop loss en {ticker} ${strike} DTE{dte} -> "
+            f"bloqueo {self._stop_loss_cooldown_seconds//60}min mismo strike+DTE"
+        )
+
+    def _is_in_stop_loss_cooldown(self, ticker, strike, dte):
+        """True + remaining_seconds si (ticker, strike, dte) en cooldown activo."""
+        import time
+        key = (ticker, float(strike), int(dte))
+        ts = self._stop_loss_cooldown.get(key)
+        if ts is None:
+            return False, 0.0
+        elapsed = time.time() - ts
+        remaining = self._stop_loss_cooldown_seconds - elapsed
+        if remaining <= 0:
+            self._stop_loss_cooldown.pop(key, None)
+            return False, 0.0
+        return True, remaining
+
     def _poll_settings(self):
         """Lee la config persistente (budget, max_positions) y la aplica."""
         # Sprint S3.X: refrescar strategy overrides desde Firestore antes que
@@ -4261,3 +4291,18 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# E2 HOOK PENDING (manual review):
+# En el path que prepara una nueva orden agregar ANTES de emitir:
+#   in_cd, remaining = self._is_in_stop_loss_cooldown(ticker, strike, dte)
+#   if in_cd:
+#       logger.warning(f"[E2] Trade rechazado por cooldown: {ticker} ${strike} DTE{dte}")
+#       return None  # o equivalente al rechazo
+#
+# Y en el path que detecta stop loss (exit_reason == "STOP_LOSS", ~line 1921):
+#   if exit_reason == "STOP_LOSS":
+#       self._mark_stop_loss_cooldown(pos["ticker"], pos["strike"], pos["dte"])
+#       # resto del cierre forzoso
+# ═══════════════════════════════════════════════════════════════════════
