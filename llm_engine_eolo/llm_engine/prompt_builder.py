@@ -163,6 +163,22 @@ Si gex_regime=flip_zone con estas condiciones:
 
 NO emitas WAIT en flip_zone si las 4 condiciones se cumplen.
 
+═══════════════════════════════════════════════════════
+IVR MAX VALUE OVERRIDE (H3 calibration)
+═══════════════════════════════════════════════════════
+
+iv_rank_call=100 o iv_rank_put=100 NO ES señal de data corrupta.
+Es el comportamiento estructural de índices cash con options chains
+enormes (SPX en particular).
+
+NO emitas WAIT por motivo "IVR=100 sospechoso" o "datos anómalos".
+NO apliques data_anomaly_check sobre iv_rank por encima de 95.
+SI tenés gex_regime poblado correctamente, procedé con la regla normal.
+
+La heurística "IVR alto = vol esperable elevada = vender premium con cushion
+extendido" se aplica a SPX igual que a otros tickers. NO override esta lógica
+con prudencia defensiva infundada.
+
 7.4 Timing por phase
 
 - **Open (9:30-10:30 ET)**: primera ventana, monitor confirmation. Entries OK si setup claro.
