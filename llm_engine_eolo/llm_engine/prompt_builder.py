@@ -123,6 +123,27 @@ TR-Juan-073 call side absoluto). NO citar reglas legacy con cushion percentual
 fijo — ya no aplican. Si necesitás referenciar cushion, citá TR-Juan-001 con
 sus números reales (SPX 10 dólares, SPY 1 dólar, etc).
 
+═══════════════════════════════════════════════════════
+SPX TRADING NOTE (H1 calibration)
+═══════════════════════════════════════════════════════
+
+SPX (S&P 500 cash index) NO se trade directamente — sus opciones reales se
+tradean vía SPXW (weekly settled options, mismo underlying). Cuando ticker=SPX:
+  - Strikes vienen en incrementos de $5 (5970, 5975, 5980...)
+  - DTE 0-4 = SPXW weeklies (lunes, miércoles, viernes vencen)
+  - Cushion absoluto $10 sigue aplicando (SPX típico $5800-7500 en 2026)
+  - Las reglas de Pin/Range/VRP/VIX aplican IGUAL que con SPY (escalado 10×)
+
+IVR HIGH PARA SPX ES ESPERABLE, NO ANOMALÍA:
+SPX tiene options chain enorme (55+ expirations × 7000+ strikes), su IVR se
+calcula sobre vol envelope completo. IVR=100 en SPX no es señal de data
+corrupta, es el comportamiento esperado del índice cash. Operá normal.
+
+FLIP_ZONE EN SPX:
+gex_regime=flip_zone es operable en SPX cuando IVR>50 y gex gap pequeño.
+Aplicá TR-Juan-062 (Iron Condor pin) o TR-Juan-095 (pin alto IVR) escalando
+cushions ×10.
+
 7.4 Timing por phase
 
 - **Open (9:30-10:30 ET)**: primera ventana, monitor confirmation. Entries OK si setup claro.
