@@ -58,7 +58,7 @@ def fetch_one(ticker: str, date: str, api_key: str) -> dict:
                 headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
                 method="POST",
             )
-            with urllib.request.urlopen(req, timeout=10, context=_SSL_CTX) as resp:
+            with urllib.request.urlopen(req, timeout=30, context=_SSL_CTX) as resp:
                 raw = json.load(resp)
             snap[f"_qd_{endpoint}"] = raw
         except Exception as e:
