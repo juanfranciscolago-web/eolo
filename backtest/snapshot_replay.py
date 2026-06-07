@@ -20,6 +20,7 @@ import json
 from backtest.snapshot_builder import build_snapshot_dict_from_cache
 from backtest.indicators import ema, rsi, atr, vwap_from_candles, fibonacci_levels
 from backtest.schwab_historical import get_window_for_date
+from backtest.vix_fetcher import get_vix_for_date
 
 
 # Sane VIX defaults para regímenes históricos. Para replay fino, override por
@@ -80,7 +81,8 @@ def reconstruct_snapshot(
         "high":               fund["high"],
         "low":                fund["low"],
         "prev_close":         fund["prev_close"],
-        "vix_level":          DEFAULT_VIX_LEVEL,
+        "vix_level":          get_vix_for_date(target_date.isoformat(), DEFAULT_VIX_LEVEL),
+        "vix_velocity_30m_pct": _calc_vix_velocity(target_date),
         "pdh":                fund["pdh"],
         "pdl":                fund["pdl"],
         "pdc":                fund["pdc"],
@@ -198,3 +200,28 @@ def iter_historical_snapshots(
                 if snap is not None:
                     yield snap
         current += timedelta(days=1)
+
+
+
+def _calc_vix_velocity(target_date) -> float:
+    """vix_velocity_30m_pct proxy: cambio % VIX day-over-day."""
+    from datetime import timedelta as _td
+    try:
+        today = target_date if hasattr(target_date, "isoformat") else None
+        if not today:
+            return 0.0
+        today_str = today.isoformat()
+        yesterday_str = (today - _td(days=1)).isoformat()
+        for _ in range(5):
+            prev_vix = get_vix_for_date(yesterday_str, 0)
+            if prev_vix and prev_vix > 0:
+                break
+            yesterday = today - _td(days=2)
+            yesterday_str = yesterday.isoformat()
+            today = yesterday
+        curr_vix = get_vix_for_date(today_str, 0)
+        if not (curr_vix and prev_vix and prev_vix > 0):
+            return 0.0
+        return ((curr_vix - prev_vix) / prev_vix) * 100
+    except Exception:
+        return 0.0
