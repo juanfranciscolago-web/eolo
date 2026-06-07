@@ -1698,6 +1698,16 @@ class CropBotTheta:
                     )
                     continue
                 decision = signal.to_decision(contracts=_qty)
+                # E2: bloquear si en cooldown post-stop-loss (mismo short_strike+dte_slot)
+                in_cd, remaining = self._is_in_stop_loss_cooldown(
+                    decision["ticker"], decision["short_strike"], signal.dte
+                )
+                if in_cd:
+                    logger.warning(
+                        f"[E2 cooldown] {decision['ticker']} ${decision['short_strike']} "
+                        f"DTE{signal.dte} bloqueado {remaining/60:.0f}min restantes — skip entry"
+                    )
+                    continue
                 try:
                     order_id = await self.trader.execute_decision(decision)
                     if order_id:
@@ -1944,6 +1954,11 @@ class CropBotTheta:
                     }
                     order_id = await self.trader.execute_decision(close_decision)
                     if order_id:
+                        # E2: marcar cooldown si fue stop-loss (no para PROFIT/TIME exits)
+                        if exit_reason == "STOP_LOSS":
+                            self._mark_stop_loss_cooldown(
+                                pos.get("ticker"), pos.get("short_strike"), pos.get("dte_slot")
+                            )
                         self._theta_positions.remove(pos)
                         self._save_theta_positions_to_firestore()
                         from zoneinfo import ZoneInfo
