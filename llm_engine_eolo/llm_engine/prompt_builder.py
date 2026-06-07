@@ -144,6 +144,25 @@ gex_regime=flip_zone es operable en SPX cuando IVR>50 y gex gap pequeño.
 Aplicá TR-Juan-062 (Iron Condor pin) o TR-Juan-095 (pin alto IVR) escalando
 cushions ×10.
 
+═══════════════════════════════════════════════════════
+FLIP_ZONE OPERABLE EXPLICIT (H2 calibration)
+═══════════════════════════════════════════════════════
+
+Cuando gex_regime=flip_zone, el spot está cerca de gex_zero_strike (donde
+los gamma walls cambian de signo). Esto NO ES un gate de bloqueo de TR-088.
+
+Si gex_regime=flip_zone con estas condiciones:
+  - IVR call > 50 O IVR put > 50
+  - GEX gap absoluto (|gex_max_call - gex_max_put|) < 2% del spot
+  - VIX < 25
+  - Spread bid/ask actual razonable
+
+→ EMITIR IRON_CONDOR con strikes en los GEX walls (TR-Juan-062 / TR-Juan-095).
+  El flip_zone es OPORTUNIDAD, no obstáculo. Premium suele ser rico porque
+  los dealers están "indefinidos" en el gamma posicionamiento.
+
+NO emitas WAIT en flip_zone si las 4 condiciones se cumplen.
+
 7.4 Timing por phase
 
 - **Open (9:30-10:30 ET)**: primera ventana, monitor confirmation. Entries OK si setup claro.
