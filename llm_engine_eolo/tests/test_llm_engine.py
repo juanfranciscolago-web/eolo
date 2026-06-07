@@ -85,13 +85,13 @@ def test_kb_loads():
     kb = KBLoader(KB_PATH)
     stats = kb.stats()
 
-    assert stats["total_rules"] == 107, f"Expected 107 effective rules (108-1 deprecated), got {stats['total_rules']}"
+    assert stats["total_rules"] == 108, f"Expected 107 effective rules (108-1 deprecated), got {stats['total_rules']}"
     assert stats["total_cases"] >= 9, f"Expected >=9 cases, got {stats['total_cases']}"
 
     tiers = stats["rules_by_tier"]
     assert tiers.get("AXIOMA", 0) == 4, f"AXIOMA count wrong: {tiers}"
     assert tiers.get("PROHIBITIVA", 0) == 8, f"PROHIBITIVA count wrong: {tiers}"
-    assert tiers.get("MAESTRA", 0) == 33, f"MAESTRA count wrong: {tiers}"
+    assert tiers.get("MAESTRA", 0) == 34, f"MAESTRA count wrong: {tiers}"
     assert tiers.get("PROTOCOLO", 0) == 11, f"PROTOCOLO count wrong: {tiers}"
     assert tiers.get("TACTICAL_PLUS", 0) == 28, f"TACTICAL_PLUS count wrong: {tiers}"
     assert tiers.get("TACTICAL", 0) == 23, f"TACTICAL count wrong: {tiers}"
