@@ -1,4 +1,4 @@
-"""Schema constants for the EOLO ThetaHarvest KB (v1.8 Excel).
+"""Schema constants for the EOLO ThetaHarvest KB (v1.9 Excel).
 
 This module centralises sheet names, expected headers, valid enums and the
 Rule_ID regex so that the editor and validators agree on a single source of
@@ -11,9 +11,9 @@ from pathlib import Path
 
 # Default KB location, resolved relative to the repo root (parent of `tools/`).
 REPO_ROOT: Path = Path(__file__).resolve().parent.parent
-DEFAULT_KB_PATH: Path = REPO_ROOT / "llm_engine_eolo" / "kb" / "EOLO_ThetaHarvest_v1.8.xlsx"
+DEFAULT_KB_PATH: Path = REPO_ROOT / "llm_engine_eolo" / "kb" / "EOLO_ThetaHarvest_v1.9.xlsx"
 
-# All sheets we expect the v1.8 workbook to expose.
+# All sheets we expect the v1.9 workbook to expose.
 EXPECTED_SHEETS: list[str] = [
     "README",
     "Cases",
@@ -49,11 +49,15 @@ DECISION_RULES_COLS: dict[str, int] = {
 }
 
 # Tier vocabulary — must match llm_engine_eolo/llm_engine/kb_loader.py:VALID_TIERS.
+# CANDIDATE: rule loaded by KB but NOT pushed to the LLM prompt
+# (excluded from kb_loader.get_priority_rules order). Used for staging
+# unpromoted rules in a candidate KB (e.g. v1.10 TR-109).
 VALID_TIERS: frozenset[str] = frozenset(
-    {"AXIOMA", "PROHIBITIVA", "MAESTRA", "PROTOCOLO", "TACTICAL_PLUS", "TACTICAL"}
+    {"AXIOMA", "PROHIBITIVA", "MAESTRA", "PROTOCOLO", "TACTICAL_PLUS", "TACTICAL", "CANDIDATE"}
 )
 
 # Display order for stats / priority sorting (high → low salience).
+# CANDIDATE intentionally absent: not promoted to LLM until backtest validates.
 TIER_PRIORITY_ORDER: list[str] = [
     "AXIOMA",
     "PROHIBITIVA",
@@ -80,5 +84,5 @@ CASES_REQUIRED_HEADERS: frozenset[str] = frozenset(
     {"case_id", "ticker", "date", "case_quality", "tacit_rules_applied"}
 )
 
-# case_quality vocabulary observed in the v1.8 workbook.
+# case_quality vocabulary observed in the v1.9 workbook.
 VALID_CASE_QUALITY: frozenset[str] = frozenset({"GOLD", "SILVER", "BRONZE"})

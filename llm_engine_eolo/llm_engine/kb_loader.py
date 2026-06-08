@@ -30,7 +30,7 @@ import re
 logger = logging.getLogger(__name__)
 
 
-VALID_TIERS = {"AXIOMA", "PROHIBITIVA", "MAESTRA", "PROTOCOLO", "TACTICAL_PLUS", "TACTICAL"}
+VALID_TIERS = {"AXIOMA", "PROHIBITIVA", "MAESTRA", "PROTOCOLO", "TACTICAL_PLUS", "TACTICAL", "CANDIDATE"}
 
 
 class TacitRule(BaseModel):
